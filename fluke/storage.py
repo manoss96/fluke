@@ -2646,10 +2646,8 @@ class AzureBlobDir(_CloudDir):
         self.__storage_account = auth._get_storage_account()
 
         # Re-format path.
-        sep = _infer_sep(path)
-        path = path.lstrip(sep)
         if path == '':
-            path = sep
+            path = '/'
 
         super().__init__(
             path=path,
