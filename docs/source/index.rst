@@ -23,8 +23,8 @@ visiting fluke on `Github <https://github.com/manoss96/fluke>`_.
    :maxdepth: 1
    :caption: User Guide
 
-   user_guide/authentication
-   user_guide/storage
+   user_guide/handling_auth
+   user_guide/interacting_with_data
 
 
 .. toctree::

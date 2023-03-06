@@ -65,6 +65,6 @@ so that we gain access to any necessary resources and perform the data transfer:
 And that's basically it!
 
 You can learn more about Fluke by going through its detailed
-`User Guide <user_guide/authentication.html>`_, or by visiting
+`User Guide <user_guide/handling_auth.html>`_, or by visiting
 Fluke on `Github <https://github.com/manoss96/fluke>`_
 in order to check out the source code itself.
