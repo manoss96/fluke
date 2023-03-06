@@ -243,6 +243,16 @@ class MockSFTPClient():
 
 class MockContainerClient():
 
+    @staticmethod
+    def __normalize_path(path: str):
+        '''
+        Adds a separator in front of path in case
+        tests are being run on a UNIX-based system.
+        '''
+        return (
+            path if sys.platform in {'win32', 'cygwin', 'msys'}
+            else SEPARATOR + path)
+
     class MockBlobProperties():
 
         def __init__(self, name: str, metadata: dict[str, str], size: int):
@@ -309,7 +319,7 @@ class MockContainerClient():
         self.container_name = container_name
         self.metadata: dict[str, dict[str, str]] = dict()
         # Add metadata for each file.
-        for dp, _, fn in os.walk(path):
+        for dp, _, fn in os.walk(self.__normalize_path(path)):
             for file in fn:
                 file_path = join_paths(dp, file)
                 self.metadata.update({file_path : METADATA})
@@ -343,6 +353,8 @@ class MockContainerClient():
     
     @simulate_latency    
     def get_blob_client(self, blob: str) -> MockBlobClient:
+        # Normalize path.
+        blob = self.__normalize_path(blob)
         return MockContainerClient.MockBlobClient(blob_name=blob)
 
     @simulate_latency
@@ -350,6 +362,10 @@ class MockContainerClient():
         self,
         name_starts_with: str
     ) -> Iterator[MockBlobProperties]:
+        
+        # Normalize path.
+        name_starts_with = self.__normalize_path(name_starts_with)
+
         for dp, _, fn in os.walk(name_starts_with):
             for file in fn:
                 obj_name = join_paths(dp, file)
@@ -370,6 +386,10 @@ class MockContainerClient():
         name_starts_with: str,
         delimiter: str
     ) -> Iterator[MockBlobProperties]:
+        
+        # Normalize path.
+        name_starts_with = self.__normalize_path(name_starts_with)
+
         if delimiter == '':
             yield from self.list_blobs(name_starts_with)       
         elif delimiter == SEPARATOR:
@@ -408,6 +428,8 @@ class MockContainerClient():
         metadata: Optional[dict[str, str]],
         overwrite: bool
     ):
+        # Normalize path.
+        name = self.__normalize_path(name)
         # Raise error if file exists and overwrite
         # has not been set to True.
         if os.path.exists(name) and not overwrite:
