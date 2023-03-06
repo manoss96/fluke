@@ -321,14 +321,19 @@ class MockContainerClient():
         Returns a dictionary containing all the \
         methods that are to be mocked.
         '''
+
+        root_path = (
+            TEST_FILES_DIR
+            if sys.platform in {'win32', 'cygwin', 'msys'}
+            else f"{SEPARATOR}{TEST_FILES_DIR}")
         return {
             'azure.identity.ClientSecretCredential.__init__': Mock(return_value=None),
             'azure.storage.blob.ContainerClient.__new__': Mock(
-                return_value=MockContainerClient(CONTAINER, path=TEST_FILES_DIR)
+                return_value=MockContainerClient(CONTAINER, path=root_path)
             ),
             'azure.storage.blob.ContainerClient.__init__': Mock(return_value=None),
             'azure.storage.blob.ContainerClient.from_connection_string': Mock(
-                return_value=MockContainerClient(CONTAINER, path=TEST_FILES_DIR)
+                return_value=MockContainerClient(CONTAINER, path=root_path)
             )
         }
 
