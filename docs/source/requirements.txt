@@ -7,3 +7,8 @@ sphinxcontrib-htmlhelp==2.0.0
 sphinxcontrib-jsmath==1.0.1
 sphinxcontrib-qthelp==1.0.3
 sphinxcontrib-serializinghtml==1.1.5
+azure-identity == 1.12.0
+azure-storage-blob == 12.15.0
+boto3 == 1.26.84
+paramiko == 3.0.0
+tqdm == 4.65.0
