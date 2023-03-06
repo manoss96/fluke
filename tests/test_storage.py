@@ -321,6 +321,7 @@ class MockContainerClient():
         Returns a dictionary containing all the \
         methods that are to be mocked.
         '''
+
         return {
             'azure.identity.ClientSecretCredential.__init__': Mock(return_value=None),
             'azure.storage.blob.ContainerClient.__new__': Mock(
