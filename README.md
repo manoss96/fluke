@@ -19,7 +19,7 @@ done in just a matter of seconds from the comfort of your own machine!
 You can start using Fluke by installing it via pip. Note that *fluke* requires Python >= 3.9.
 
 ```sh
-pip install fluke
+pip install fluke-api
 ```
 
 

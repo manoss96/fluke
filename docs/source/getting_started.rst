@@ -17,7 +17,7 @@ Note that *fluke* requires Python >= 3.9.
 
 .. code-block::
 
-    pip install fluke
+    pip install fluke-api
 
 *******************
 Usage example
