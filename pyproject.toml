@@ -1,0 +1,36 @@
+[project]
+name = "fluke"
+version = "0.1.0"
+authors = [
+  {email = "manosstoumpos@gmail.com"},
+  {name = "Manos Stoumpos"}
+]
+description = "Move your data around"
+keywords = ["data", "transfer", "file", "filesystem", "cloud"]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent"
+]
+dependencies = [
+  "azure-identity == 1.12.0",
+  "azure-storage-blob == 12.15.0",
+  "boto3 == 1.26.84",
+  "paramiko == 3.0.0",
+  "tqdm == 4.65.0"
+]
+
+[project.optional-dependencies]
+tests = [
+  "coverage == 7.2.1",
+  "moto[s3] == 4.1.4"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/manoss96/fluke"
+"Bug Tracker" = "https://github.com/manoss96/fluke/issues"
+"Documentation" = "https://fluke.rtfd.io"
+"Changelog" = "https://github.com/manoss96/fluke/CHANGELOG.md"

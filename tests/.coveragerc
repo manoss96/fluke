@@ -1,0 +1,15 @@
+[report]
+exclude_lines =
+    # Skip abstract methods.
+    @_absmethod
+
+    # Re-enable the standard pragma.
+    pragma: no cover
+
+    # Skip exceptions.
+    raise AssertionError
+    raise NotImplementedError
+
+    # Skip non-runnable code.
+    if 0:
+    if __name__=="__main__":
