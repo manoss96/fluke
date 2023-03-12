@@ -154,6 +154,15 @@ class _File(_ABC):
 
 
     @_absmethod
+    def read(self) -> _typ.Optional[bytes]:
+        '''
+        Reads and returns the file's bytes.
+        Returns ``None`` if something goes wrong.
+        '''
+        pass
+
+
+    @_absmethod
     def transfer_to(
         self,
         dst: '_Directory',
@@ -225,7 +234,20 @@ class LocalFile(_File):
         Returns the file's size in bytes.
         '''
         return _os.path.getsize(self.get_path())
+    
 
+    def read(self) -> _typ.Optional[bytes]:
+        '''
+        Reads and returns the file's bytes.
+        Returns ``None`` if something goes wrong.
+        '''
+        try:
+            with open(file=self.get_path(), mode='rb') as file:
+                return file.read()
+        except Exception as e:
+            print(e)
+            return None
+    
 
     def transfer_to(
         self,
@@ -357,7 +379,21 @@ class _NonLocalFile(_File, _ABC):
                 self.__cache_size(size)
                 return size
         return self._get_size_impl()
-        
+    
+
+    def read(self) -> _typ.Optional[bytes]:
+        '''
+        Reads and returns the file's bytes.
+        '''
+        ingester = self._get_ingester()
+        ingester.set_source(self.get_path())
+        with _io.BytesIO() as buffer:
+            error = ingester.extract(snk=buffer, include_metadata=False)
+            if error is not None:
+                print(error)
+                return None
+            return buffer.getvalue()
+
 
     def transfer_to(
         self,

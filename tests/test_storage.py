@@ -229,7 +229,8 @@ class MockSFTPClient():
     @simulate_latency
     def getfo(self, remotepath, fl, callback=None, prefetch=True):
         with open(remotepath, "rb") as fr:
-            return fr
+            fl.write(fr.read())
+            return fr.tell()
         
     @simulate_latency
     def putfo(self, fl, remotepath, file_size=0, callback=None, confirm=True):
@@ -471,6 +472,10 @@ class TestLocalFile(unittest.TestCase):
         file = self.build_file()
         self.assertEqual(file.get_size(), 4)
 
+    def test_read(self):
+        file = self.build_file()
+        self.assertEqual(file.read(), b"TEXT")
+
     def test_transfer_to(self):
         file = self.build_file()
         dir = TestLocalDir.build_dir(path=ABS_DIR_PATH)
@@ -558,6 +563,10 @@ class TestRemoteFile(unittest.TestCase):
     def test_get_size(self):
         with self.build_file() as file:
             self.assertEqual(file.get_size(), 4)
+
+    def test_read(self):
+        with self.build_file() as file:
+            self.assertEqual(file.read(), b"TEXT")
 
     def test_transfer_to(self):
         with self.build_file() as file:
@@ -776,6 +785,10 @@ class TestAWSS3File(unittest.TestCase):
     def test_get_size(self):
         with self.build_file() as file:
             self.assertEqual(file.get_size(), 4)
+
+    def test_read(self):
+        with self.build_file() as file:
+            self.assertEqual(file.read(), b"TEXT")
 
     def test_transfer_to(self):
         with self.build_file() as file:
@@ -1010,6 +1023,11 @@ class TestAzureBlobFile(unittest.TestCase):
     def test_get_size(self):
         with self.build_file() as file:
             self.assertEqual(file.get_size(), 4)
+
+
+    def test_read(self):
+        with self.build_file() as file:
+            self.assertEqual(file.read(), b"TEXT")
 
     def test_transfer_to(self):
         with self.build_file() as file:

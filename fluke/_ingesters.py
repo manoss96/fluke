@@ -127,6 +127,7 @@ class LocalIngester(Ingester):
         '''
         super().__init__()
 
+
     def extract(
         self,
         snk: _typ.Union[_io.BufferedReader, _io.BytesIO],
@@ -156,6 +157,7 @@ class LocalIngester(Ingester):
         except Exception as e:
             return str(e)
         return None
+
 
     def load(
         self,
