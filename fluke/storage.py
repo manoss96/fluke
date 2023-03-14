@@ -1557,13 +1557,14 @@ class LocalDir(_Directory):
         sep = self._get_separator()
 
         if recursively:
-            for dp, _, fn in _os.walk(self.get_path()):
-                for file in fn:
+            for dp, dn, fn in _os.walk(self.get_path()):
+                dn.sort()
+                for file in sorted(fn):
                     if not show_abs_path:
                         dp = self._relativize(dp.replace(_os.sep, sep))
                     yield _join_paths(sep, dp, file)
         else:
-            for obj in _os.listdir(self.get_path()):
+            for obj in sorted(_os.listdir(self.get_path())):
                 if not self._is_file(obj):
                     obj += sep
                 yield _join_paths(sep, self.get_path(), obj) \
