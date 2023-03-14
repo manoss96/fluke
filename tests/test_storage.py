@@ -102,7 +102,8 @@ def create_aws_s3_bucket(mock_s3, bucket_name: str, metadata: dict[str, str]):
     s3.create_bucket(Bucket=bucket_name)
     bucket = s3.Bucket(bucket_name)
     # Structure it like "test_files".
-    for dp, _, fn in sorted(os.walk(TEST_FILES_DIR)):
+    for dp, dn, fn in os.walk(TEST_FILES_DIR):
+        dn.sort()
         for file in fn:
             file_path = join_paths(dp.replace(os.sep, SEPARATOR), file)
             with open(file_path, "rb") as file:
@@ -309,7 +310,8 @@ class MockContainerClient():
         self.container_name = container_name
         self.metadata: dict[str, dict[str, str]] = dict()
         # Add metadata for each file.
-        for dp, _, fn in sorted(os.walk(path)):
+        for dp, dn, fn in os.walk(path):
+            dn.sort()
             for file in fn:
                 file_path = join_paths(dp, file)
                 self.metadata.update({file_path : METADATA})
@@ -346,7 +348,8 @@ class MockContainerClient():
         self,
         name_starts_with: str
     ) -> Iterator[MockBlobProperties]:
-        for dp, _, fn in sorted(os.walk(name_starts_with)):
+        for dp, dn, fn in os.walk(name_starts_with):
+            dn.sort()
             for file in fn:
                 obj_name = join_paths(dp, file)
                 file_path = to_abs(obj_name)
@@ -1388,8 +1391,8 @@ class TestLocalDir(unittest.TestCase):
             dst=self.build_dir(path=tmp_dir_path))
         # Assert that the two directories contains the same contents
         self.assertEqual(
-            ''.join(s for s in os.listdir(ABS_DIR_PATH) if s.endswith('.txt')),
-            ''.join(s for s in os.listdir(tmp_dir_path)))
+            ''.join(s for s in sorted(os.listdir(ABS_DIR_PATH)) if s.endswith('.txt')),
+            ''.join(s for s in sorted(os.listdir(tmp_dir_path))))
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -1408,9 +1411,9 @@ class TestLocalDir(unittest.TestCase):
             ''.join(join_paths(dp, f).replace(
                 f'{SEPARATOR}dir{SEPARATOR}',
                 f'{SEPARATOR}{tmp_dir_name}{SEPARATOR}')
-            for dp, _, fn in sorted(os.walk(ABS_DIR_PATH)) for f in fn),
+            for dp, _, fn in os.walk(ABS_DIR_PATH) for f in fn),
             ''.join(join_paths(dp, f)
-                for dp, _, fn in sorted(os.walk(tmp_dir_path)) for f in fn))
+                for dp, _, fn in os.walk(tmp_dir_path) for f in fn))
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -1726,8 +1729,8 @@ class TestRemoteDir(unittest.TestCase):
             dir.transfer_to(dst=LocalDir(path=tmp_dir_path))
         # Assert that the two directories contain the same contents.
         self.assertEqual(
-            ''.join(s for s in os.listdir(REL_DIR_PATH) if s.endswith('.txt')),
-            ''.join(s for s in os.listdir(tmp_dir_path)))
+            ''.join(s for s in sorted(os.listdir(REL_DIR_PATH)) if s.endswith('.txt')),
+            ''.join(s for s in sorted(os.listdir(tmp_dir_path))))
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -1743,9 +1746,9 @@ class TestRemoteDir(unittest.TestCase):
         # Assert that the two directories contain the same contents.
         self.assertEqual(
             ''.join(join_paths(dp, f).removeprefix(REL_DIR_PATH)
-                for dp, _, fn in sorted(os.walk(REL_DIR_PATH)) for f in fn),
+                for dp, _, fn in os.walk(REL_DIR_PATH) for f in fn),
             ''.join(join_paths(dp, f).removeprefix(tmp_dir_path)
-                for dp, _, fn in sorted(os.walk(tmp_dir_path)) for f in fn))
+                for dp, _, fn in os.walk(tmp_dir_path) for f in fn))
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -1861,8 +1864,8 @@ class TestRemoteDir(unittest.TestCase):
             TestLocalDir.build_dir(ABS_DIR_PATH).transfer_to(dir)
         # Assert that the two directories contain the same contents.
         self.assertEqual(
-            ''.join(s for s in os.listdir(ABS_DIR_PATH) if s.endswith('.txt')),
-            ''.join(s for s in os.listdir(tmp_dir_path)))
+            ''.join(s for s in sorted(os.listdir(ABS_DIR_PATH)) if s.endswith('.txt')),
+            ''.join(s for s in sorted(os.listdir(tmp_dir_path))))
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
         
@@ -1918,10 +1921,15 @@ class TestRemoteDir(unittest.TestCase):
     def test_iterate_contents_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             _ = (_ for _ in dir.iterate_contents(recursively=True))
+            expected_results = []
+            for dp, dn, fn in os.walk(REL_DIR_PATH):
+                dn.sort()
+                for f in fn:
+                    expected_results.append(
+                        join_paths(dp, f).removeprefix(REL_DIR_PATH))
             self.assertEqual(
                 ''.join([p for p in dir.iterate_contents(recursively=True)]),
-                ''.join(join_paths(dp, f).removeprefix(REL_DIR_PATH)
-                    for dp, _, fn in sorted(os.walk(REL_DIR_PATH)) for f in fn))
+                ''.join(expected_results))
             
     def test_iterate_contents_non_recursively_from_cache_on_none(self):
         with self.build_dir(cache=True) as dir:
@@ -2291,8 +2299,8 @@ class TestAWSS3Dir(unittest.TestCase):
             dir.transfer_to(dst=TestLocalDir.build_dir(path=tmp_dir_path))
         # Assert that the two directories contain the same contents.
         self.assertEqual(
-            ''.join(s for s in self.iterate_aws_s3_dir_objects()),
-            ''.join(s for s in os.listdir(tmp_dir_path)))
+            ''.join(s for s in sorted(self.iterate_aws_s3_dir_objects())),
+            ''.join(s for s in sorted(os.listdir(tmp_dir_path))))
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -2306,10 +2314,15 @@ class TestAWSS3Dir(unittest.TestCase):
                 dst=TestLocalDir.build_dir(path=tmp_dir_path),
                 recursively=True)
         # Assert that the two directories contain the same contents.
+            expected_results = []
+            for dp, dn, fn in os.walk(tmp_dir_path):
+                dn.sort()
+                for f in fn:
+                    expected_results.append(
+                        join_paths(dp, f).removeprefix(tmp_dir_path))
         self.assertEqual(
             ''.join(s for s in self.iterate_aws_s3_dir_objects(recursively=True)),
-            ''.join(join_paths(dp, f).removeprefix(tmp_dir_path)
-                for dp, _, fn in sorted(os.walk(tmp_dir_path)) for f in fn))
+            ''.join(expected_results))
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -2473,10 +2486,15 @@ class TestAWSS3Dir(unittest.TestCase):
     def test_iterate_contents_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             _ = (_ for _ in dir.iterate_contents(recursively=True))
+            expected_results = []
+            for dp, dn, fn in os.walk(REL_DIR_PATH):
+                dn.sort()
+                for f in fn:
+                    expected_results.append(
+                        join_paths(dp, f).removeprefix(REL_DIR_PATH))
             self.assertEqual(
                 ''.join([p for p in dir.iterate_contents(recursively=True)]),
-                ''.join(join_paths(dp, f).removeprefix(REL_DIR_PATH)
-                    for dp, _, fn in sorted(os.walk(REL_DIR_PATH)) for f in fn))
+                ''.join(expected_results))
             
     def test_iterate_contents_non_recursively_from_cache_on_none(self):
         with self.build_dir(cache=True) as dir:
@@ -2881,8 +2899,8 @@ class TestAzureBlobDir(unittest.TestCase):
             dir.transfer_to(dst=LocalDir(path=tmp_dir_path))
         # Assert that the two directories contain the same contents.
         self.assertEqual(
-            ''.join(s for s in os.listdir(REL_DIR_PATH) if s.endswith('.txt')),
-            ''.join(s for s in os.listdir(tmp_dir_path)))
+            ''.join(s for s in sorted(os.listdir(REL_DIR_PATH)) if s.endswith('.txt')),
+            ''.join(s for s in sorted(os.listdir(tmp_dir_path))))
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -2898,9 +2916,9 @@ class TestAzureBlobDir(unittest.TestCase):
         # Assert that the two directories contain the same contents.
         self.assertEqual(
             ''.join(join_paths(dp, f).removeprefix(REL_DIR_PATH)
-                for dp, _, fn in sorted(os.walk(REL_DIR_PATH)) for f in fn),
+                for dp, _, fn in os.walk(REL_DIR_PATH) for f in fn),
             ''.join(join_paths(dp, f).removeprefix(tmp_dir_path)
-                for dp, _, fn in sorted(os.walk(tmp_dir_path)) for f in fn))
+                for dp, _, fn in os.walk(tmp_dir_path) for f in fn))
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -3029,8 +3047,8 @@ class TestAzureBlobDir(unittest.TestCase):
             TestLocalDir.build_dir(REL_DIR_PATH).transfer_to(dir)
         # Assert that the two directories contain the same contents.
         self.assertEqual(
-            ''.join(s for s in os.listdir(REL_DIR_PATH) if s.endswith('.txt')),
-            ''.join(s for s in os.listdir(tmp_dir_path)))
+            ''.join(s for s in sorted(os.listdir(REL_DIR_PATH)) if s.endswith('.txt')),
+            ''.join(s for s in sorted(os.listdir(tmp_dir_path))))
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
         
@@ -3086,10 +3104,15 @@ class TestAzureBlobDir(unittest.TestCase):
     def test_iterate_contents_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             _ = (_ for _ in dir.iterate_contents(recursively=True))
+            expected_results = []
+            for dp, dn, fn in os.walk(REL_DIR_PATH):
+                dn.sort()
+                for f in fn:
+                    expected_results.append(
+                        join_paths(dp, f).removeprefix(REL_DIR_PATH))
             self.assertEqual(
                 ''.join([p for p in dir.iterate_contents(recursively=True)]),
-                ''.join(join_paths(dp, f).removeprefix(REL_DIR_PATH)
-                    for dp, _, fn in sorted(os.walk(REL_DIR_PATH)) for f in fn))
+                ''.join(expected_results))
             
     def test_iterate_contents_non_recursively_from_cache_on_none(self):
         with self.build_dir(cache=True) as dir:
