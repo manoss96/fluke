@@ -154,6 +154,15 @@ class _File(_ABC):
 
 
     @_absmethod
+    def read(self) -> bytes:
+        '''
+        Reads and returns the file's bytes.
+        Returns ``None`` if something goes wrong.
+        '''
+        pass
+
+
+    @_absmethod
     def transfer_to(
         self,
         dst: '_Directory',
@@ -225,7 +234,16 @@ class LocalFile(_File):
         Returns the file's size in bytes.
         '''
         return _os.path.getsize(self.get_path())
+    
 
+    def read(self) -> bytes:
+        '''
+        Reads and returns the file's bytes.
+        Returns ``None`` if something goes wrong.
+        '''
+        with open(file=self.get_path(), mode='rb') as file:
+            return file.read()
+    
 
     def transfer_to(
         self,
@@ -357,7 +375,18 @@ class _NonLocalFile(_File, _ABC):
                 self.__cache_size(size)
                 return size
         return self._get_size_impl()
-        
+    
+
+    def read(self) -> bytes:
+        '''
+        Reads and returns the file's bytes.
+        '''
+        ingester = self._get_ingester()
+        ingester.set_source(self.get_path())
+        with _io.BytesIO() as buffer:
+            ingester.extract(snk=buffer, include_metadata=False)
+            return buffer.getvalue()
+
 
     def transfer_to(
         self,
@@ -1572,17 +1601,16 @@ class LocalDir(_Directory):
 
             ingester.set_sink(snk=file)
 
-            error_msg = ingester.load(src=src, metadata=metadata)
-
-            if error_msg is None:
+            try:
+                ingester.load(src=src, metadata=metadata)
                 self._add_file_to_metadata_dict(
                     file_path=file_name,
                     metadata=metadata)
-            else:
+            except Exception as e:
                 return _Error(
                     uri=file_path,
                     is_src=False,
-                    msg=error_msg)
+                    msg=str(e))
 
 
     def _load_from_ingester(
@@ -1610,18 +1638,16 @@ class LocalDir(_Directory):
         _os.makedirs(_os.path.dirname(file_path), exist_ok=True)
 
         with open(file_path, 'wb') as file:
-
-            error_msg = ingester.extract(snk=file, include_metadata=fetch_metadata)
-
-            if error_msg is None:
+            try:
+                ingester.extract(snk=file, include_metadata=fetch_metadata)
                 self._add_file_to_metadata_dict(
                     file_path=file_name,
                     metadata=ingester.get_metadata())
-            else:
+            except Exception as e:
                 return _Error(
                     uri=ingester.get_source(),
                     is_src=True,
-                    msg=error_msg)
+                    msg=str(e))
 
 
     def _get_file_size(self, path: str) -> int:
@@ -1882,17 +1908,16 @@ class _NonLocalDir(_Directory, _ABC):
         ingester = self._get_ingester()
         ingester.set_sink(_join_paths(self._get_separator(), self.get_path(), file_name))
 
-        error_msg = ingester.load(src=src, metadata=metadata)
-
-        if error_msg is None:
+        try:
+            ingester.load(src=src, metadata=metadata)
             self._add_file_to_metadata_dict(
                 file_path=file_name,
                 metadata=metadata)
-        else:
+        except Exception as e:
             return _Error(
                 uri=_join_paths(self._get_separator(), self.get_uri(), file_name),
                 is_src=False,
-                msg=error_msg)
+                msg=str(e))
 
 
     def _load_from_ingester(
@@ -1914,33 +1939,29 @@ class _NonLocalDir(_Directory, _ABC):
         :param bool fetch_metadata: Indicates whether to \
             fetch any metadata associated with the file or not.
         '''
-        # Load data into buffer via the ingester.
-        buffer = _io.BytesIO()
-
-        error_msg = ingester.extract(
-            snk=buffer,
-            include_metadata=fetch_metadata)
-
-        # If successful, then load data directly from buffer.
-        if error_msg is None:
-
-            buffer.seek(0)
-            error: _Error = self._load_from_source(
-                file_name=file_name,
-                src=buffer,
-                metadata=ingester.get_metadata())
-
-            if error is None:
-                self._add_file_to_metadata_dict(
-                    file_path=file_name,
+        try:
+            with _io.BytesIO() as buffer:
+                # Load data into buffer via the ingester.
+                ingester.extract(
+                    snk=buffer,
+                    include_metadata=fetch_metadata)
+                # Then load data to sink directly from buffer.
+                buffer.seek(0)
+                error: _Error = self._load_from_source(
+                    file_name=file_name,
+                    src=buffer,
                     metadata=ingester.get_metadata())
-            else:
-                return error
-        else:
+                if error is None:
+                    self._add_file_to_metadata_dict(
+                        file_path=file_name,
+                        metadata=ingester.get_metadata())
+                else:
+                    return error
+        except Exception as e:
             return _Error(
                 uri=ingester.get_source(),
                 is_src=True,
-                msg=error_msg)
+                msg=str(e))
         
 
     def _get_contents_iterable(

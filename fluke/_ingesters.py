@@ -77,12 +77,10 @@ class Ingester(_ABC):
         self,
         snk: _typ.Union[_io.BufferedReader, _io.BytesIO],
         include_metadata: bool
-    ) -> _typ.Optional[str]:
+    ) -> None:
         '''
         Extracts data from the currently set source \
-        and into the provided sink. If an error occurs, \
-        then returns the corresponding error message, \
-        else returns ``None``.
+        and into the provided sink.
 
         :param Union[BufferedReader, BytesIO] snk: A \
             buffer acting as a sink.
@@ -98,12 +96,10 @@ class Ingester(_ABC):
         self,
         src: _typ.Union[_io.BufferedReader, _io.BytesIO],
         metadata: dict[str, str]
-    ) -> _typ.Optional[str]:
+    ) -> None:
         '''
-        Extracts data from the provided source and \
-        into the currently set sink. If an error occurs, \
-        then returns the corresponding error message, \
-        else returns ``None``.
+        Loads data from the provided source and \
+        into the currently set sink.
 
         :param Union[BufferedReader, BytesIO] src: A \
             buffer acting as a source.
@@ -127,16 +123,15 @@ class LocalIngester(Ingester):
         '''
         super().__init__()
 
+
     def extract(
         self,
         snk: _typ.Union[_io.BufferedReader, _io.BytesIO],
         include_metadata: bool
-    ) -> _typ.Optional[str]:
+    ) -> None:
         '''
         Extracts data from the currently set source \
-        and into the provided sink. If an error occurs, \
-        then returns the corresponding error message, \
-        else returns ``None``.
+        and into the provided sink.
 
         :param Union[BufferedReader, BytesIO] snk: A \
             buffer acting as a sink.
@@ -151,22 +146,18 @@ class LocalIngester(Ingester):
         # NOTE: This method is not currently invoked,
         #       as local files are read directly into
         #       memory and are not written into a buffer.
-        try:
-            _copyfileobj(fsrc=self.get_source(), fdst=snk)
-        except Exception as e:
-            return str(e)
-        return None
+        _copyfileobj(fsrc=self.get_source(), fdst=snk)
+
+
 
     def load(
         self,
         src: _typ.Union[_io.BufferedReader, _io.BytesIO],
         metadata: dict[str, str]
-    ) -> _typ.Optional[str]:
+    ) -> None:
         '''
-        Extracts data from the provided source and \
-        into the currently set sink. If an error occurs, \
-        then returns the corresponding error message, \
-        else returns ``None``.
+        Loads data from the provided source and \
+        into the currently set sink.
 
         :param Union[BufferedReader, BytesIO] src: A \
             buffer acting as a source.
@@ -177,11 +168,7 @@ class LocalIngester(Ingester):
         :note: Param ``metadata`` has no use within the \
             context of method ``LocalIngester.load``.
         '''
-        try:
-            _copyfileobj(fsrc=src, fdst=self.get_sink())
-        except Exception as e:
-            return str(e)
-        return None
+        _copyfileobj(fsrc=src, fdst=self.get_sink())
 
 
 class RemoteIngester(Ingester):
@@ -210,12 +197,10 @@ class RemoteIngester(Ingester):
         self,
         snk: _typ.Union[_io.BufferedReader, _io.BytesIO],
         include_metadata: bool
-    ) -> _typ.Optional[str]:
+    ) -> None:
         '''
         Extracts data from the currently set source \
-        and into the provided sink. If an error occurs, \
-        then returns the corresponding error message, \
-        else returns ``None``.
+        and into the provided sink.
 
         :param Union[BufferedReader, BytesIO] snk: A \
             buffer acting as a sink.
@@ -226,29 +211,19 @@ class RemoteIngester(Ingester):
         :note: Param ``include_metadata`` has no use within \
             the context of method ``RemoteIngester.extract``.
         '''
-
-        sftp = self.__handler.get_client()
-
-        try:
-            sftp.getfo(
-                remotepath=self.get_source(),
-                fl=snk
-            )
-        except Exception as e:
-            return str(e)
-        return None
+        self.__handler.get_client().getfo(
+            remotepath=self.get_source(),
+            fl=snk)
 
 
     def load(
         self,
         src: _typ.Union[_io.BufferedReader, _io.BytesIO],
         metadata: dict[str, str]
-    ) -> _typ.Optional[str]:
+    ) -> None:
         '''
-        Extracts data from the provided source and \
-        into the currently set sink. If an error occurs, \
-        then returns the corresponding error message, \
-        else returns ``None``.
+        Loads data from the provided source and \
+        into the currently set sink.
 
         :param Union[BufferedReader, BytesIO] src: A \
             buffer acting as a source.
@@ -284,13 +259,9 @@ class RemoteIngester(Ingester):
             sftp.mkdir(path=dir)
 
         # Load file to remote location.
-        try:
-            sftp.putfo(
-                fl=src,
-                remotepath=file_path)
-        except Exception as e:
-            return str(e)
-        return None
+        sftp.putfo(
+            fl=src,
+            remotepath=file_path)
 
 
 class AWSS3Ingester(Ingester):
@@ -320,12 +291,10 @@ class AWSS3Ingester(Ingester):
         self,
         snk: _typ.Union[_io.BufferedReader, _io.BytesIO],
         include_metadata: bool
-    ) -> _typ.Optional[str]:
+    ) -> None:
         '''
         Extracts data from the currently set source \
-        and into the provided sink. If an error occurs, \
-        then returns the corresponding error message, \
-        else returns ``None``.
+        and into the provided sink.
 
         :param Union[BufferedReader, BytesIO] snk: A \
             buffer acting as a sink.
@@ -333,31 +302,25 @@ class AWSS3Ingester(Ingester):
             to ingest any existing metadata along with \
             the primarily ingested data.
         '''
-        try:
-            # Ingest object from its source.
-            if include_metadata:
-                obj = self.__handler.get_client().Object(key=self.get_source())
-                obj.download_fileobj(Fileobj=snk)
-                self.set_metadata(obj.metadata)
-            else:
-                self.__handler.get_client().download_fileobj(
-                    Key=self.get_source(),
-                    Fileobj=snk)
-        except Exception as e:
-            return str(e)
-        return None
+        # Ingest object from its source.
+        if include_metadata:
+            obj = self.__handler.get_client().Object(key=self.get_source())
+            obj.download_fileobj(Fileobj=snk)
+            self.set_metadata(obj.metadata)
+        else:
+            self.__handler.get_client().download_fileobj(
+                Key=self.get_source(),
+                Fileobj=snk)
 
 
     def load(
         self,
         src: _typ.Union[_io.BufferedReader, _io.BytesIO],
         metadata: dict[str, str]
-    ) -> _typ.Optional[str]:
+    ) -> None:
         '''
-        Extracts data from the provided source and \
-        into the currently set sink. If an error occurs, \
-        then returns the corresponding error message, \
-        else returns ``None``.
+        Loads data from the provided source and \
+        into the currently set sink.
 
         :param Union[BufferedReader, BytesIO] src: A \
             buffer acting as a source.
@@ -365,15 +328,11 @@ class AWSS3Ingester(Ingester):
             metadata that are to be assigned to the \
             primarily ingested data.
         '''
-        try:
-            self.__handler.get_client().upload_fileobj(
-                Key=self.get_sink(),
-                Fileobj=src,
-                ExtraArgs={ "Metadata": metadata }
-                    if metadata is not None else None)
-        except Exception as e:
-            return str(e)
-        return None
+        self.__handler.get_client().upload_fileobj(
+            Key=self.get_sink(),
+            Fileobj=src,
+            ExtraArgs={ "Metadata": metadata }
+                if metadata is not None else None)
 
 
 class AzureIngester(Ingester):
@@ -406,12 +365,10 @@ class AzureIngester(Ingester):
         self,
         snk: _typ.Union[_io.BufferedReader, _io.BytesIO],
         include_metadata: bool
-    ) -> _typ.Optional[str]:
+    ) -> None:
         '''
         Extracts data from the currently set source \
-        and into the provided sink. If an error occurs, \
-        then returns the corresponding error message, \
-        else returns ``None``.
+        and into the provided sink.
 
         :param Union[BufferedReader, BytesIO] snk: A \
             buffer acting as a sink.
@@ -419,28 +376,22 @@ class AzureIngester(Ingester):
             to ingest any existing metadata along with \
             the primarily ingested data.
         '''
-        try:
-            blob = self.__handler.get_client().download_blob(
-                blob=self.get_source())
-            # Ingest object from its source.
-            blob.readinto(stream=snk)
-            if include_metadata:
-                self.set_metadata(blob.properties.metadata)
-        except Exception as e:
-            return str(e)
-        return None
+        blob = self.__handler.get_client().download_blob(
+            blob=self.get_source())
+        # Ingest object from its source.
+        blob.readinto(stream=snk)
+        if include_metadata:
+            self.set_metadata(blob.properties.metadata)
 
 
     def load(
         self,
         src: _typ.Union[_io.BufferedReader, _io.BytesIO],
         metadata: dict[str, str]
-    ) -> _typ.Optional[str]:
+    ) -> None:
         '''
-        Extracts data from the provided source and \
-        into the currently set sink. If an error occurs, \
-        then returns the corresponding error message, \
-        else returns ``None``.
+        Loads data from the provided source and \
+        into the currently set sink.
 
         :param Union[BufferedReader, BytesIO] src: A \
             buffer acting as a source.
@@ -448,13 +399,9 @@ class AzureIngester(Ingester):
             metadata that are to be assigned to the \
             primarily ingested data.
         '''
-        try:
-            self.__handler.get_client().upload_blob(
-                name=self.get_sink(),
-                data=src,
-                metadata=metadata,
-                overwrite=True)
-        except Exception as e:
-            return str(e)
-        return None
+        self.__handler.get_client().upload_blob(
+            name=self.get_sink(),
+            data=src,
+            metadata=metadata,
+            overwrite=True)
     
