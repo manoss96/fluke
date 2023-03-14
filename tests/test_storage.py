@@ -224,7 +224,7 @@ class MockSFTPClient():
 
     @simulate_latency
     def listdir_attr(self, path: str) -> list[paramiko.SFTPAttributes]:
-        return [self.stat(join_paths(path, f)) for f in os.listdir(path=path)]
+        return [self.stat(join_paths(path, f)) for f in sorted(os.listdir(path=path))]
     
     @simulate_latency
     def getfo(self, remotepath, fl, callback=None, prefetch=True):
@@ -369,7 +369,7 @@ class MockContainerClient():
         if delimiter == '':
             yield from self.list_blobs(name_starts_with)       
         elif delimiter == SEPARATOR:
-            for name in os.listdir(name_starts_with):
+            for name in sorted(os.listdir(name_starts_with)):
                 obj_name = join_paths(name_starts_with, name)
 
                 if os.path.isdir(obj_name):

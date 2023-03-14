@@ -1534,7 +1534,7 @@ class LocalDir(_Directory):
                         dp = self._relativize(dp.replace(_os.sep, sep))
                     yield _join_paths(sep, dp, file)
         else:
-            for obj in _os.listdir(self.get_path()):
+            for obj in sorted(_os.listdir(self.get_path())):
                 if not self._is_file(obj):
                     obj += sep
                 yield _join_paths(sep, self.get_path(), obj) \
