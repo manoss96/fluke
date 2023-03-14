@@ -1528,7 +1528,7 @@ class LocalDir(_Directory):
         sep = self._get_separator()
 
         if recursively:
-            for dp, _, fn in _os.walk(self.get_path()):
+            for dp, _, fn in sorted(_os.walk(self.get_path())):
                 for file in fn:
                     if not show_abs_path:
                         dp = self._relativize(dp.replace(_os.sep, sep))
