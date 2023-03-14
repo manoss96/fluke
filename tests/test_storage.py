@@ -104,7 +104,7 @@ def create_aws_s3_bucket(mock_s3, bucket_name: str, metadata: dict[str, str]):
     # Structure it like "test_files".
     for dp, dn, fn in os.walk(TEST_FILES_DIR):
         dn.sort()
-        for file in fn:
+        for file in sorted(fn):
             file_path = join_paths(dp.replace(os.sep, SEPARATOR), file)
             with open(file_path, "rb") as file:
                 bucket.upload_fileobj(
@@ -312,7 +312,7 @@ class MockContainerClient():
         # Add metadata for each file.
         for dp, dn, fn in os.walk(path):
             dn.sort()
-            for file in fn:
+            for file in sorted(fn):
                 file_path = join_paths(dp, file)
                 self.metadata.update({file_path : METADATA})
 
@@ -350,7 +350,7 @@ class MockContainerClient():
     ) -> Iterator[MockBlobProperties]:
         for dp, dn, fn in os.walk(name_starts_with):
             dn.sort()
-            for file in fn:
+            for file in sorted(fn):
                 obj_name = join_paths(dp, file)
                 file_path = to_abs(obj_name)
                 yield MockContainerClient.MockBlobProperties(
@@ -1411,7 +1411,7 @@ class TestLocalDir(unittest.TestCase):
             ''.join(join_paths(dp, f).replace(
                 f'{SEPARATOR}dir{SEPARATOR}',
                 f'{SEPARATOR}{tmp_dir_name}{SEPARATOR}')
-            for dp, _, fn in os.walk(ABS_DIR_PATH) for f in fn),
+                for dp, _, fn in os.walk(ABS_DIR_PATH) for f in fn),
             ''.join(join_paths(dp, f)
                 for dp, _, fn in os.walk(tmp_dir_path) for f in fn))
         # Remove temporary directory.
@@ -1924,7 +1924,7 @@ class TestRemoteDir(unittest.TestCase):
             expected_results = []
             for dp, dn, fn in os.walk(REL_DIR_PATH):
                 dn.sort()
-                for f in fn:
+                for f in sorted(fn):
                     expected_results.append(
                         join_paths(dp, f).removeprefix(REL_DIR_PATH))
             self.assertEqual(
@@ -2317,7 +2317,7 @@ class TestAWSS3Dir(unittest.TestCase):
             expected_results = []
             for dp, dn, fn in os.walk(tmp_dir_path):
                 dn.sort()
-                for f in fn:
+                for f in sorted(fn):
                     expected_results.append(
                         join_paths(dp, f).removeprefix(tmp_dir_path))
         self.assertEqual(
@@ -2489,7 +2489,7 @@ class TestAWSS3Dir(unittest.TestCase):
             expected_results = []
             for dp, dn, fn in os.walk(REL_DIR_PATH):
                 dn.sort()
-                for f in fn:
+                for f in sorted(fn):
                     expected_results.append(
                         join_paths(dp, f).removeprefix(REL_DIR_PATH))
             self.assertEqual(
@@ -3107,7 +3107,7 @@ class TestAzureBlobDir(unittest.TestCase):
             expected_results = []
             for dp, dn, fn in os.walk(REL_DIR_PATH):
                 dn.sort()
-                for f in fn:
+                for f in sorted(fn):
                     expected_results.append(
                         join_paths(dp, f).removeprefix(REL_DIR_PATH))
             self.assertEqual(

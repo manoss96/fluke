@@ -1530,7 +1530,7 @@ class LocalDir(_Directory):
         if recursively:
             for dp, dn, fn in _os.walk(self.get_path()):
                 dn.sort()
-                for file in fn:
+                for file in sorted(fn):
                     if not show_abs_path:
                         dp = self._relativize(dp.replace(_os.sep, sep))
                     yield _join_paths(sep, dp, file)
