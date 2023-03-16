@@ -1874,7 +1874,7 @@ class TestRemoteDir(unittest.TestCase):
                 
     def test_transfer_to_as_destination(self):
         # Create a "remote" temporary dictionary.
-        tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, 'TMP_DIR')
+        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, 'TMP_DIR')
         os.mkdir(tmp_dir_path)
         # Copy the local dir's contents into this
         # "remote" tmp directory.
@@ -2090,16 +2090,16 @@ class TestAWSS3Dir(unittest.TestCase):
     def test_constructor_on_invalid_path_error(self):
         self.assertRaises(InvalidPathError, self.build_dir, path="NON_EXISTING_PATH")
 
-    def test_get_path_on_empty_path(self):
-        with self.build_dir(path='') as dir:
+    def test_get_path_on_none_path(self):
+        with self.build_dir(path=None) as dir:
             self.assertEqual(dir.get_path(), '')  
 
     def test_get_name(self):
         with self.build_dir() as dir:
             self.assertEqual(dir.get_name(), DIR_NAME)
 
-    def test_get_name_on_empty_path(self):
-        with self.build_dir(path='') as dir:
+    def test_get_name_on_none_path(self):
+        with self.build_dir(path=None) as dir:
             self.assertIsNone(dir.get_name())      
 
     def test_get_uri(self):
@@ -2687,16 +2687,16 @@ class TestAzureBlobDir(unittest.TestCase):
     def test_constructor_on_invalid_path_error(self):
         self.assertRaises(InvalidPathError, self.build_dir, path="NON_EXISTING_PATH")
 
-    def test_get_path_on_empty_path(self):
-        with self.build_dir(path='') as dir:
+    def test_get_path_on_none_path(self):
+        with self.build_dir(path=None) as dir:
             self.assertEqual(dir.get_path(), SEPARATOR)  
 
     def test_get_name(self):
         with self.build_dir() as dir:
             self.assertEqual(dir.get_name(), DIR_NAME)
 
-    def test_get_name_on_empty_path(self):
-        with self.build_dir(path='') as dir:
+    def test_get_name_on_none_path(self):
+        with self.build_dir(path=None) as dir:
             self.assertIsNone(dir.get_name())
 
     def test_get_container_name(self):
@@ -3057,7 +3057,7 @@ class TestAzureBlobDir(unittest.TestCase):
                 
     def test_transfer_to_as_destination(self):
         # Create a "remote" temporary dictionary.
-        tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, 'TMP_DIR')
+        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, 'TMP_DIR')
         os.mkdir(tmp_dir_path)
         # Copy the local dir's contents into this
         # "remote" tmp directory.
