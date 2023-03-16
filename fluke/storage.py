@@ -489,6 +489,20 @@ class _NonLocalFile(_File, _ABC):
             self.__cache.set_size(size=size)
 
 
+    def __new__(cls, *args, **kwargs) -> '_NonLocalFile':
+        '''
+        Creates an instance of this class.
+
+        :note: This method defines field ``__handler`` \
+            so that throwing an exception before invoking \
+            the parent constructor does not result in a \
+            second exception being thrown due to ``__del__``.
+        '''
+        instance = super().__new__(cls)
+        instance.__handler = None
+        return instance
+
+
     def __enter__(self) -> '_NonLocalFile':
         '''
         Enter the runtime context related to this instance.
@@ -664,6 +678,10 @@ class AWSS3File(_CloudFile):
         does not exist.
     :raises InvalidFileError: The provided path \
         points to a directory.
+
+    :note: The provided path must not begin with a separator.
+        - Wrong: ``/path/to/file.txt``
+        - Right: ``path/to/file.txt``
     '''
 
     def __init__(
@@ -690,11 +708,21 @@ class AWSS3File(_CloudFile):
             does not exist.
         :raises InvalidFileError: The provided path \
             points to a directory.
+
+        :note: The provided path must not begin with a separator.
+            - Wrong: ``/path/to/file.txt``
+            - Right: ``path/to/file.txt``
         '''
+        # Validate path.
+        sep = _infer_sep(path=path)
+        if path.startswith(sep):
+            raise _IPE(path=path)
+        
+        # Instantiate a connection handler.
         aws_handler = _AWSClientHandler(
             auth=auth,
-            bucket=bucket
-        )
+            bucket=bucket)
+        
         super().__init__(
             path=path,
             cache=cache,
@@ -769,6 +797,10 @@ class AzureBlobFile(_CloudFile):
         does not exist.
     :raises InvalidFileError: The provided path \
         points to a directory.
+
+    :note: The provided path must not begin with a separator.
+        - Wrong: ``/path/to/file.txt``
+        - Right: ``path/to/file.txt``
     '''
 
     def __init__(
@@ -795,11 +827,22 @@ class AzureBlobFile(_CloudFile):
             does not exist.
         :raises InvalidFileError: The provided path \
             points to a directory.
+
+        :note: The provided path must not begin with a separator.
+            - Wrong: ``/path/to/file.txt``
+            - Right: ``path/to/file.txt``
         '''
+        # Validate path.
+        sep = _infer_sep(path=path)
+        if path.startswith(sep):
+            raise _IPE(path=path)
+
+        # Instantiate a connection handler.
         azr_handler = _AzureClientHandler(
             auth=auth,
             container=container)
         
+        # Infer storage account.
         self.__storage_account = auth._get_storage_account()
         
         super().__init__(
@@ -2029,6 +2072,20 @@ class _NonLocalDir(_Directory, _ABC):
             else None
     
 
+    def __new__(cls, *args, **kwargs) -> '_NonLocalDir':
+        '''
+        Creates an instance of this class.
+
+        :note: This method defines field ``__handler`` \
+            so that throwing an exception before invoking \
+            the parent constructor does not result in a \
+            second exception being thrown due to ``__del__``.
+        '''
+        instance = super().__new__(cls)
+        instance.__handler = None
+        return instance
+    
+
     def _get_cache_manager(self) -> _typ.Optional[_CacheManager]:
         '''
         Returns the directory's cache manager.
@@ -2380,7 +2437,9 @@ class AWSS3Dir(_CloudDir):
         for authenticating with AWS.
     :param str bucket: The name of the bucket in which \
         the directory resides.
-    :param str path: The path pointing to the directory.
+    :param str | None path: The path pointing to the directory. \
+        If ``None``, then the whole bucket is considered. \
+        Defaults to ``None``.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
         access. Defaults to ``False``.
@@ -2391,12 +2450,16 @@ class AWSS3Dir(_CloudDir):
 
     :raises InvalidPathError: The provided path \
         does not exist.
+
+    :note: The provided path must not begin with a separator.
+        - Wrong: ``/path/to/dir/``
+        - Right: ``path/to/dir/``
     '''
     def __init__(
         self,
         auth: _AWSAuth,
         bucket: str,
-        path: str,
+        path: _typ.Optional[str] = None,
         cache: bool = False,
         create_if_missing: bool = False
     ):
@@ -2408,7 +2471,9 @@ class AWSS3Dir(_CloudDir):
             for authenticating with AWS.
         :param str bucket: The name of the bucket in which \
             the directory resides.
-        :param str path: The path pointing to the directory.
+        :param str | None path: The path pointing to the directory. \
+            If ``None``, then the whole bucket is considered. \
+            Defaults to ``None``.
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
             access. Defaults to ``True``.
@@ -2419,8 +2484,20 @@ class AWSS3Dir(_CloudDir):
 
         :raises InvalidPathError: The provided path \
             does not exist.
+
+        :note: The provided path must not begin with a separator.
+            - Wrong: ``/path/to/dir/``
+            - Right: ``path/to/dir/``
         '''
-        # Connect to S3 resource.
+        # Validate path.
+        if path is None:
+            path = ''
+        else:
+            sep = _infer_sep(path=path)
+            if path.startswith(sep):
+                raise _IPE(path=path)
+            
+        # Instantiate a connection handler.
         aws_handler = _AWSClientHandler(
             auth=auth,
             bucket=bucket)
@@ -2616,7 +2693,9 @@ class AzureBlobDir(_CloudDir):
         for authenticating with Microsoft Azure.
     :param str container: The name of the container in which \
         the directory resides.
-    :param str path: The path pointing to the directory.
+    :param str | None path: The path pointing to the directory. \
+        If ``None``, then the whole container is considered. \
+        Defaults to ``None``.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
         access. Defaults to ``False``.
@@ -2629,12 +2708,16 @@ class AzureBlobDir(_CloudDir):
         does not exist.
     :raises InvalidDirectoryError: The provided path \
         does not point to a directory.
+
+    :note: The provided path must not begin with a separator.
+        - Wrong: ``/path/to/dir/``
+        - Right: ``path/to/dir/``
     '''
     def __init__(
         self,
         auth: _AzureAuth,
         container: str,
-        path: str,
+        path: _typ.Optional[str] = None,
         cache: bool = False,
         create_if_missing: bool = False
     ):
@@ -2646,7 +2729,9 @@ class AzureBlobDir(_CloudDir):
             for authenticating with Microsoft Azure.
         :param str container: The name of the container in which \
             the directory resides.
-        :param str path: The path pointing to the directory.
+        :param str | None path: The path pointing to the directory. \
+            If ``None``, then the whole container is considered. \
+            Defaults to ``None``.
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
             access. Defaults to ``True``.
@@ -2659,17 +2744,26 @@ class AzureBlobDir(_CloudDir):
             does not exist.
         :raises InvalidDirectoryError: The provided path \
             does not point to a directory.
-        '''
-        # Connect to Azure blob container.
+
+        :note: The provided path must not begin with a separator.
+            - Wrong: ``/path/to/dir/``
+            - Right: ``path/to/dir/``
+        '''        
+        # Validate path.
+        if path is None:
+            path = '/'
+        else:
+            sep = _infer_sep(path=path)
+            if path.startswith(sep):
+                raise _IPE(path=path)
+            
+        # Instantiate a connection handler.
         azr_handler = _AzureClientHandler(
             auth=auth,
             container=container)
         
+        # Infer storage account.
         self.__storage_account = auth._get_storage_account()
-
-        # Re-format path.
-        if path == '':
-            path = '/'
 
         super().__init__(
             path=path,
