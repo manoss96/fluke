@@ -72,7 +72,7 @@ class _File(_ABC):
         self.__separator = _infer_sep(path=path)
         self.__ingester = ingester
         self.__name = path.split(self.__separator)[-1]
-        self.__metadata = None
+        self.__metadata = dict()
 
 
     def get_path(self) -> str:
@@ -89,13 +89,12 @@ class _File(_ABC):
         return self.__separator
 
 
-    def get_metadata(self) -> _typ.Optional[dict[str, str]]:
+    def get_metadata(self) -> dict[str, str]:
         '''
         Returns a dictionary containing any \
-        metadata associated with the file. \
-        Returns ``None`` if no metadata are found.
+        metadata associated with the file.
         '''
-        return self.__metadata
+        return dict(self.__metadata)
 
 
     def set_metadata(self, metadata: dict[str, str]) -> None:
@@ -120,7 +119,7 @@ class _File(_ABC):
             if not isinstance(val, str):
                 raise _NSMVE(val=val)
 
-        self.__metadata = metadata
+        self.__metadata = dict(metadata)
 
 
     def get_name(self) -> str:
@@ -441,14 +440,11 @@ class _NonLocalFile(_File, _ABC):
                 print(f"Operation unsuccessful: {error.get_message()}")
 
 
-    def _get_client(self) -> _typ.Any:
+    def _get_handler(self) -> _typ.Any:
         '''
-        Returns the underlying client of this \
-        instance's ``ClientHandler`` instance.
+        Returns this instance's ``ClientHandler``.
         '''
-        return self.__handler.get_client() \
-            if self.__handler is not None \
-            else None
+        return self.__handler
 
 
     def _get_metadata_from_cache(self) -> _typ.Optional[dict[str, str]]:
@@ -489,9 +485,19 @@ class _NonLocalFile(_File, _ABC):
             self.__cache.set_size(size=size)
 
 
-    def __new__(cls, *args, **kwargs) -> '_NonLocalFile':
+    def __new__(
+        cls,
+        handler: _typ.Optional[_typ.Any] = None,
+        cache: _typ.Optional[_Cache] = None,
+        *args,
+        **kwargs
+    ) -> '_NonLocalFile':
         '''
         Creates an instance of this class.
+
+        :param Any | None handler: A ``ClientHandler`` instance. \
+            Defaults to ``None``.
+        :param Cache | None handler: A ``Cache`` instance.
 
         :note: This method defines field ``__handler`` \
             so that throwing an exception before invoking \
@@ -499,7 +505,8 @@ class _NonLocalFile(_File, _ABC):
             second exception being thrown due to ``__del__``.
         '''
         instance = super().__new__(cls)
-        instance.__handler = None
+        instance.__handler = handler
+        instance.__cache = cache
         return instance
 
 
@@ -515,14 +522,6 @@ class _NonLocalFile(_File, _ABC):
         Exit the runtime context related to this object. 
         '''
         self.close()
-
-
-    @_absmethod
-    def _get_size_impl(self) -> int:
-        '''
-        Returns the size of the file in bytes.
-        '''
-        pass
 
 
 class RemoteFile(_NonLocalFile):
@@ -567,15 +566,19 @@ class RemoteFile(_NonLocalFile):
         :raises InvalidFileError: The provided path \
             points to a directory.
         '''
-        ssh_handler = _SSHClientHandler(auth=auth)
+        # Instantiate a connection handler,
+        # if none has been set.
+        if (ssh_handler := self._get_handler()) is None:
+            ssh_handler = _SSHClientHandler(auth=auth)
+            self.__host = auth.get_credentials()['hostname']
+
         super().__init__(
             path=path,
             cache=cache,
             handler=ssh_handler,
             ingester=_RemoteIngester(ssh_handler))
+        
         sftp = self._get_client()
-
-        self.__host = auth.get_credentials()['hostname']
 
         from stat import S_ISDIR as _is_dir
 
@@ -606,13 +609,23 @@ class RemoteFile(_NonLocalFile):
         Returns the file's URI.
         '''
         return f"sftp://{self.__host}/{self.get_path().lstrip(self._get_separator())}"
+    
 
-
-    def _get_size_impl(self) -> int:
-        '''
-        Returns the size of the file in bytes.
-        '''
-        return self._get_client().stat(path=self.get_path()).st_size
+    @classmethod
+    def _create_file(
+        cls,
+        path: str,
+        host: str,
+        handler: _typ.Any,
+        cache: _typ.Optional[_Cache],
+        metadata: _typ.Optional[dict[str, str]]
+    ) -> 'RemoteFile':
+        instance = cls.__new__(cls, handler=handler, cache=cache)
+        _File.__init__(instance, path=path, ingester=_RemoteIngester(handler=handler))
+        instance.set_metadata(metadata=metadata)
+        instance.__cache = cache
+        instance.__host = host
+        return instance
 
 
     def __del__(self) -> None:
@@ -642,7 +655,7 @@ class _CloudFile(_NonLocalFile, _ABC):
         '''
         if self.is_cacheable():
             metadata = self._get_metadata_from_cache()
-            if metadata is None:
+            if not metadata:
                 metadata = self._load_metadata_impl()
                 self._cache_metadata(metadata=metadata) 
         else:
@@ -718,10 +731,12 @@ class AWSS3File(_CloudFile):
         if path.startswith(sep):
             raise _IPE(path=path)
         
-        # Instantiate a connection handler.
-        aws_handler = _AWSClientHandler(
-            auth=auth,
-            bucket=bucket)
+        # Instantiate a connection handler,
+        # if none has been set.
+        if (aws_handler := self._get_handler()) is None:
+            aws_handler = _AWSClientHandler(
+                auth=auth,
+                bucket=bucket)
         
         super().__init__(
             path=path,
@@ -750,14 +765,6 @@ class AWSS3File(_CloudFile):
         Returns the object's URI.
         '''
         return f"s3://{self._get_client().name}{self._get_separator()}{self.get_path()}"
-
-
-    def _get_size_impl(self) -> int:
-        '''
-        Returns the size of the file in bytes.
-        '''
-        return self._get_client().Object(
-            key=self.get_path()).content_length
 
 
     def _load_metadata_impl(self) -> dict[str, str]:
@@ -837,10 +844,12 @@ class AzureBlobFile(_CloudFile):
         if path.startswith(sep):
             raise _IPE(path=path)
 
-        # Instantiate a connection handler.
-        azr_handler = _AzureClientHandler(
-            auth=auth,
-            container=container)
+        # Instantiate a connection handler,
+        # if none has been set.
+        if (azr_handler := self._get_handler()) is None:
+            azr_handler = _AzureClientHandler(
+                auth=auth,
+                container=container)
         
         # Infer storage account.
         self.__storage_account = auth._get_storage_account()
@@ -889,14 +898,6 @@ class AzureBlobFile(_CloudFile):
         return uri
 
 
-    def _get_size_impl(self) -> int:
-        '''
-        Returns the size of the file in bytes.
-        '''
-        return self._get_client().download_blob(
-            blob=self.get_path()).size
-
-
     def _load_metadata_impl(self) -> dict[str, str]:
         '''
         Loads any metadata associated with the file, \
@@ -939,7 +940,7 @@ class _Directory(_ABC):
         self.__path = f"{path.rstrip(sep)}{sep}" if path != '' else path
         self.__separator = sep
         self.__ingester = ingester
-        self.__metadata: dict[str, _typ.Optional[dict[str, str]]] = {}
+        self.__metadata: dict[str, dict[str, str]] = dict()
 
 
     def get_path(self) -> str:
@@ -959,7 +960,7 @@ class _Directory(_ABC):
         return name if name != "" else None
     
 
-    def get_metadata(self, file_path: str) -> _typ.Optional[dict[str, str]]:
+    def get_metadata(self, file_path: str) -> dict[str, str]:
         '''
         Returns a dictionary containing any metadata \
             associated with the file in question.
@@ -973,7 +974,7 @@ class _Directory(_ABC):
         '''
         if not self._is_file(path=file_path):
             raise _IFE(path=file_path)
-        return self.__metadata.get(self._relativize(path=file_path), None)
+        return dict(self.__metadata.get(self._relativize(path=file_path), dict()))
 
 
     def set_metadata(self, file_path: str, metadata: dict[str, str]) -> None:
@@ -1006,7 +1007,7 @@ class _Directory(_ABC):
         if not self._is_file(path=file_path):
             raise _IFE(path=file_path)
 
-        self.__metadata[self._relativize(path=file_path)] = metadata
+        self.__metadata[self._relativize(path=file_path)] = dict(metadata)
 
 
     def count(self, recursively: bool = False) -> int:
@@ -1200,7 +1201,7 @@ class _Directory(_ABC):
             containing the metadata that are to be \
             associated with the file.
         '''
-        self.__metadata.update({ file_path: None })
+        self.__metadata.update({ file_path: dict() })
 
         if metadata is not None:
             self.set_metadata(file_path=file_path, metadata=metadata)
@@ -1281,33 +1282,6 @@ class _Directory(_ABC):
 
 
     @_absmethod
-    def _iterate_contents_impl(
-        self,
-        recursively: bool = False,
-        show_abs_path: bool = False
-    ) -> _typ.Iterator[str]:
-        '''
-        Returns an iterator capable of going through the paths \
-        ofthe dictionary's contents as strings.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Indicates whether it \
-            should be displayed the absolute or the relative \
-            path of the contents. Defaults to ``False``.
-
-        :note: The resulting iterator may vary depending on the \
-            value of parameter ``recursively``.
-        '''
-        pass
-
-
-    @_absmethod
     def _load_from_source(
         self,
         file_name: str,
@@ -1364,18 +1338,6 @@ class _Directory(_ABC):
         :param str path: Either the absolute path or the \
             path relative to the directory of the file in \
             question.
-        '''
-        pass
-
-
-    @_absmethod
-    def _get_file_size(path: str) -> int:
-        '''
-        Returns the size of the file that corresponds \
-        to the provided path in bytes.
-
-        :param str path: The absolute path pointing to \
-            the file in question.
         '''
         pass
 
@@ -1480,6 +1442,10 @@ class LocalDir(_Directory):
             size += self._get_file_size(file_path)
         
         return size
+    
+
+    def get_file(self, path):
+        return LocalFile.__new__(path)
 
     
     def transfer_to(
@@ -2038,13 +2004,13 @@ class _NonLocalDir(_Directory, _ABC):
             return iterable
         
         if recursively and self.__cache_manager.is_recursive_cache_empty():
-            for path in self._iterate_contents_impl(
+            for path in self._get_handler().iterate_contents(
                 recursively=True,
                 show_abs_path=True
             ):
                 self.__cache_manager.add_to_cache(path=path)
         elif not recursively and self.__cache_manager.is_top_level_empty():
-            for path in self._iterate_contents_impl(
+            for path in self._get_handler().iterate_contents(
                 recursively=False,
                 show_abs_path=True
             ):
@@ -2061,15 +2027,12 @@ class _NonLocalDir(_Directory, _ABC):
 
         return iterable
 
-    
-    def _get_client(self) -> _typ.Any:
+
+    def _get_handler(self) -> _typ.Any:
         '''
-        Returns the underlying client of this \
-        instance's ``ClientHandler`` instance.
+        Returns this instance's ``ClientHandler``.
         '''
-        return self.__handler.get_client() \
-            if self.__handler is not None \
-            else None
+        return self.__handler
     
 
     def __new__(cls, *args, **kwargs) -> '_NonLocalDir':
@@ -2209,6 +2172,22 @@ class RemoteDir(_NonLocalDir):
         Returns the directory's URI.
         '''
         return f"sftp://{self.__host}/{self.get_path().lstrip(self._get_separator())}"
+    
+
+    def get_file(self, file_path: str) -> RemoteFile:
+        '''
+        '''
+        file_path = _join_paths(
+            self._get_separator(),
+            self.get_path(),
+            self._relativize(file_path))
+        return RemoteFile._create_file(
+            path=file_path,
+            host=self.get_hostname(),
+            handler=self._get_handler(),
+            cache=self._get_cache_manager().get_cache(file_path)
+                if self.is_cacheable() else None,
+            metadata=self.get_metadata(file_path))
 
 
     def path_exists(self, path: str) -> bool:
@@ -2229,88 +2208,6 @@ class RemoteDir(_NonLocalDir):
         except FileNotFoundError:
             return False
         return True
-
-
-    def _iterate_contents_impl(
-        self,
-        recursively: bool = False,
-        show_abs_path: bool = False
-    ) -> _typ.Iterator[str]:
-        '''
-        Returns an iterator capable of going through the paths \
-        ofthe dictionary's contents as strings.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Indicates whether it \
-            should be displayed the absolute or the relative \
-            path of the contents. Defaults to ``False``.
-
-        :note: The resulting iterator may vary depending on the \
-            value of parameter ``recursively``.
-        '''
-
-        from stat import S_ISDIR as _is_dir
-
-        sftp: _prmk.SFTPClient = self._get_client()
-
-        sep = self._get_separator()
-
-        if recursively:
-
-            def filter_obj(
-                sftp: _prmk.SFTPClient,
-                attr: _prmk.SFTPAttributes,
-                parent_dir: str
-            ):
-                abs_path = _join_paths(
-                    sep,
-                    parent_dir,
-                    attr.filename)
-
-                if _is_dir(attr.st_mode):
-                    try:
-                        for sub_attr in sftp.listdir_attr(path=abs_path):
-                            yield from filter_obj(
-                                sftp=sftp,
-                                attr=sub_attr,
-                                parent_dir=abs_path)
-                    except:
-                        pass
-                else:
-                    yield abs_path
-
-            for attr in sftp.listdir_attr(path=self.get_path()):
-                for file_path in filter_obj(
-                    sftp=sftp,
-                    attr=attr,
-                    parent_dir=self.get_path()
-                ):
-                    yield (file_path if show_abs_path \
-                        else self._relativize(path=file_path))
-        else:
-            for attr in sftp.listdir_attr(path=self.get_path()):
-                path = attr.filename
-                if _is_dir(attr.st_mode):
-                    path += sep
-                yield _join_paths(sep, self.get_path(), path) \
-                    if show_abs_path else path
-
-
-    def _get_file_size(self, file_path: str) -> int:
-        '''
-        Returns the size of the file that corresponds \
-        to the provided path in bytes.
-
-        :param str file_path: The absolute path pointing \
-            to the file in question.
-        '''
-        return self._get_client().stat(path=file_path).st_size
 
 
     def _is_file(self, path: str) -> bool:
@@ -2563,94 +2460,6 @@ class AWSS3Dir(_CloudDir):
         return True
 
 
-    def _iterate_contents_impl(
-        self,
-        recursively: bool = False,
-        show_abs_path: bool = False
-    ) -> _typ.Iterator[str]:
-        '''
-        Returns an iterator capable of going through the paths \
-        ofthe dictionary's contents as strings.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Indicates whether it \
-            should be displayed the absolute or the relative \
-            path of the contents. Defaults to ``False``.
-
-        :note: The resulting iterator may vary depending on the \
-            value of parameter ``recursively``.
-        '''
-
-        paginator = self._get_client().meta.client.get_paginator('list_objects')
-
-        delimiter = '' if recursively else '/'
-
-        def page_iterator():
-            yield from paginator.paginate(
-                Bucket=self.get_bucket_name(),
-                Prefix=self.get_path(),
-                Delimiter=delimiter
-            )
-
-        def object_iterator(response):
-            for obj in response.get('Contents', []):
-                file_path = obj['Key']
-                yield file_path if show_abs_path else \
-                    self._relativize(file_path)
-                
-        if recursively:
-            for response in page_iterator():
-                yield from object_iterator(response)
-        else:
-
-            def dir_iterator(response):
-                for dir in response.get('CommonPrefixes', []):
-                    dir_path = dir['Prefix']
-                    yield dir_path if show_abs_path else \
-                        self._relativize(dir_path)
-                    
-            for response in page_iterator():
-                        
-                obj_iter = object_iterator(response)
-                dir_iter = dir_iterator(response)
-
-                obj = next(obj_iter, None)
-                dir = next(dir_iter, None)
-
-                while True:
-                    if obj is None and dir is None:
-                        break
-                    elif obj is None and dir is not None:
-                        yield dir
-                        dir = next(dir_iter, None)
-                    elif obj is not None and dir is None:
-                        yield obj
-                        obj = next(obj_iter, None)
-                    elif obj > dir:
-                        yield dir
-                        dir = next(dir_iter, None)
-                    else:
-                        yield obj
-                        obj = next(obj_iter, None)
-
-
-    def _get_file_size(self, file_path: str) -> int:
-        '''
-        Returns the size of the file that corresponds \
-        to the provided path in bytes.
-
-        :param str file_path: The absolute path pointing \
-            to the file in question.
-        '''
-        return self._get_client().Object(file_path).content_length
-
-
     def _load_metadata_impl(self, file_path: str) -> dict[str, str]:
         '''
         Loads any metadata associated with the file, \
@@ -2825,69 +2634,6 @@ class AzureBlobDir(_CloudDir):
         container: _ContainerClient = self._get_client()
         with container.get_blob_client(blob=path) as blob:
             return blob.exists()
-        
-
-    def _iterate_contents_impl(
-        self,
-        recursively: bool = False,
-        show_abs_path: bool = False
-    ) -> _typ.Iterator[str]:
-        '''
-        Returns an iterator capable of going through the paths \
-        ofthe dictionary's contents as strings.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Indicates whether it \
-            should be displayed the absolute or the relative \
-            path of the contents. Defaults to ``False``.
-
-        :note: The resulting iterator may vary depending on the \
-            value of parameter ``recursively``.
-        '''
-        client: _ContainerClient = self._get_client()
-
-        if recursively:
-            '''
-            NOTE:
-                Due to certain storage accounts having the
-                hierarchical namespace feature enabled,
-                virtual folders may appear as ordinary
-                blobs. For this reason, consider that any
-                blob whose size is equal to zero is a virtual folder.
-
-                Issue: https://github.com/Azure/azure-sdk-for-python/issues/29026
-            '''
-            iterable = filter(
-                lambda p: p['size'] > 0,
-                client.list_blobs(
-                    name_starts_with=self.get_path()))
-        else:
-            iterable = client.walk_blobs(
-                name_starts_with=self.get_path(),
-                delimiter=self._get_separator())
-                    
-        for properties in iterable:
-            if show_abs_path:
-                yield properties['name']
-            else:
-                yield self._relativize(path=properties['name'])
-
-
-    def _get_file_size(self, file_path: str) -> int:
-        '''
-        Returns the size of the file that corresponds \
-        to the provided path in bytes.
-
-        :param str file_path: The absolute path pointing \
-            to the file in question.
-        '''
-        return self._get_client().download_blob(blob=file_path).size
 
 
     def _load_metadata_impl(self, file_path: str) -> dict[str, str]:

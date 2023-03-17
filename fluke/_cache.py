@@ -1,6 +1,51 @@
 from typing import Optional as _Optional
 
 
+class Cache():
+    '''
+    A class whose instances represent cached \
+    information about a file.
+    '''
+
+    def __init__(self):
+        '''
+        A class whose instances represent cached \
+        information about a file.
+        '''
+        self.__size: _Optional[int] = None
+        self.__metadata: _Optional[dict[str, str]] = None
+
+
+    def get_size(self) -> _Optional[int]:
+        '''
+        Returns the size of the file. Returns ``None`` \
+        if no size has been cached.
+        '''
+        return self.__size
+
+
+    def set_size(self, size: int) -> None:
+        '''
+        Sets the size of the file.
+        '''
+        self.__size = size
+
+
+    def get_metadata(self) -> _Optional[dict[str, str]]:
+        '''
+        Returns a dictionary containing the metadata of the file. \
+        Returns ``None`` if no metadata has been cached.
+        '''
+        return dict(self.__metadata)
+
+
+    def set_metadata(self, metadata: dict[str, str]) -> None:
+        '''
+        Sets the metadata of the file.
+        '''
+        self.__metadata = dict(metadata)
+
+
 class CacheManager():
     '''
     A class used in managing ``Cache`` instances.
@@ -145,44 +190,15 @@ class CacheManager():
             iterable = (key for key in top_level)
 
         return iterable
+        
 
+    def _get_cache(self, file_path: str) -> _Optional[Cache]:
+        '''
+        Returns a reference to the file's ``Cache`` instance, \
+        if said instance exists, else returns ``None``.
 
-class Cache():
-    '''
-    A class whose instances represent cached \
-    information about a file.
-    '''
-
-    def __init__(self):
+        :param str file_path: The file's absolute path.
         '''
-        A class whose instances represent cached \
-        information about a file.
-        '''
-        self.__size: _Optional[int] = None
-        self.__metadata: _Optional[dict[str, str]] = None
-
-    def get_size(self) -> _Optional[int]:
-        '''
-        Returns the size of the file. Returns ``None`` \
-        if no size has been cached.
-        '''
-        return self.__size
-
-    def set_size(self, size: int) -> None:
-        '''
-        Sets the size of the file.
-        '''
-        self.__size = size
-
-    def get_metadata(self) -> _Optional[dict[str, str]]:
-        '''
-        Returns a dictionary containing the metadata of the file. \
-        Returns ``None`` if no metadata has been cached.
-        '''
-        return self.__metadata
-
-    def set_metadata(self, metadata: dict[str, str]) -> None:
-        '''
-        Sets the metadata of the file.
-        '''
-        self.__metadata = metadata
+        if file_path in self.__cache:
+            return self.__cache[file_path]
+    
