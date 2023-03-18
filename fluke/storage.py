@@ -20,7 +20,6 @@ from abc import ABC as _ABC
 from abc import abstractmethod as _absmethod
 
 
-import paramiko as _prmk
 from tqdm import tqdm as _tqdm
 from azure.storage.blob import ContainerClient as _ContainerClient
 
@@ -348,7 +347,7 @@ class _NonLocalFile(_File, _ABC):
         Returns ``True`` if file has been defined \
         as cacheable, else returns ``False``.
         '''
-        return self.__handler.is_cacheable()
+        return self._get_handler().is_cacheable()
 
 
     def purge(self) -> None:
@@ -356,7 +355,7 @@ class _NonLocalFile(_File, _ABC):
         If cacheable, then purges the file's cache, \
         else does nothing.
         '''
-        self.__handler.purge()
+        self._get_handler().purge()
 
 
     def open(self) -> None:
@@ -804,6 +803,9 @@ class _Directory(_ABC):
         '''
         sep = _infer_sep(path)
         self.__path = f"{path.rstrip(sep)}{sep}" if path != '' else path
+        self.__name = name if (
+                name := self.__path.rstrip(sep).split(sep)[-1]
+            ) != '' else None
         self.__separator = sep
         self.__handler = handler
         self.__ingester = ingester
@@ -822,9 +824,7 @@ class _Directory(_ABC):
         Returns the name of the directory, \
         or ``None`` if it's the root directory.
         '''
-        sep = self.__separator
-        name = self.__path.rstrip(sep).split(sep)[-1]
-        return name if name != "" else None
+        return self.__name
     
 
     def get_metadata(self, file_path: str) -> dict[str, str]:
@@ -839,7 +839,7 @@ class _Directory(_ABC):
         :raises InvalidFileError: The provided path does \
             not point to a file within the directory.
         '''
-        if not self._is_file(path=file_path):
+        if not (self.path_exists(file_path) and self.is_file(file_path)):
             raise _IFE(path=file_path)
         return dict(self.__metadata.get(self._relativize(path=file_path), dict()))
 
@@ -871,7 +871,7 @@ class _Directory(_ABC):
             if not isinstance(val, str):
                 raise _NSMVE(val=val)
 
-        if not self._is_file(path=file_path):
+        if not (self.path_exists(file_path) and self.is_file(file_path)):
             raise _IFE(path=file_path)
 
         self.__metadata[self._relativize(path=file_path)] = dict(metadata)
@@ -885,64 +885,24 @@ class _Directory(_ABC):
         :param str path: Either an absolute path or a \
             path relative to the directory.
         '''
-        return self.__handler.path_exists(_join_paths(
+        return self._get_handler().path_exists(_join_paths(
             self._get_separator(),
             self.get_path(),
             self._relativize(path=path)))
+    
 
-
-    def count(self, recursively: bool = False) -> int:
+    def is_file(self, path: str) -> bool:
         '''
-        Returns the total number of files within \
-        within the directory.
+        Returns ``True`` if the provided path points \
+        to a file, else returns ``False``.
 
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-
-        :note: The resulting number may vary depending on the value \
-            of parameter ``recursively``.
+        :param str file_path: The absolute path of the \
+            file in question.
         '''
-        count = 0
-        
-        for _ in self._get_contents_iterable(
-            recursively=recursively,
-            include_dirs=True,
-            show_abs_path=True
-        ):
-            count += 1
-
-        return count
-
-
-    def ls(self, recursively: bool = False, show_abs_path: bool = False) -> None:
-        '''
-        Lists the contents of the directory.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Determines whether to include the \
-            contents' absolute path or their path relative to this directory. \
-            Defaults to ``False``.
-
-        :note: The resulting output may vary depending on the value \
-            of parameter ``recursively``.
-        '''
-        for file in self._get_contents_iterable(
-            recursively=recursively,
-            include_dirs=True,
-            show_abs_path=show_abs_path
-        ):
-            print(file)
+        return self._get_handler().is_file(_join_paths(
+            self._get_separator(),
+            self.get_path(),
+            self._relativize(path=path)))
 
 
     def iterate_contents(
@@ -968,7 +928,8 @@ class _Directory(_ABC):
         :note: The resulting iterator may vary depending on the \
             value of parameter ``recursively``.
         '''
-        return self._get_contents_iterable(
+        return self._get_handler().iterate_contents(
+            dir_path=self.get_path(),
             recursively=recursively,
             include_dirs=True,
             show_abs_path=show_abs_path)
@@ -996,11 +957,92 @@ class _Directory(_ABC):
         :note: The resulting list may vary depending on the value \
             of parameter ``recursively``.
         '''
-        return list(self._get_contents_iterable(
+        return list(self.iterate_contents(
             recursively=recursively,
-            include_dirs=True,
             show_abs_path=show_abs_path))
     
+
+    def ls(self, recursively: bool = False, show_abs_path: bool = False) -> None:
+        '''
+        Lists the contents of the directory.
+
+        :param bool recursively: Indicates whether the directory \
+            is to be scanned recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+        :param bool show_abs_path: Determines whether to include the \
+            contents' absolute path or their path relative to this directory. \
+            Defaults to ``False``.
+
+        :note: The resulting output may vary depending on the value \
+            of parameter ``recursively``.
+        '''
+        for entity in self.iterate_contents(
+            recursively=recursively,
+            show_abs_path=show_abs_path
+        ):
+            print(entity)
+
+
+    def count(self, recursively: bool = False) -> int:
+        '''
+        Returns the total number of files within \
+        within the directory.
+
+        :param bool recursively: Indicates whether the directory \
+            is to be scanned recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+
+        :note: The resulting number may vary depending on the value \
+            of parameter ``recursively``.
+        '''
+        count = 0
+
+        for _ in self.iterate_contents(
+            recursively=recursively,
+            show_abs_path=True
+        ):
+            count += 1
+
+        return count
+    
+
+    def get_size(self, recursively: bool = False) -> int:
+        '''
+        Returns the total sum of the sizes of all files \
+        within the directory, in bytes.
+
+        :param bool recursively: Indicates whether the directory \
+            is to be scanned recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+
+        :note: The resulting size may vary depending on the value \
+            of parameter ``recursively``.
+        '''
+        handler = self._get_handler()
+        size = 0
+
+        for file_path in handler.iterate_contents(
+            dir_path=self.get_path(),
+            recursively=recursively,
+            include_dirs=False,
+            show_abs_path=True
+        ):
+            size += handler.get_file_size(file_path)
+
+        return size
+
 
     def _get_separator(self) -> str:
         '''
@@ -1009,45 +1051,18 @@ class _Directory(_ABC):
         return self.__separator
     
 
-    def _get_contents_iterable(
-        self,
-        recursively: bool,
-        include_dirs: bool,
-        show_abs_path: bool
-    ) -> _typ.Iterator[str]:
+    def _get_handler(self) -> _ClientHandler:
         '''
-        Returns an iterator over the dictionary's contents.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories.
-        :param bool include_dirs: Indicates whether to include any \
-            directories in the results in case ``recursively`` is \
-            set to ``False``.
-        :param bool show_abs_path: Determines whether to include the \
-            contents' absolute path or their path relative to this directory.
+        Returns this instance's ``ClientHandler``.
         '''
-        if recursively:
-            return self._iterate_contents_impl(
-                recursively=True,
-                show_abs_path=show_abs_path)
+        return self.__handler
+    
 
-        iterable = self._iterate_contents_impl(
-            recursively=False,
-            show_abs_path=show_abs_path)
-                 
-        if not include_dirs:
-            iterable = filter(
-                lambda path: self._is_file(path=path),
-                self._iterate_contents_impl(
-                    recursively=False,
-                    show_abs_path=show_abs_path))
-
-        return iterable
+    def _get_ingester(self) -> _Ingester:
+        '''
+        Returns the class's ``Ingester`` instance.
+        '''
+        return self.__ingester
     
 
     def _relativize(self, path: str) -> str:
@@ -1058,13 +1073,6 @@ class _Directory(_ABC):
         :param str path: The provided path.
         '''
         return path.removeprefix(self.__path).lstrip(self._get_separator())
-
-
-    def _get_ingester(self) -> _Ingester:
-        '''
-        Returns the class's ``Ingester`` instance.
-        '''
-        return self.__ingester
     
 
     def _add_file_to_metadata_dict(
@@ -1086,32 +1094,26 @@ class _Directory(_ABC):
 
         if metadata is not None:
             self.set_metadata(file_path=file_path, metadata=metadata)
+
+
+    def __new__(cls, *args, **kwargs) -> '_Directory':
+        '''
+        Creates an instance of this class.
+
+        :note: This method defines field ``__handler`` \
+            so that throwing an exception before invoking \
+            the parent constructor does not result in a \
+            second exception being thrown due to ``__del__``.
+        '''
+        instance = super().__new__(cls)
+        instance.__handler = None
+        return instance
     
 
     @_absmethod
     def get_uri(self) -> str:
         '''
         Returns the directory's URI.
-        '''
-        pass
-
-
-    @_absmethod
-    def get_size(self, recursively: bool = False) -> int:
-        '''
-        Returns the total sum of the sizes of all files \
-        within the directory, in bytes.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-
-        :note: The resulting size may vary depending on the value \
-            of parameter ``recursively``.
         '''
         pass
 
@@ -1257,34 +1259,6 @@ class LocalDir(_Directory):
         sep = self._get_separator()
         return f"file:///{self.get_path().lstrip(sep)}"
 
-
-    def get_size(self, recursively: bool = False) -> int:
-        '''
-        Returns the total sum of the sizes of all files \
-        within the directory, in bytes.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-
-        :note: The resulting size may vary depending on the value \
-            of parameter ``recursively``.
-        '''
-        size = 0
-
-        for file_path in self._get_contents_iterable(
-            recursively=recursively,
-            include_dirs=False,
-            show_abs_path=True
-        ):
-            size += self._get_file_size(file_path)
-        
-        return size
-    
 
     def get_file(self, path):
         return LocalFile.__new__(path)
@@ -1533,9 +1507,6 @@ class _NonLocalDir(_Directory, _ABC):
     directories or directories in the cloud.
 
     :param str path: The path pointing to the directory.
-    :param bool cache: Indicates whether it is allowed for \
-        any fetched data to be cached for faster subsequent \
-        access.
     :param ClientHandler handler: A ``ClientHandler`` class \
         instance used for interacting with the underlying handler.
     :param Ingester ingester: An ``Ingester`` class instance used \
@@ -1544,7 +1515,6 @@ class _NonLocalDir(_Directory, _ABC):
     def __init__(
         self,
         path: str,
-        cache: bool,
         handler: _ClientHandler,
         ingester: _Ingester
     ):
@@ -1554,16 +1524,12 @@ class _NonLocalDir(_Directory, _ABC):
         directories or directories in the cloud.
 
         :param str path: The path pointing to the directory.
-        :param bool cache: Indicates whether it is allowed for \
-            any fetched data to be cached for faster subsequent \
-            access.
         :param ClientHandler handler: A ``ClientHandler`` class \
             instance used for interacting with the underlying handler.
         :param Ingester ingester: An ``Ingester`` class instance used \
             for ingesting data.
         '''
-        super().__init__(path=path, ingester=ingester)
-        self.__handler = handler
+        super().__init__(path=path, handler=handler, ingester=ingester)
         self.open()
 
 
@@ -1572,7 +1538,7 @@ class _NonLocalDir(_Directory, _ABC):
         Returns ``True`` if directory has been \
         defined as cacheable, else returns ``False``.
         '''
-        return self.__handler.is_cacheable()
+        return self._get_handler().is_cacheable()
 
 
     def purge(self) -> None:
@@ -1580,57 +1546,21 @@ class _NonLocalDir(_Directory, _ABC):
         If cacheable, then purges the directory's cache, \
         else does nothing.
         '''
-        self.__handler.purge()
+        self._get_handler().purge()
 
 
     def open(self) -> None:
         '''
         Opens all necessary connections.
         '''
-        self.__handler.open_connections()
+        self._get_handler().open_connections()
 
 
     def close(self) -> None:
         '''
         Closes all open connections.
         '''
-        self.__handler.close_connections()
-
-
-    def get_size(self, recursively: bool = False) -> int:
-        '''
-        Returns the total sum of the sizes of all files \
-        within the directory, in bytes.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-
-        :note: The resulting size may vary depending on the value \
-            of parameter ``recursively``.
-        '''
-        total_size = 0
-
-        for file_path in self._get_contents_iterable(
-            recursively=recursively,
-            include_dirs=False,
-            show_abs_path=True
-        ):
-            if self.is_cacheable():
-                if (size := self.__cache_manager.get_size(file_path=file_path)) is not None:
-                    total_size += size
-                else:
-                    size = self._get_file_size(file_path)
-                    self.__cache_manager.cache_size(file_path, size)
-                    total_size += size
-            else:
-                total_size += self._get_file_size(file_path)
-
-        return total_size
+        self._get_handler().close_connections()
 
 
     def transfer_to(
@@ -1811,30 +1741,9 @@ class _NonLocalDir(_Directory, _ABC):
                 uri=ingester.get_source(),
                 is_src=True,
                 msg=str(e))
-
-
-    def _get_handler(self) -> _typ.Any:
-        '''
-        Returns this instance's ``ClientHandler``.
-        '''
-        return self.__handler
     
 
-    def __new__(cls, *args, **kwargs) -> '_NonLocalDir':
-        '''
-        Creates an instance of this class.
-
-        :note: This method defines field ``__handler`` \
-            so that throwing an exception before invoking \
-            the parent constructor does not result in a \
-            second exception being thrown due to ``__del__``.
-        '''
-        instance = super().__new__(cls)
-        instance.__handler = None
-        return instance
-    
-
-    def __enter__(self) -> '_NonLocalFile':
+    def __enter__(self) -> '_NonLocalDir':
         '''
         Enter the runtime context related to this instance.
         '''
@@ -1898,42 +1807,26 @@ class RemoteDir(_NonLocalDir):
         :raises InvalidDirectoryError: The provided path \
             does not point to a directory.
         '''
-        ssh_handler = _SSHClientHandler(auth=auth)
+        # Validate path.
+        if path == '':
+            raise _IPE(path=path)
+        
+        ssh_handler = _SSHClientHandler(auth=auth, cache=cache)
 
         super().__init__(
             path=path,
-            cache=cache,
             handler=ssh_handler,
             ingester=_RemoteIngester(handler=ssh_handler))
-        
-        # Validate path.
-        if path == '':
-            self.close()
-            raise _IPE(path=path)
 
         self.__host = auth.get_credentials()['hostname']
 
-        from stat import S_ISDIR as _is_dir
-
-        sftp = ssh_handler.get_client()
-
-        stats = None
-
-        try:
-            stats = sftp.stat(path=path)
-        except FileNotFoundError:
+        if not ssh_handler.path_exists(path=path):
             if create_if_missing:
-                sftp.mkdir(path=path)
-                stats = sftp.stat(path=path)
+                ssh_handler.mkdir(path=path)
             else:
                 self.close()
                 raise _IPE(path)
-        except:
-            self.close()
-            raise ConnectionError()
-
-        if not _is_dir(stats.st_mode):
-            self.close()
+        if ssh_handler.is_file(file_path=path):
             raise _IDE(path)
 
 
@@ -1963,27 +1856,7 @@ class RemoteDir(_NonLocalDir):
             path=file_path,
             host=self.get_hostname(),
             handler=self._get_handler(),
-            cache=self._get_cache_manager().get_cache(file_path)
-                if self.is_cacheable() else None,
             metadata=self.get_metadata(file_path))
-
-
-    def _is_file(self, path: str) -> bool:
-        '''
-        Returns ``True`` if the provided path \
-        points to a file, else returns ``False``.
-
-        :param str path: Either the absolute path or the \
-            path relative to the directory of the file in \
-            question.
-        '''
-        from stat import S_ISDIR as _is_dir
-        if not path.startswith(self.get_path()):
-            path = _join_paths(self._get_separator(), self.get_path(), path)
-        try:
-            return not _is_dir(self._get_client().stat(path=path).st_mode)
-        except FileNotFoundError:
-            return False
 
 
 class _CloudDir(_NonLocalDir, _ABC):

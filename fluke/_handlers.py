@@ -158,7 +158,7 @@ class ClientHandler(_ABC):
             # Else...
             else:
                 # Fetch content iterator.
-                iterator = self.iterate_contents_impl(
+                iterator = self._iterate_contents_impl(
                     dir_path=dir_path,
                     recursively=recursively,
                     show_abs_path=show_abs_path)
@@ -172,7 +172,7 @@ class ClientHandler(_ABC):
                     recursively=recursively,
                     include_dirs=include_dirs)
         else:
-            return self.iterate_contents_impl(
+            return self._iterate_contents_impl(
                 dir_path=dir_path,
                 recursively=recursively,
                 show_abs_path=show_abs_path)
@@ -306,7 +306,7 @@ class ClientHandler(_ABC):
 
 
     @_absmethod
-    def iterate_contents_impl(
+    def _iterate_contents_impl(
         self,
         dir_path: str,
         recursively: bool,
@@ -465,7 +465,7 @@ class FileSystemHandler(ClientHandler):
         raise NotImplementedError()
 
 
-    def iterate_contents_impl(
+    def _iterate_contents_impl(
         self,
         dir_path: str,
         recursively: bool,
@@ -725,7 +725,7 @@ class SSHClientHandler(ClientHandler):
         self.__sftp.putfo(fl=buffer, remotepath=file_path)
 
 
-    def iterate_contents_impl(
+    def _iterate_contents_impl(
         self,
         dir_path: str,
         recursively: bool,
@@ -976,7 +976,7 @@ class AWSClientHandler(ClientHandler):
                 if metadata is not None else None)
 
 
-    def iterate_contents_impl(
+    def _iterate_contents_impl(
         self,
         dir_path: str,
         recursively: bool,
@@ -1250,7 +1250,7 @@ class AzureClientHandler(ClientHandler):
             overwrite=True)
 
 
-    def iterate_contents_impl(
+    def _iterate_contents_impl(
         self,
         dir_path: str,
         recursively: bool,
