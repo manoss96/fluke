@@ -186,7 +186,6 @@ class CacheManager():
                     self.__cache.update({path: Cache()})
         else:
             for path in iterator:
-                print(path)
                 if is_file(path):
                     self.__top_level_files.append(path)
                     if not self.is_in_cache(path=path):

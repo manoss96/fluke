@@ -148,29 +148,45 @@ class ClientHandler(_ABC):
             value of parameter ``recursively``.
         '''
 
+        def relativize_iter(iterator: _Iterator[str]):
+            return map(lambda p: _relativize(
+                parent=dir_path,
+                child=p,
+                sep=_infer_sep(dir_path)
+            ), iterator)
+
         if self.is_cacheable():
             # Grab content iterator from cache if it exists.
             if (iterator := self.__cache_manager.get_content_iterator(
                 recursively=recursively,
                 include_dirs=include_dirs)
             ) is not None:
-                return iterator
+                if show_abs_path:
+                    return iterator
+                else:
+                    return relativize_iter(iterator)
             # Else...
             else:
                 # Fetch content iterator.
+                # NOTE: Set "show_abs_path" to "True" so that all
+                #       contents are cached via their absolute paths.
                 iterator = self._iterate_contents_impl(
                     dir_path=dir_path,
                     recursively=recursively,
-                    show_abs_path=show_abs_path)
+                    show_abs_path=True)
                 # Cache all contents.
                 self.__cache_manager.cache_contents(
                     iterator=iterator,
                     recursively=recursively,
                     is_file=self.is_file)
                 # Reset iterator by grabbing it from cache.
-                return self.__cache_manager.get_content_iterator(
+                iterator = self.__cache_manager.get_content_iterator(
                     recursively=recursively,
                     include_dirs=include_dirs)
+                if show_abs_path:
+                    return iterator
+                else:
+                    return relativize_iter(iterator)
         else:
             return self._iterate_contents_impl(
                 dir_path=dir_path,
@@ -786,7 +802,10 @@ class SSHClientHandler(ClientHandler):
                     parent_dir=dir_path
                 ):
                     yield (file_path if show_abs_path \
-                        else self._relativize(path=file_path))
+                        else _relativize(
+                            parent=dir_path,
+                            child=file_path,
+                            sep=sep))
         else:
             for attr in self.__sftp.listdir_attr(path=dir_path):
                 path = attr.filename
