@@ -1,3 +1,4 @@
+import os as _os
 from typing import Any as _Any
 from typing import Optional as _Optional
 from typing import Iterator as _Iterator
@@ -25,12 +26,20 @@ class ClientHandler(_ABC):
     '''
     An abstract class which serves as the \
     base class for all client-like classes.
+
+    :param bool cache: Indicates whether it is allowed for \
+        any fetched data to be cached for faster subsequent \
+        access. Defaults to ``False``.
     '''
 
     def __init__(self, cache: bool):
         '''
         An abstract class which serves as the \
         base class for all client-like classes.
+
+        :param bool cache: Indicates whether it is allowed for \
+            any fetched data to be cached for faster subsequent \
+            access. Defaults to ``False``.
         '''
         self.__cache_manager = _CacheManager() if cache else None
 
@@ -182,11 +191,35 @@ class ClientHandler(_ABC):
 
 
     @_absmethod
+    def path_exists(self, path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path exists \
+        within the directory, else returns ``False``.
+
+        :param str path: An absolute path.
+        '''
+        pass
+
+
+    @_absmethod
+    def is_file(self, file_path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path points \
+        to a file, else returns ``False``.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        pass
+
+
+    @_absmethod
     def fetch_file_size(self, file_path: str) -> int:
         '''
         Fetches and returns the size of a file in bytes.
 
-        :param str file_path: The path of the file in question.
+        :param str file_path: The absolute path of the \
+            file in question.
         '''
         pass
 
@@ -194,9 +227,11 @@ class ClientHandler(_ABC):
     @_absmethod
     def fetch_file_metadata(self, file_path: str) -> dict[str, str]:
         '''
-        Fetches and returns a dictionary containing the metadata of a file.
+        Fetches and returns a dictionary containing the \
+        metadata of a file.
 
-        :param str file_path: The path of the file in question.
+        :param str file_path: The absolute path of the \
+            file in question.
         '''
         pass
 
@@ -231,23 +266,145 @@ class ClientHandler(_ABC):
         pass
 
 
+class FileSystemHandler(ClientHandler):
+    '''
+    A class used in handling all local file \
+    system operations.
+    '''
+
+    def __init__(self):
+        '''
+        A class used in handling all local file \
+        system operations.
+        '''
+        super().__init__(cache=False)
+
+
+    def open_connections(self):
+        '''
+        Throws ``NotImplementedError``.
+        '''
+        raise NotImplementedError()
+
+
+    def close_connections(self):
+        '''
+        Throws ``NotImplementedError``.
+        '''
+        raise NotImplementedError()
+
+
+    def path_exists(self, path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path exists \
+        within the directory, else returns ``False``.
+
+        :param str path: Either an absolute path or a \
+            path relative to the directory.
+        '''
+        return _os.path.exists(path=path)
+    
+
+    def is_file(self, file_path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path points \
+        to a file, else returns ``False``.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        return _os.path.isfile(file_path)
+
+
+    def fetch_file_size(self, file_path) -> int:
+        '''
+        Fetches and returns the size of a file in bytes.
+
+        :param str file_path: The path of the file in question.
+        '''
+        return _os.path.getsize(file_path)
+    
+
+    def fetch_file_metadata(self, file_path: str) -> dict[str, str]:
+        '''
+        Throws ``NotImplementedError``.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        raise NotImplementedError()
+
+
+    def iterate_contents_impl(
+        self,
+        dir_path: str,
+        recursively: bool,
+        show_abs_path: bool
+    ) -> _Iterator[str]:
+        '''
+        Returns an iterator capable of going through the paths \
+        of the dictionary's contents as strings.
+
+        :param str dir_path: The absolute path of the directory \
+            whose contents are to be iterated.
+        :param bool recursively: Indicates whether the directory \
+            is to be scanned recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories.
+        :param bool show_abs_path: Indicates whether it \
+            should be displayed the absolute or the relative \
+            path of the contents.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
+        '''
+        sep = _infer_sep(path=dir_path)
+
+        if recursively:
+            for dp, dn, fn in _os.walk(dir_path):
+                dn.sort()
+                for file in sorted(fn):
+                    if not show_abs_path:
+                        dp = _relativize(
+                            parent=dir_path,
+                            child=dp.replace(_os.sep, sep),
+                            sep=sep)
+                    yield _join_paths(sep, dp, file)
+        else:
+            for obj in sorted(_os.listdir(dir_path)):
+                if not self.is_file(obj):
+                    obj += sep
+                yield _join_paths(sep, dir_path, obj) \
+                    if show_abs_path else obj
+
+
 class SSHClientHandler(ClientHandler):
     '''
     A class used in handling the SSH and SFTP \
     connections to a remote server.
 
-    :param RemoteAuth auth: A ``RemoteAuth`` \
-        instance used in authenticating with a remote machine.
+    :param RemoteAuth auth: A ``RemoteAuth`` instance used \
+        for authenticating with a remote machine.
+    :param bool cache: Indicates whether it is allowed for \
+        any fetched data to be cached for faster subsequent \
+        access. Defaults to ``False``.
     '''
 
-    def __init__(self, auth: _RemoteAuth):
+    def __init__(self, auth: _RemoteAuth, cache: bool):
         '''
         A class used in handling the SSH and SFTP \
         connections to a remote server.
 
-        :param RemoteAuth auth: A ``RemoteAuth`` \
-            instance used in authenticating with a remote machine.
+        :param RemoteAuth auth: A ``RemoteAuth`` instance used \
+            for authenticating with a remote machine.
+        :param bool cache: Indicates whether it is allowed for \
+            any fetched data to be cached for faster subsequent \
+            access. Defaults to ``False``.
         '''
+        super().__init__(cache=cache)
         self.__auth: _RemoteAuth = auth
         self.__ssh: _prmk.SSHClient = None
         self.__sftp: _prmk.SFTPClient = None
@@ -330,6 +487,33 @@ class SSHClientHandler(ClientHandler):
             self.__ssh = None
 
 
+    def path_exists(self, path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path exists \
+        within the directory, else returns ``False``.
+
+        :param str path: Either an absolute path or a \
+            path relative to the directory.
+        '''
+        try:
+            self.__sftp.stat(path=path)
+        except FileNotFoundError:
+            return False
+        return True
+    
+
+    def is_file(self, file_path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path points \
+        to a file, else returns ``False``.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        from stat import S_ISDIR as _is_dir
+        return not _is_dir(self.__sftp.stat(path=file_path).st_mode)
+
+
     def fetch_file_size(self, file_path) -> int:
         '''
         Fetches and returns the size of a file in bytes.
@@ -341,9 +525,11 @@ class SSHClientHandler(ClientHandler):
 
     def fetch_file_metadata(self, file_path: str) -> dict[str, str]:
         '''
-        Fetches and returns a dictionary containing the metadata of a file.
+        Fetches and returns a dictionary containing the \
+        metadata of a file.
 
-        :param str file_path: The path of the file in question.
+        :param str file_path: The absolute path of the \
+            file in question.
         '''
         raise NotImplementedError()
 
@@ -428,9 +614,12 @@ class AWSClientHandler(ClientHandler):
         used in authenticating with AWS.
     :param str bucket: The name of the Amazon S3 bucket \
         to which a connection is to be established.
+    :param bool cache: Indicates whether it is allowed for \
+        any fetched data to be cached for faster subsequent \
+        access. Defaults to ``False``.
     '''
 
-    def __init__(self, auth: _AWSAuth, bucket: str):
+    def __init__(self, auth: _AWSAuth, bucket: str, cache: bool):
         '''
         A class used in handling the HTTP \
         connection to an Amazon S3 bucket.
@@ -439,7 +628,11 @@ class AWSClientHandler(ClientHandler):
             used in authenticating with AWS.
         :param str bucket: The name of the Amazon S3 bucket \
             to which a connection is to be established.
+        :param bool cache: Indicates whether it is allowed for \
+            any fetched data to be cached for faster subsequent \
+            access. Defaults to ``False``.
         '''
+        self.__init__(cache=cache)
         self.__auth = auth
         self.__bucket_name = bucket
         self.__bucket = None
@@ -476,11 +669,38 @@ class AWSClientHandler(ClientHandler):
             self.__bucket = None
 
 
+    def path_exists(self, path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path exists \
+        within the directory, else returns ``False``.
+
+        :param str path: Either an absolute path or a \
+            path relative to the directory.
+        '''
+        try:
+            self.__bucket.Object(path).load()
+        except:
+            return False
+        return True
+
+
+    def is_file(self, file_path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path points \
+        to a file, else returns ``False``.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        return not file_path.endswith('/')
+
+
     def fetch_file_size(self, file_path) -> int:
         '''
         Fetches and returns the size of a file in bytes.
 
-        :param str file_path: The path of the file in question.
+        :param str file_path: The absolute path of the \
+            file in question.
         '''
         return self.__bucket.Object(key=file_path).content_length
     
@@ -583,9 +803,12 @@ class AzureClientHandler(ClientHandler):
         used in authenticating with Microsoft Azure.
     :param str container: The name of the Azure blob \
         container to which a connection is to be established.
+    :param bool cache: Indicates whether it is allowed for \
+        any fetched data to be cached for faster subsequent \
+        access. Defaults to ``False``.
     '''
 
-    def __init__(self, auth: _AzureAuth, container: str):
+    def __init__(self, auth: _AzureAuth, container: str, cache: bool):
         '''
         A class used in handling the HTTP \
         connection to an Azure blob container.
@@ -594,7 +817,11 @@ class AzureClientHandler(ClientHandler):
             used in authenticating with Microsoft Azure.
         :param str container: The name of the Azure blob \
             container to which a connection is to be established.
+        :param bool cache: Indicates whether it is allowed for \
+            any fetched data to be cached for faster subsequent \
+            access. Defaults to ``False``.
         '''
+        super().__init__(cache=cache)
         self.__auth = auth
         self.__container_name = container
         self.__container = None
@@ -638,20 +865,46 @@ class AzureClientHandler(ClientHandler):
             self.__container = None
 
 
+    def path_exists(self, path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path exists \
+        within the directory, else returns ``False``.
+
+        :param str path: Either an absolute path or a \
+            path relative to the directory.
+        '''
+        with self.__container.get_blob_client(blob=path) as blob:
+            return blob.exists()
+        
+
+    def is_file(self, file_path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path points \
+        to a file, else returns ``False``.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        return not file_path.endswith('/')
+
+
     def fetch_file_size(self, file_path) -> int:
         '''
         Fetches and returns the size of a file in bytes.
 
-        :param str file_path: The path of the file in question.
+        :param str file_path: The absolute path of the \
+            file in question.
         '''
         return self.__container.download_blob(blob=file_path).size
     
 
     def fetch_file_metadata(self, file_path: str) -> dict[str, str]:
         '''
-        Fetches and returns a dictionary containing the metadata of a file.
+        Fetches and returns a dictionary containing the \
+        metadata of a file.
 
-        :param str file_path: The path of the file in question.
+        :param str file_path: The absolute path of the \
+            file in question.
         '''
         return self.__container.download_blob(
             blob=file_path).properties.metadata

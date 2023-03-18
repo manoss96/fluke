@@ -30,10 +30,9 @@ from ._helper import infer_separator as _infer_sep
 from ._errors import Error as _Error
 from .auth import AWSAuth as _AWSAuth
 from .auth import AzureAuth as _AzureAuth
-from ._cache import Cache as _Cache
-from ._cache import CacheManager as _CacheManager
 from .auth import RemoteAuth as _RemoteAuth
 from ._handlers import ClientHandler as _ClientHandler
+from ._handlers import FileSystemHandler as _FileSystemHandler
 from ._handlers import SSHClientHandler as _SSHClientHandler
 from ._handlers import AWSClientHandler as _AWSClientHandler
 from ._handlers import AzureClientHandler as _AzureClientHandler
@@ -60,7 +59,7 @@ class _File(_ABC):
     :param Ingester ingester: An ``Ingester`` class instance.
     '''
 
-    def __init__(self, path: str, ingester: _Ingester):
+    def __init__(self, path: str, handler: _ClientHandler, ingester: _Ingester):
         '''
         An abstract class which serves as the \
         base class for all file-like classes.
@@ -70,6 +69,7 @@ class _File(_ABC):
         '''
         self.__path = path
         self.__separator = _infer_sep(path=path)
+        self.__handler = handler
         self.__ingester = ingester
         self.__name = path.split(self.__separator)[-1]
         self.__metadata = dict()
@@ -80,6 +80,13 @@ class _File(_ABC):
         Returns the file's absolute path.
         '''
         return self.__path
+    
+
+    def get_name(self) -> str:
+        '''
+        Returns the file's name.
+        '''
+        return self.__name
 
 
     def get_metadata(self) -> dict[str, str]:
@@ -111,15 +118,21 @@ class _File(_ABC):
                 raise _NSMKE(key=key)
             if not isinstance(val, str):
                 raise _NSMVE(val=val)
-
         self.__metadata = dict(metadata)
 
 
-    def get_name(self) -> str:
+    def get_size(self) -> int:
         '''
-        Returns the file's name.
+        Returns the file's size in bytes.
         '''
-        return self.__name
+        self._get_handler().get_file_size(self.get_path())
+    
+
+    def _get_handler(self) -> _ClientHandler:
+        '''
+        Returns this instance's ``ClientHandler``.
+        '''
+        return self.__handler
 
 
     def _get_ingester(self) -> _Ingester:
@@ -136,18 +149,32 @@ class _File(_ABC):
         return self.__separator
     
 
+    def __new__(
+        cls,
+        handler: _typ.Optional[_ClientHandler] = None,
+        *args,
+        **kwargs
+    ) -> 'LocalFile':
+        '''
+        Creates an instance of this class.
+
+        :param Any | None handler: A ``ClientHandler`` instance. \
+            Defaults to ``None``.
+
+        :note: This method defines field ``__handler`` \
+            so that throwing an exception before invoking \
+            the parent constructor does not result in a \
+            second exception being thrown due to ``__del__``.
+        '''
+        instance = object.__new__(cls)
+        instance.__handler = None
+        return instance
+    
+
     @_absmethod
     def get_uri(self) -> str:
         '''
         Returns the file's URI.
-        '''
-        pass
-
-
-    @_absmethod
-    def get_size(self) -> int:
-        '''
-        Returns the file's size in bytes.
         '''
         pass
 
@@ -218,6 +245,7 @@ class LocalFile(_File):
         sep = _infer_sep(path=path)
         super().__init__(
             path=_os.path.abspath(path).replace(_os.sep, sep),
+            handler=_FileSystemHandler(),
             ingester=_LocalIngester())
         
 
@@ -226,13 +254,6 @@ class LocalFile(_File):
         Returns the file's URI.
         '''
         return f"file:///{self.get_path().lstrip(self._get_separator())}"
-        
-
-    def get_size(self) -> int:
-        '''
-        Returns the file's size in bytes.
-        '''
-        return _os.path.getsize(self.get_path())
     
 
     def read(self) -> bytes:
@@ -295,11 +316,8 @@ class _NonLocalFile(_File, _ABC):
     or files in the cloud.
 
     :param str path: A path pointing to the file.
-    :param bool cache: Indicates whether it is allowed for \
-        any fetched data to be cached for faster subsequent \
-        access.
-    :param ClientHandler handler: A ``ClientHandler`` class instance used \
-        in handling connections.
+    :param ClientHandler handler: A ``ClientHandler`` class \
+        instance used for interacting with the underlying handler.
     :param Ingester ingester: An ``Ingester`` class instance used \
         for ingesting data.
     '''
@@ -307,7 +325,6 @@ class _NonLocalFile(_File, _ABC):
     def __init__(
         self,
         path: str,
-        cache: bool,
         handler: _ClientHandler,
         ingester: _Ingester
     ):
@@ -317,17 +334,12 @@ class _NonLocalFile(_File, _ABC):
         or files in the cloud.
 
         :param str path: A path pointing to the file.
-        :param bool cache: Indicates whether it is allowed for \
-            any fetched data to be cached for faster subsequent \
-            access.
-        :param ClientHandler handler: A ``ClientHandler`` class instance used \
-            in handling connections.
+        :param ClientHandler handler: A ``ClientHandler`` class \
+            instance used for interacting with the underlying handler.
         :param Ingester ingester: An ``Ingester`` class instance used \
             for ingesting data.
         '''
-        super().__init__(path=path, ingester=ingester)
-        self.__cache = _Cache() if cache else None
-        self.__handler = handler
+        super().__init__(path=path, handler=handler, ingester=ingester)
         self.open()
 
 
@@ -336,7 +348,7 @@ class _NonLocalFile(_File, _ABC):
         Returns ``True`` if file has been defined \
         as cacheable, else returns ``False``.
         '''
-        return self.__cache is not None
+        return self.__handler.is_cacheable()
 
 
     def purge(self) -> None:
@@ -344,36 +356,21 @@ class _NonLocalFile(_File, _ABC):
         If cacheable, then purges the file's cache, \
         else does nothing.
         '''
-        if self.is_cacheable():
-            self.__cache = _Cache()
+        self.__handler.purge()
 
 
     def open(self) -> None:
         '''
         Opens all necessary connections.
         '''
-        self.__handler.open_connections()
+        self._get_handler().open_connections()
 
 
     def close(self) -> None:
         '''
         Closes all open connections.
         '''
-        self.__handler.close_connections()
-
-
-    def get_size(self) -> int:
-        '''
-        Returns the file's size in bytes.
-        '''
-        if self.is_cacheable():
-            if (size := self.__get_size_from_cache()) is not None:
-                return size
-            else:
-                size = self._get_size_impl()
-                self.__cache_size(size)
-                return size
-        return self._get_size_impl()
+        self._get_handler().close_connections()
     
 
     def read(self) -> bytes:
@@ -440,76 +437,6 @@ class _NonLocalFile(_File, _ABC):
                 print(f"Operation unsuccessful: {error.get_message()}")
 
 
-    def _get_handler(self) -> _typ.Any:
-        '''
-        Returns this instance's ``ClientHandler``.
-        '''
-        return self.__handler
-
-
-    def _get_metadata_from_cache(self) -> _typ.Optional[dict[str, str]]:
-        '''
-        Returns the file's cached metadata if they exist, \
-        else returns ``None``.
-        '''
-        if self.__cache is not None:
-            return self.__cache.get_metadata()
-
-
-    def _cache_metadata(self, metadata: dict[str, str]) -> None:
-        '''
-        Caches the provided metadata.
-
-        :param dict[str, str] metadata: The metadata that is to be cached.
-        '''
-        if self.__cache is not None:
-            self.__cache.set_metadata(metadata=metadata)
-
-
-    def __get_size_from_cache(self) -> _typ.Optional[int]:
-        '''
-        Returns the file's cached size if it exists, \
-        else returns ``None``.
-        '''
-        if self.__cache is not None:
-            return self.__cache.get_size()
-
-
-    def __cache_size(self, size: int) -> None:
-        '''
-        Caches the provided size.
-
-        :param int size: The size that is to be cached.
-        '''
-        if self.__cache is not None:
-            self.__cache.set_size(size=size)
-
-
-    def __new__(
-        cls,
-        handler: _typ.Optional[_typ.Any] = None,
-        cache: _typ.Optional[_Cache] = None,
-        *args,
-        **kwargs
-    ) -> '_NonLocalFile':
-        '''
-        Creates an instance of this class.
-
-        :param Any | None handler: A ``ClientHandler`` instance. \
-            Defaults to ``None``.
-        :param Cache | None handler: A ``Cache`` instance.
-
-        :note: This method defines field ``__handler`` \
-            so that throwing an exception before invoking \
-            the parent constructor does not result in a \
-            second exception being thrown due to ``__del__``.
-        '''
-        instance = super().__new__(cls)
-        instance.__handler = handler
-        instance.__cache = cache
-        return instance
-
-
     def __enter__(self) -> '_NonLocalFile':
         '''
         Enter the runtime context related to this instance.
@@ -569,30 +496,20 @@ class RemoteFile(_NonLocalFile):
         # Instantiate a connection handler,
         # if none has been set.
         if (ssh_handler := self._get_handler()) is None:
-            ssh_handler = _SSHClientHandler(auth=auth)
+            ssh_handler = _SSHClientHandler(auth=auth, cache=cache)
             self.__host = auth.get_credentials()['hostname']
 
+        print(ssh_handler)
         super().__init__(
             path=path,
-            cache=cache,
             handler=ssh_handler,
             ingester=_RemoteIngester(ssh_handler))
-        
-        sftp = self._get_client()
 
-        from stat import S_ISDIR as _is_dir
-
-        try:
-            stats = sftp.stat(path=path)
-        except FileNotFoundError:
+        if not ssh_handler.path_exists(path=path):
             self.close()
             raise _IPE(path)
-        except:
-            self.close()
-            raise ConnectionError()
-
-        if _is_dir(stats.st_mode):
-            self.close()
+        
+        if not ssh_handler.is_file(file_path=path):
             raise _IFE(path)
 
 
@@ -617,19 +534,17 @@ class RemoteFile(_NonLocalFile):
         path: str,
         host: str,
         handler: _typ.Any,
-        cache: _typ.Optional[_Cache],
         metadata: _typ.Optional[dict[str, str]]
     ) -> 'RemoteFile':
-        instance = cls.__new__(cls, handler=handler, cache=cache)
+        instance = cls.__new__(cls, handler=handler)
         _File.__init__(instance, path=path, ingester=_RemoteIngester(handler=handler))
         instance.set_metadata(metadata=metadata)
-        instance.__cache = cache
         instance.__host = host
         return instance
 
 
     def __del__(self) -> None:
-        if self._get_client() is not None:
+        if self._get_handler() is not None:
             msg = "You might want to consider instantiating class ``RemoteFile``"
             msg += " through the use of a context manager by utilizing Python's"
             msg += " ``with`` statement, or by simply invoking an instance's"
@@ -653,13 +568,7 @@ class _CloudFile(_NonLocalFile, _ABC):
             method will be overriden after invoking this \
             method.
         '''
-        if self.is_cacheable():
-            metadata = self._get_metadata_from_cache()
-            if not metadata:
-                metadata = self._load_metadata_impl()
-                self._cache_metadata(metadata=metadata) 
-        else:
-            metadata = self._load_metadata_impl()
+        metadata = self._get_handler().fetch_file_metadata(self.get_path())
         self.set_metadata(metadata=metadata)
 
 
@@ -905,7 +814,12 @@ class _Directory(_ABC):
         for ingesting data.
     '''
 
-    def __init__(self, path: str, ingester: _Ingester):
+    def __init__(
+        self,
+        path: str,
+        handler: _ClientHandler,
+        ingester: _Ingester
+    ):
         '''
         An abstract class which serves as the base class \
         for all directory-like classes.
@@ -917,6 +831,7 @@ class _Directory(_ABC):
         sep = _infer_sep(path)
         self.__path = f"{path.rstrip(sep)}{sep}" if path != '' else path
         self.__separator = sep
+        self.__handler = handler
         self.__ingester = ingester
         self.__metadata: dict[str, dict[str, str]] = dict()
 
@@ -986,6 +901,20 @@ class _Directory(_ABC):
             raise _IFE(path=file_path)
 
         self.__metadata[self._relativize(path=file_path)] = dict(metadata)
+
+
+    def path_exists(self, path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path exists \
+        within the directory, else returns ``False``.
+
+        :param str path: Either an absolute path or a \
+            path relative to the directory.
+        '''
+        return self.__handler.path_exists(_join_paths(
+            self._get_separator(),
+            self.get_path(),
+            self._relativize(path=path)))
 
 
     def count(self, recursively: bool = False) -> int:
@@ -1194,18 +1123,6 @@ class _Directory(_ABC):
 
 
     @_absmethod
-    def path_exists(self, path: str) -> bool:
-        '''
-        Returns ``True`` if the provided path exists \
-        within the directory, else returns ``False``.
-
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
-        '''
-        pass
-
-
-    @_absmethod
     def get_size(self, recursively: bool = False) -> int:
         '''
         Returns the total sum of the sizes of all files \
@@ -1307,19 +1224,6 @@ class _Directory(_ABC):
         pass
 
 
-    @_absmethod
-    def _is_file(self, path: str) -> bool:
-        '''
-        Returns ``True`` if the provided path \
-        points to a file, else returns ``False``.
-
-        :param str path: Either the absolute path or the \
-            path relative to the directory of the file in \
-            question.
-        '''
-        pass
-
-
 class LocalDir(_Directory):
     '''
     This class represents a directory which resides \
@@ -1378,20 +1282,6 @@ class LocalDir(_Directory):
         '''
         sep = self._get_separator()
         return f"file:///{self.get_path().lstrip(sep)}"
-
-
-    def path_exists(self, path: str) -> bool:
-        '''
-        Returns ``True`` if the provided path exists \
-        within the directory, else returns ``False``.
-
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
-        '''
-        return _os.path.exists(_join_paths(
-            self._get_separator(),
-            self.get_path(),
-            self._relativize(path=path)))
 
 
     def get_size(self, recursively: bool = False) -> int:
@@ -1672,8 +1562,8 @@ class _NonLocalDir(_Directory, _ABC):
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
         access.
-    :param ClientHandler handler: A ``ClientHandler`` class instance used \
-        in handling connections.
+    :param ClientHandler handler: A ``ClientHandler`` class \
+        instance used for interacting with the underlying handler.
     :param Ingester ingester: An ``Ingester`` class instance used \
         for ingesting data.
     '''
@@ -1693,13 +1583,12 @@ class _NonLocalDir(_Directory, _ABC):
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
             access.
-        :param ClientHandler handler: A ``ClientHandler`` class instance used \
-            in handling connections.
+        :param ClientHandler handler: A ``ClientHandler`` class \
+            instance used for interacting with the underlying handler.
         :param Ingester ingester: An ``Ingester`` class instance used \
             for ingesting data.
         '''
         super().__init__(path=path, ingester=ingester)
-        self.__cache_manager = _CacheManager() if cache else None
         self.__handler = handler
         self.open()
 
@@ -1971,13 +1860,6 @@ class _NonLocalDir(_Directory, _ABC):
         return instance
     
 
-    def _get_cache_manager(self) -> _typ.Optional[_CacheManager]:
-        '''
-        Returns the directory's cache manager.
-        '''
-        return self.__cache_manager
-    
-
     def __enter__(self) -> '_NonLocalFile':
         '''
         Enter the runtime context related to this instance.
@@ -2110,26 +1992,6 @@ class RemoteDir(_NonLocalDir):
             cache=self._get_cache_manager().get_cache(file_path)
                 if self.is_cacheable() else None,
             metadata=self.get_metadata(file_path))
-
-
-    def path_exists(self, path: str) -> bool:
-        '''
-        Returns ``True`` if the provided path exists \
-        within the directory, else returns ``False``.
-
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
-        '''
-        sftp: _prmk.SFTPClient = self._get_client()
-        try:
-            path = _join_paths(
-                self._get_separator(),
-                self.get_path(),
-                self._relativize(path=path))
-            sftp.stat(path=path)
-        except FileNotFoundError:
-            return False
-        return True
 
 
     def _is_file(self, path: str) -> bool:
@@ -2350,37 +2212,6 @@ class AWSS3Dir(_CloudDir):
         return f"s3://{self.get_bucket_name()}/{self.get_path()}"
 
 
-    def path_exists(self, path: str) -> bool:
-        '''
-        Returns ``True`` if the provided path exists \
-        within the directory, else returns ``False``.
-
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
-        '''
-        path = _join_paths(
-            self._get_separator(),
-            self.get_path(),
-            self._relativize(path=path))
-        try:
-            self._get_client().Object(path).load()
-        except:
-            return False
-        return True
-
-
-    def _is_file(self, path: str) -> bool:
-        '''
-        Returns ``True`` if the provided path \
-        points to a file, else returns ``False``.
-
-        :param str path: Either the absolute path or the \
-            path relative to the directory of the file in \
-            question.
-        '''
-        return not path.endswith('/') and self.path_exists(path)
-
-
     def __del__(self) -> None:
         if self._get_client() is not None:
             msg = "You might want to consider instantiating class `AWSS3Dir``"
@@ -2514,35 +2345,6 @@ class AzureBlobDir(_CloudDir):
         uri = f"abfss://{self.get_container_name()}@{self.__storage_account}"
         uri += f".dfs.core.windows.net/{self.get_path()}"
         return uri
-
-
-    def path_exists(self, path: str) -> bool:
-        '''
-        Returns ``True`` if the provided path exists \
-        within the directory, else returns ``False``.
-
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
-        '''
-        path = _join_paths(
-            self._get_separator(),
-            self.get_path(),
-            self._relativize(path=path))
-        container: _ContainerClient = self._get_client()
-        with container.get_blob_client(blob=path) as blob:
-            return blob.exists()
-
-
-    def _is_file(self, path: str) -> bool:
-        '''
-        Returns ``True`` if the provided path \
-        points to a file, else returns ``False``.
-
-        :param str path: Either the absolute path or the \
-            path relative to the directory of the file in \
-            question.
-        '''
-        return not path.endswith('/') and self.path_exists(path)
 
 
     def __del__(self) -> None:
