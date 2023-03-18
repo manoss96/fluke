@@ -211,9 +211,10 @@ class RemoteIngester(Ingester):
         :note: Param ``include_metadata`` has no use within \
             the context of method ``RemoteIngester.extract``.
         '''
-        self.__handler.get_client().getfo(
-            remotepath=self.get_source(),
-            fl=snk)
+        self.__handler.download_file(
+            file_path=self.get_source(),
+            buffer=snk,
+            include_metadata=include_metadata)
 
 
     def load(
@@ -236,7 +237,6 @@ class RemoteIngester(Ingester):
         '''
 
         file_path: str = self.get_sink()
-        sftp = self.__handler.get_client()
 
         sep = _infer_sep(file_path)
 
@@ -249,19 +249,17 @@ class RemoteIngester(Ingester):
         # Create any directories necessary.
         parent_dir, non_existing_dirs = file_path, []
         while (parent_dir := get_parent_dir(parent_dir)) is not None:
-            try:
-                sftp.stat(path=parent_dir)
-                break
-            except FileNotFoundError:
+            if not self.__handler.path_exists(path=parent_dir):
                 non_existing_dirs.append(parent_dir)
 
         for dir in reversed(non_existing_dirs):
-            sftp.mkdir(path=dir)
+            self.__handler.mkdir(path=dir)
 
         # Load file to remote location.
-        sftp.putfo(
-            fl=src,
-            remotepath=file_path)
+        self.__handler.upload_file(
+            file_path=file_path,
+            buffer=src,
+            metadata=metadata)
 
 
 class AWSS3Ingester(Ingester):
@@ -302,15 +300,12 @@ class AWSS3Ingester(Ingester):
             to ingest any existing metadata along with \
             the primarily ingested data.
         '''
-        # Ingest object from its source.
-        if include_metadata:
-            obj = self.__handler.get_client().Object(key=self.get_source())
-            obj.download_fileobj(Fileobj=snk)
-            self.set_metadata(obj.metadata)
-        else:
-            self.__handler.get_client().download_fileobj(
-                Key=self.get_source(),
-                Fileobj=snk)
+        if (metadata := self.__handler.download_file(
+            file_path=self.get_source(),
+            buffer=snk,
+            include_metadata=include_metadata)
+        ) is not None:
+            self.set_metadata(metadata)
 
 
     def load(
@@ -328,11 +323,10 @@ class AWSS3Ingester(Ingester):
             metadata that are to be assigned to the \
             primarily ingested data.
         '''
-        self.__handler.get_client().upload_fileobj(
-            Key=self.get_sink(),
-            Fileobj=src,
-            ExtraArgs={ "Metadata": metadata }
-                if metadata is not None else None)
+        self.__handler.upload_file(
+            file_path=self.get_sink(),
+            buffer=src,
+            metadata=metadata)
 
 
 class AzureIngester(Ingester):
@@ -376,12 +370,13 @@ class AzureIngester(Ingester):
             to ingest any existing metadata along with \
             the primarily ingested data.
         '''
-        blob = self.__handler.get_client().download_blob(
-            blob=self.get_source())
-        # Ingest object from its source.
-        blob.readinto(stream=snk)
-        if include_metadata:
-            self.set_metadata(blob.properties.metadata)
+        if (metadata := self.__handler.download_file(
+            file_path=self.get_source(),
+            buffer=snk,
+            include_metadata=include_metadata)
+        ) is not None:
+            self.set_metadata(metadata)
+
 
 
     def load(
@@ -399,9 +394,8 @@ class AzureIngester(Ingester):
             metadata that are to be assigned to the \
             primarily ingested data.
         '''
-        self.__handler.get_client().upload_blob(
-            name=self.get_sink(),
-            data=src,
-            metadata=metadata,
-            overwrite=True)
+        self.__handler.upload_file(
+            file_path=self.get_sink(),
+            buffer=src,
+            metadata=metadata)
     

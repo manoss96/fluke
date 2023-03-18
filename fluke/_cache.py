@@ -81,6 +81,8 @@ class CacheManager():
         :param str file_path: The file's absolute path.
         :param int size: The file's size.
         '''
+        if not self.is_in_cache(path=file_path):
+            self.__cache.update({file_path: Cache()})
         self.__cache[file_path].set_size(size=size)
     
 
@@ -102,6 +104,8 @@ class CacheManager():
         :param str file_path: The file's absolute path.
         :param dict[str, str]: The file's metadata.
         '''
+        if not self.is_in_cache(path=file_path):
+            self.__cache.update({file_path: Cache()})
         self.__cache[file_path].set_metadata(metadata=metadata)
 
 
@@ -165,11 +169,21 @@ class CacheManager():
         is_file: _Callable[[str], bool]
     ) -> None:
         '''
+        Goes through the provided iterator \
+        in order to cache its contents.
 
+        :param Iterator[str] iterator: An iterator through \
+            which a directory's contents can be traversed.
+        :param bool recursively: Indicates whether the provided \
+            iterator traverses a directory recursively or not.
+        :param Callable[[str], bool] is_file: A function that \
+            receives a string path and returns a value indicating \
+            whether said path corresponds to a file or a directory.
         '''
         if recursively:
             for path in iterator:
-                self.__cache.update({path: Cache()})
+                if not self.is_in_cache(path=path):
+                    self.__cache.update({path: Cache()})
         else:
             for path in iterator:
                 if is_file(path):

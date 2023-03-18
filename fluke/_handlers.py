@@ -1,9 +1,10 @@
 import os as _os
+import io as _io
+from abc import ABC as _ABC
+from abc import abstractmethod as _absmethod
 from typing import Any as _Any
 from typing import Optional as _Optional
 from typing import Iterator as _Iterator
-from abc import ABC as _ABC
-from abc import abstractmethod as _absmethod
 
 
 import boto3 as _boto3
@@ -84,6 +85,7 @@ class ClientHandler(_ABC):
             else:
                 size = self.fetch_file_size(file_path)
                 self.__cache_manager.cache_size(file_path, size)
+                return size
         else:
             return self.fetch_file_size(file_path)
         
@@ -110,6 +112,7 @@ class ClientHandler(_ABC):
             else:
                 metadata = self.fetch_file_metadata(file_path)
                 self.__cache_manager.cache_metadata(file_path, metadata)
+                return metadata
         else:
             return self.fetch_file_metadata(file_path)
         
@@ -176,11 +179,22 @@ class ClientHandler(_ABC):
 
 
     @_absmethod
+    def is_open(self) -> bool:
+        '''
+        Returns a value indicating whether \
+        this handler's underlying client connection \
+        is open or not.
+        '''
+        pass
+
+
+    @_absmethod
     def open_connections(self) -> None:
         '''
         Opens all necessary connections.
         '''
         pass
+
 
     @_absmethod
     def close_connections(self) -> None:
@@ -214,6 +228,17 @@ class ClientHandler(_ABC):
 
 
     @_absmethod
+    def mkdir(self, path: str) -> None:
+        '''
+        Creates a directory into the provided path.
+
+        :param str path: The path of the directory \
+            that is to be created.
+        '''
+        pass
+
+
+    @_absmethod
     def fetch_file_size(self, file_path: str) -> int:
         '''
         Fetches and returns the size of a file in bytes.
@@ -232,6 +257,50 @@ class ClientHandler(_ABC):
 
         :param str file_path: The absolute path of the \
             file in question.
+        '''
+        pass
+
+
+    @_absmethod
+    def download_file(
+        self,
+        file_path: str,
+        buffer: _io.BytesIO,
+        include_metadata: bool
+    ) -> _Optional[dict[str, str]]:
+        '''
+        Downloads a file into the provided buffer. \
+        Returns either ``None`` or a dictionary containing \
+        file metadata, depending on the value of parameter \
+        ``include_metadata``.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        :param BytesIO buffer: A buffer to download the \
+            file into.
+        :param bool include_metadata: Indicates whether \
+            to download any existing file metadata as well.
+        '''
+        pass
+
+
+    @_absmethod
+    def upload_file(
+        self,
+        file_path: str,
+        buffer: _io.BytesIO,
+        metadata: _Optional[dict[str, str]]
+    ) -> None:
+        '''
+        Uploads the file contained within the provided buffer.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        :param BytesIO buffer: A buffer containing the \
+            file's bytes.
+        :param dict[str, str] | None: If not ``None``, \
+            then assigns the provided metadata to the file \
+            during the upload.
         '''
         pass
 
@@ -280,6 +349,15 @@ class FileSystemHandler(ClientHandler):
         super().__init__(cache=False)
 
 
+    def is_open(self) -> bool:
+        '''
+        Returns a value indicating whether \
+        this handler's underlying client connection \
+        is open or not.
+        '''
+        raise NotImplementedError()
+
+
     def open_connections(self):
         '''
         Throws ``NotImplementedError``.
@@ -314,6 +392,16 @@ class FileSystemHandler(ClientHandler):
             file in question.
         '''
         return _os.path.isfile(file_path)
+    
+
+    def mkdir(self, path: str) -> None:
+        '''
+        Creates a directory into the provided path.
+
+        :param str path: The path of the directory \
+            that is to be created.
+        '''
+        _os.makedirs(path)
 
 
     def fetch_file_size(self, file_path) -> int:
@@ -331,6 +419,48 @@ class FileSystemHandler(ClientHandler):
 
         :param str file_path: The absolute path of the \
             file in question.
+        '''
+        raise NotImplementedError()
+    
+
+    def download_file(
+        self,
+        file_path: str,
+        buffer: _io.BytesIO,
+        include_metadata: bool
+    ) -> _Optional[dict[str, str]]:
+        '''
+        Downloads a file into the provided buffer. \
+        Returns either ``None`` or a dictionary containing \
+        file metadata, depending on the value of parameter \
+        ``include_metadata``.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        :param BytesIO buffer: A buffer to download the \
+            file into.
+        :param bool include_metadata: Indicates whether \
+            to download any existing file metadata as well.
+        '''
+        raise NotImplementedError()
+
+
+    def upload_file(
+        self,
+        file_path: str,
+        buffer: _io.BytesIO,
+        metadata: _Optional[dict[str, str]]
+    ) -> None:
+        '''
+        Uploads the file contained within the provided buffer.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        :param BytesIO buffer: A buffer containing the \
+            file's bytes.
+        :param dict[str, str] | None: If not ``None``, \
+            then assigns the provided metadata to the file \
+            during the upload.
         '''
         raise NotImplementedError()
 
@@ -408,6 +538,15 @@ class SSHClientHandler(ClientHandler):
         self.__auth: _RemoteAuth = auth
         self.__ssh: _prmk.SSHClient = None
         self.__sftp: _prmk.SFTPClient = None
+
+
+    def is_open(self) -> bool:
+        '''
+        Returns a value indicating whether \
+        this handler's underlying client connection \
+        is open or not.
+        '''
+        return self.__ssh is not None
 
 
     def open_connections(self):
@@ -512,6 +651,16 @@ class SSHClientHandler(ClientHandler):
         '''
         from stat import S_ISDIR as _is_dir
         return not _is_dir(self.__sftp.stat(path=file_path).st_mode)
+    
+
+    def mkdir(self, path: str) -> None:
+        '''
+        Creates a directory into the provided path.
+
+        :param str path: The path of the directory \
+            that is to be created.
+        '''
+        self.__sftp.mkdir(path=path)
 
 
     def fetch_file_size(self, file_path) -> int:
@@ -532,6 +681,48 @@ class SSHClientHandler(ClientHandler):
             file in question.
         '''
         raise NotImplementedError()
+    
+
+    def download_file(
+        self,
+        file_path: str,
+        buffer: _io.BytesIO,
+        include_metadata: bool
+    ) -> _Optional[dict[str, str]]:
+        '''
+        Downloads a file into the provided buffer. \
+        Returns either ``None`` or a dictionary containing \
+        file metadata, depending on the value of parameter \
+        ``include_metadata``.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        :param BytesIO buffer: A buffer to download the \
+            file into.
+        :param bool include_metadata: Indicates whether \
+            to download any existing file metadata as well.
+        '''
+        self.__sftp.getfo(remotepath=file_path, fl=buffer)
+
+
+    def upload_file(
+        self,
+        file_path: str,
+        buffer: _io.BytesIO,
+        metadata: _Optional[dict[str, str]]
+    ) -> None:
+        '''
+        Uploads the file contained within the provided buffer.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        :param BytesIO buffer: A buffer containing the \
+            file's bytes.
+        :param dict[str, str] | None: If not ``None``, \
+            then assigns the provided metadata to the file \
+            during the upload.
+        '''
+        self.__sftp.putfo(fl=buffer, remotepath=file_path)
 
 
     def iterate_contents_impl(
@@ -644,6 +835,15 @@ class AWSClientHandler(ClientHandler):
         a connection has been established.
         '''
         return self.__bucket_name
+    
+
+    def is_open(self) -> bool:
+        '''
+        Returns a value indicating whether \
+        this handler's underlying client connection \
+        is open or not.
+        '''
+        return self.__bucket is not None
 
 
     def open_connections(self) -> None:
@@ -677,9 +877,10 @@ class AWSClientHandler(ClientHandler):
         :param str path: Either an absolute path or a \
             path relative to the directory.
         '''
+        from botocore.exceptions import ClientError as _CE
         try:
             self.__bucket.Object(path).load()
-        except:
+        except _CE:
             return False
         return True
 
@@ -693,6 +894,18 @@ class AWSClientHandler(ClientHandler):
             file in question.
         '''
         return not file_path.endswith('/')
+    
+
+    def mkdir(self, path: str) -> None:
+        '''
+        Creates a directory into the provided path.
+
+        :param str path: The path of the directory \
+            that is to be created.
+        '''
+        self.__bucket.put_object(
+            Key=path,
+            ContentType='application/x-directory; charset=UTF-8')
 
 
     def fetch_file_size(self, file_path) -> int:
@@ -712,6 +925,55 @@ class AWSClientHandler(ClientHandler):
         :param str file_path: The path of the file in question.
         '''
         return self.__bucket.Object(key=file_path).metadata
+    
+
+    def download_file(
+        self,
+        file_path: str,
+        buffer: _io.BytesIO,
+        include_metadata: bool
+    ) -> _Optional[dict[str, str]]:
+        '''
+        Downloads a file into the provided buffer. \
+        Returns either ``None`` or a dictionary containing \
+        file metadata, depending on the value of parameter \
+        ``include_metadata``.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        :param BytesIO buffer: A buffer to download the \
+            file into.
+        :param bool include_metadata: Indicates whether \
+            to download any existing file metadata as well.
+        '''
+        obj = self.__bucket.Object(key=file_path)
+        obj.download_fileobj(Fileobj=buffer)
+        if include_metadata:
+            return obj.metadata
+        
+
+    def upload_file(
+        self,
+        file_path: str,
+        buffer: _io.BytesIO,
+        metadata: _Optional[dict[str, str]]
+    ) -> None:
+        '''
+        Uploads the file contained within the provided buffer.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        :param BytesIO buffer: A buffer containing the \
+            file's bytes.
+        :param dict[str, str] | None: If not ``None``, \
+            then assigns the provided metadata to the file \
+            during the upload.
+        '''
+        self.__bucket.upload_fileobj(
+            Key=file_path,
+            Fileobj=buffer,
+            ExtraArgs={ "Metadata": metadata }
+                if metadata is not None else None)
 
 
     def iterate_contents_impl(
@@ -827,12 +1089,29 @@ class AzureClientHandler(ClientHandler):
         self.__container = None
 
 
+    def container_exists(self) -> bool:
+        '''
+        Returns a value indicating whether the \
+        specified container exists or not.
+        '''
+        return self.__container.exists()
+
+
     def get_container_name(self) -> str:
         '''
         Returns the name of the container to which \
         a connection has been established.
         '''
         return self.__container_name
+    
+
+    def is_open(self) -> bool:
+        '''
+        Returns a value indicating whether \
+        this handler's underlying client connection \
+        is open or not.
+        '''
+        return self.__container is not None
 
 
     def open_connections(self) -> None:
@@ -886,6 +1165,18 @@ class AzureClientHandler(ClientHandler):
             file in question.
         '''
         return not file_path.endswith('/')
+    
+
+    def mkdir(self, path: str) -> None:
+        '''
+        Creates a directory into the provided path.
+
+        :param str path: The path of the directory \
+            that is to be created.
+        '''
+        with self.__container.get_blob_client(blob=f"{path}DUMMY") as blob:
+            blob.create_append_blob()
+            blob.delete_blob()
 
 
     def fetch_file_size(self, file_path) -> int:
@@ -908,6 +1199,55 @@ class AzureClientHandler(ClientHandler):
         '''
         return self.__container.download_blob(
             blob=file_path).properties.metadata
+    
+
+    def download_file(
+        self,
+        file_path: str,
+        buffer: _io.BytesIO,
+        include_metadata: bool
+    ) -> _Optional[dict[str, str]]:
+        '''
+        Downloads a file into the provided buffer. \
+        Returns either ``None`` or a dictionary containing \
+        file metadata, depending on the value of parameter \
+        ``include_metadata``.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        :param BytesIO buffer: A buffer to download the \
+            file into.
+        :param bool include_metadata: Indicates whether \
+            to download any existing file metadata as well.
+        '''
+        blob = self.__container.download_blob(blob=file_path)
+        blob.readinto(stream=buffer)
+        if include_metadata:
+            return blob.properties.metadata
+        
+
+    def upload_file(
+        self,
+        file_path: str,
+        buffer: _io.BytesIO,
+        metadata: _Optional[dict[str, str]]
+    ) -> None:
+        '''
+        Uploads the file contained within the provided buffer.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        :param BytesIO buffer: A buffer containing the \
+            file's bytes.
+        :param dict[str, str] | None: If not ``None``, \
+            then assigns the provided metadata to the file \
+            during the upload.
+        '''
+        self.__container.upload_blob(
+            name=file_path,
+            data=buffer,
+            metadata=metadata,
+            overwrite=True)
 
 
     def iterate_contents_impl(

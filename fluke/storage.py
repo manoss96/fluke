@@ -125,7 +125,7 @@ class _File(_ABC):
         '''
         Returns the file's size in bytes.
         '''
-        self._get_handler().get_file_size(self.get_path())
+        return self._get_handler().get_file_size(self.get_path())
     
 
     def _get_handler(self) -> _ClientHandler:
@@ -451,6 +451,19 @@ class _NonLocalFile(_File, _ABC):
         self.close()
 
 
+    def __del__(self) -> None:
+        '''
+        The class destructor method.
+        '''
+        handler = self._get_handler()
+        if handler is not None and handler.is_open():
+            msg = f'You might want to consider instantiating class "{self.__class__.__name__}"'
+            msg += " through the use of a context manager by utilizing Python's"
+            msg += ' "with" statement, or by simply invoking an instance\'s'
+            msg += ' "close" method after being done using it.'
+            _warn.warn(msg, ResourceWarning)
+
+
 class RemoteFile(_NonLocalFile):
     '''
     This class represents a file which resides \
@@ -499,7 +512,6 @@ class RemoteFile(_NonLocalFile):
             ssh_handler = _SSHClientHandler(auth=auth, cache=cache)
             self.__host = auth.get_credentials()['hostname']
 
-        print(ssh_handler)
         super().__init__(
             path=path,
             handler=ssh_handler,
@@ -541,15 +553,6 @@ class RemoteFile(_NonLocalFile):
         instance.set_metadata(metadata=metadata)
         instance.__host = host
         return instance
-
-
-    def __del__(self) -> None:
-        if self._get_handler() is not None:
-            msg = "You might want to consider instantiating class ``RemoteFile``"
-            msg += " through the use of a context manager by utilizing Python's"
-            msg += " ``with`` statement, or by simply invoking an instance's"
-            msg += " ``close`` method after being done using it."
-            _warn.warn(msg, ResourceWarning)
 
 
 class _CloudFile(_NonLocalFile, _ABC):
@@ -627,6 +630,7 @@ class AWSS3File(_CloudFile):
         '''
         # Validate path.
         sep = _infer_sep(path=path)
+
         if path.startswith(sep):
             raise _IPE(path=path)
         
@@ -635,28 +639,20 @@ class AWSS3File(_CloudFile):
         if (aws_handler := self._get_handler()) is None:
             aws_handler = _AWSClientHandler(
                 auth=auth,
-                bucket=bucket)
+                bucket=bucket,
+                cache=cache)
         
         super().__init__(
             path=path,
-            cache=cache,
             handler=aws_handler,
             ingester=_AWSS3Ingester(aws_handler))
-        
-        # Check whether this is a path to
-        # a directory instead of a file.
-        if path.endswith(self._get_separator()):
+
+        if not aws_handler.path_exists(path=path):
+            self.close()
+            raise _IPE(path)     
+        if not aws_handler.is_file(file_path=path):
             self.close()
             raise _IFE(path)
-
-        # Check whether the file exists.
-        from botocore.exceptions import ClientError as _CE
-
-        try:
-            self._get_client().Object(key=path).load()
-        except _CE:
-            self.close()
-            raise _IPE(path)
         
 
     def get_bucket_name(self) -> str:
@@ -674,15 +670,6 @@ class AWSS3File(_CloudFile):
         return f"s3://{self.get_bucket_name()}{self._get_separator()}{self.get_path()}"
 
 
-    def __del__(self) -> None:
-        if self._get_client() is not None:
-            msg = "You might want to consider instantiating class `AWSS3File``"
-            msg += " through the use of a context manager by utilizing Python's"
-            msg += " ``with`` statement, or by simply invoking an instance's"
-            msg += " ``close`` method after being done using it."
-            _warn.warn(msg, ResourceWarning)
-
-
 class AzureBlobFile(_CloudFile):
     '''
     This class represents a blob which resides \
@@ -697,6 +684,8 @@ class AzureBlobFile(_CloudFile):
         any fetched data to be cached for faster subsequent \
         access.
 
+    :raises AzureBlobContainerNotFoundError: The \
+        specified container does not exist.
     :raises InvalidPathError: The provided path \
         does not exist.
     :raises InvalidFileError: The provided path \
@@ -727,6 +716,8 @@ class AzureBlobFile(_CloudFile):
             any fetched data to be cached for faster subsequent \
             access. Defaults to ``False``.
 
+        :raises AzureBlobContainerNotFoundError: The \
+            specified container does not exist.
         :raises InvalidPathError: The provided path \
             does not exist.
         :raises InvalidFileError: The provided path \
@@ -746,36 +737,28 @@ class AzureBlobFile(_CloudFile):
         if (azr_handler := self._get_handler()) is None:
             azr_handler = _AzureClientHandler(
                 auth=auth,
-                container=container)
+                container=container,
+                cache=cache)
         
         # Infer storage account.
         self.__storage_account = auth._get_storage_account()
         
         super().__init__(
             path=path,
-            cache=cache,
             handler=azr_handler,
             ingester=_AzureIngester(handler=azr_handler))
         
-        # Check whether this is a path to
-        # a directory instead of a file.
-        if path.endswith(self._get_separator()):
-            self.close()
-            raise _IFE(path)
-
-        # Fetch container client.
-        azr_container: _ContainerClient = azr_handler.get_client()
-
         # Throw an exception if container does not exist.
-        if not azr_container.exists():
+        if not azr_handler.container_exists():
             self.close()
             raise _ABCNFE(container)
-
-        # Throw an exception if blob does not exist.  
-        with azr_container.get_blob_client(blob=path) as blob:
-            if not blob.exists():
-                self.close()
-                raise _IPE(path)
+        
+        if not azr_handler.path_exists(path=path):
+            self.close()
+            raise _IPE(path)
+        if not azr_handler.is_file(file_path=path):
+            self.close()
+            raise _IFE(path)
             
 
     def get_container_name(self) -> str:
@@ -793,15 +776,6 @@ class AzureBlobFile(_CloudFile):
         uri = f"abfss://{self.get_container_name()}@{self.__storage_account}"
         uri += f".dfs.core.windows.net/{self.get_path()}"
         return uri
-
-
-    def __del__(self) -> None:
-        if self._get_client() is not None:
-            msg = "You might want to consider instantiating class `AzureBlobFile``"
-            msg += " through the use of a context manager by utilizing Python's"
-            msg += " ``with`` statement, or by simply invoking an instance's"
-            msg += " ``close`` method after being done using it."
-            _warn.warn(msg, ResourceWarning)
 
 
 class _Directory(_ABC):
@@ -2012,15 +1986,6 @@ class RemoteDir(_NonLocalDir):
             return False
 
 
-    def __del__(self) -> None:
-        if self._get_client() is not None:
-            msg = "You might want to consider instantiating class ``RemoteDir``"
-            msg += " through the use of a context manager by utilizing Python's"
-            msg += " ``with`` statement, or by simply invoking an instance's"
-            msg += " ``close`` method after being done using it."
-            _warn.warn(msg, ResourceWarning)
-
-
 class _CloudDir(_NonLocalDir, _ABC):
     '''
     An abstract class which serves as the base class for \
@@ -2213,7 +2178,7 @@ class AWSS3Dir(_CloudDir):
 
 
     def __del__(self) -> None:
-        if self._get_client() is not None:
+        if self._get_handler().is_open():
             msg = "You might want to consider instantiating class `AWSS3Dir``"
             msg += " through the use of a context manager by utilizing Python's"
             msg += " ``with`` statement, or by simply invoking an instance's"
@@ -2348,7 +2313,7 @@ class AzureBlobDir(_CloudDir):
 
 
     def __del__(self) -> None:
-        if self._get_client() is not None:
+        if self._get_handler().is_open():
             msg = "You might want to consider instantiating class ``AzureBlobDir``"
             msg += " through the use of a context manager by utilizing Python's"
             msg += " ``with`` statement, or by simply invoking an instance's"
