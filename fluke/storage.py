@@ -80,13 +80,6 @@ class _File(_ABC):
         Returns the file's absolute path.
         '''
         return self.__path
-    
-
-    def _get_separator(self) -> str:
-        '''
-        Returns the file's path separator.
-        '''
-        return self.__separator
 
 
     def get_metadata(self) -> dict[str, str]:
@@ -134,6 +127,13 @@ class _File(_ABC):
         Returns the instance's ingester.
         '''
         return self.__ingester
+    
+
+    def _get_separator(self) -> str:
+        '''
+        Returns the file's path separator.
+        '''
+        return self.__separator
     
 
     @_absmethod
@@ -663,16 +663,6 @@ class _CloudFile(_NonLocalFile, _ABC):
         self.set_metadata(metadata=metadata)
 
 
-    @_absmethod
-    def _load_metadata_impl(self) -> dict[str, str]:
-        '''
-        Loads any metadata associated with the file, \
-        which can then be accessed via the instance's \
-        ``get_metadata`` method.
-        '''
-        pass
-
-
 class AWSS3File(_CloudFile):
     '''
     This class represents an object which resides \
@@ -758,23 +748,21 @@ class AWSS3File(_CloudFile):
         except _CE:
             self.close()
             raise _IPE(path)
+        
+
+    def get_bucket_name(self) -> str:
+        '''
+        Returns the name of the bucket in which \
+        the directory resides.
+        '''
+        return self._get_handler().get_bucket_name()
 
 
     def get_uri(self) -> str:
         '''
         Returns the object's URI.
         '''
-        return f"s3://{self._get_client().name}{self._get_separator()}{self.get_path()}"
-
-
-    def _load_metadata_impl(self) -> dict[str, str]:
-        '''
-        Loads any metadata associated with the file, \
-        which can then be accessed via the instance's \
-        ``get_metadata`` method.
-        '''
-        return self._get_client().Object(
-            key=self.get_path()).metadata
+        return f"s3://{self.get_bucket_name()}{self._get_separator()}{self.get_path()}"
 
 
     def __del__(self) -> None:
@@ -886,7 +874,7 @@ class AzureBlobFile(_CloudFile):
         Returns the name of the bucket in which \
         the directory resides.
         '''
-        return self._get_client().container_name
+        return self._get_handler().get_container_name()
 
 
     def get_uri(self) -> str:
@@ -896,16 +884,6 @@ class AzureBlobFile(_CloudFile):
         uri = f"abfss://{self.get_container_name()}@{self.__storage_account}"
         uri += f".dfs.core.windows.net/{self.get_path()}"
         return uri
-
-
-    def _load_metadata_impl(self) -> dict[str, str]:
-        '''
-        Loads any metadata associated with the file, \
-        which can then be accessed via the instance's \
-        ``get_metadata`` method.
-        '''
-        return self._get_client().download_blob(
-            blob=self.get_path()).properties.metadata
 
 
     def __del__(self) -> None:
@@ -1731,7 +1709,7 @@ class _NonLocalDir(_Directory, _ABC):
         Returns ``True`` if directory has been \
         defined as cacheable, else returns ``False``.
         '''
-        return self.__cache_manager is not None
+        return self.__handler.is_cacheable()
 
 
     def purge(self) -> None:
@@ -1739,8 +1717,7 @@ class _NonLocalDir(_Directory, _ABC):
         If cacheable, then purges the directory's cache, \
         else does nothing.
         '''
-        if self.is_cacheable():
-            self.__cache_manager.purge()
+        self.__handler.purge()
 
 
     def open(self) -> None:
@@ -1971,61 +1948,6 @@ class _NonLocalDir(_Directory, _ABC):
                 uri=ingester.get_source(),
                 is_src=True,
                 msg=str(e))
-        
-
-    def _get_contents_iterable(
-        self,
-        recursively: bool,
-        include_dirs: bool,
-        show_abs_path: bool
-    ) -> _typ.Iterator[str]:
-        '''
-        Returns an iterator over the dictionary's contents.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories.
-        :param bool include_dirs: Indicates whether to include any \
-            directories in the results in case ``recursively`` is \
-            set to ``False``.
-        :param bool show_abs_path: Determines whether to include the \
-            contents' absolute path or their path relative to this directory.
-        '''
-        iterable = super()._get_contents_iterable(
-            recursively=recursively,
-            include_dirs=include_dirs,
-            show_abs_path=show_abs_path)
-
-        if not self.is_cacheable():
-            return iterable
-        
-        if recursively and self.__cache_manager.is_recursive_cache_empty():
-            for path in self._get_handler().iterate_contents(
-                recursively=True,
-                show_abs_path=True
-            ):
-                self.__cache_manager.add_to_cache(path=path)
-        elif not recursively and self.__cache_manager.is_top_level_empty():
-            for path in self._get_handler().iterate_contents(
-                recursively=False,
-                show_abs_path=True
-            ):
-                self.__cache_manager.add_to_top_level(
-                    path=path,
-                    is_file=self._is_file(path=path))
-        
-        iterable = self.__cache_manager.iterate_contents(
-            recursively=recursively,
-            include_dirs=include_dirs)
-        
-        if not show_abs_path:
-            iterable = map(lambda p: self._relativize(p), iterable)
-
-        return iterable
 
 
     def _get_handler(self) -> _typ.Any:
@@ -2312,19 +2234,6 @@ class _CloudDir(_NonLocalDir, _ABC):
         return None
 
 
-    @_absmethod
-    def _load_metadata_impl(self, file_path: str) -> dict[str, str]:
-        '''
-        Loads any metadata associated with the file, \
-        which can then be accessed via the instance's \
-        ``get_metadata`` method.
-
-        :param str file_path: The absolute path pointing \
-            to the file in question.
-        '''
-        pass
-
-
 class AWSS3Dir(_CloudDir):
     '''
     This class represents a virtual directory which resides \
@@ -2431,7 +2340,7 @@ class AWSS3Dir(_CloudDir):
         Returns the name of the bucket in which \
         the directory resides.
         '''
-        return self._get_client().name
+        return self._get_handler().get_bucket_name()
 
 
     def get_uri(self) -> str:
@@ -2458,18 +2367,6 @@ class AWSS3Dir(_CloudDir):
         except:
             return False
         return True
-
-
-    def _load_metadata_impl(self, file_path: str) -> dict[str, str]:
-        '''
-        Loads any metadata associated with the file, \
-        which can then be accessed via the instance's \
-        ``get_metadata`` method.
-
-        :param str file_path: The absolute path pointing \
-            to the file in question.
-        '''
-        return self._get_client().Object(key=file_path).metadata
 
 
     def _is_file(self, path: str) -> bool:
@@ -2607,7 +2504,7 @@ class AzureBlobDir(_CloudDir):
         Returns the name of the bucket in which \
         the directory resides.
         '''
-        return self._get_client().container_name
+        return self._get_handler().get_container_name()
 
 
     def get_uri(self) -> str:
@@ -2634,19 +2531,6 @@ class AzureBlobDir(_CloudDir):
         container: _ContainerClient = self._get_client()
         with container.get_blob_client(blob=path) as blob:
             return blob.exists()
-
-
-    def _load_metadata_impl(self, file_path: str) -> dict[str, str]:
-        '''
-        Loads any metadata associated with the file, \
-        which can then be accessed via the instance's \
-        ``get_metadata`` method.
-
-        :param str file_path: The absolute path pointing \
-            to the file in question.
-        '''
-        return self._get_client().download_blob(
-            blob=file_path).properties.metadata
 
 
     def _is_file(self, path: str) -> bool:

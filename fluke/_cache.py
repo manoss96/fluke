@@ -1,4 +1,7 @@
 from typing import Optional as _Optional
+from typing import Iterator as _Iterator
+from typing import Callable as _Callable
+
 
 
 class Cache():
@@ -58,22 +61,6 @@ class CacheManager():
         self.__top_level_files: list[str] = list()
         self.__top_level_dirs: list[str] = list()
         self.__cache: dict[str, Cache] = dict()
-
-
-    def is_recursive_cache_empty(self):
-        '''
-        Returns ``True`` if no items have been cached \
-        recursively, else returns ``False``.
-        '''
-        return len([f for f in self.__cache if f not in set(self.__top_level_files)]) == 0
-    
-
-    def is_top_level_empty(self):
-        '''
-        Returns ``True`` if the paths of any top-level \
-        objects have not been stored, else returns ``False``.
-        '''
-        return len(self.__top_level_files + self.__top_level_dirs) == 0
 
 
     def get_size(self, file_path: str) -> _Optional[int]:
@@ -138,41 +125,16 @@ class CacheManager():
         return path in self.__cache
 
 
-    def add_to_cache(self, path: str) -> None:
-        '''
-        Creates an entry within the cache based on the \
-        provided file path key.
-
-        :param str path: The file's absolute path.
-        '''
-        self.__cache.update({path: Cache()})
-        
-
-    def add_to_top_level(self, path: str, is_file: bool) -> None:
-        '''
-        Adds the provided path to the cache manager's \
-        top-level list.
-
-        :param str path: The object's absolute path.
-        :param bool is_file: Indicates whether the \
-            provided path points to a file or not.
-        '''
-        if is_file:
-            self.__top_level_files.append(path)
-            if not self.is_in_cache(path=path):
-                self.add_to_cache(path=path)
-        else:
-            self.__top_level_dirs.append(path)
-
-
-    def iterate_contents(
+    def get_content_iterator(
         self,
         recursively: bool,
         include_dirs: bool
-    ):
+    ) -> _Optional[_Iterator[str]]:
         '''
-        Iterate through all ``Cache`` instances stored. \
-        either within the ordinary cache or the top-level cache.
+        Returns an iterator capable of going through all ``Cache`` \
+        instances' keys, either within the ordinary cache or the top-level \
+        cache depending on the value of ``recursively``. Returns ``None`` \
+        if no ``Cache`` instances exist for the requested cache type.
 
         :param bool recursively: Indicates whether to iterate \
             instances recursively by looking in the ordinary \
@@ -182,23 +144,54 @@ class CacheManager():
             to ``False``.
         '''
         if recursively:
-            iterable = (key for key in self.__cache)
+            if self._is_recursive_cache_empty():
+                return None
+            return (key for key in self.__cache)
         else:
+            if self._is_top_level_empty():
+                return None
             top_level = list(self.__top_level_files)
             if include_dirs:
                 top_level += self.__top_level_dirs
             iterable = (key for key in top_level)
 
         return iterable
-        
+    
 
-    def _get_cache(self, file_path: str) -> _Optional[Cache]:
+    def cache_contents(
+        self,
+        iterator: _Iterator[str],
+        recursively: bool,
+        is_file: _Callable[[str], bool]
+    ) -> None:
         '''
-        Returns a reference to the file's ``Cache`` instance, \
-        if said instance exists, else returns ``None``.
 
-        :param str file_path: The file's absolute path.
         '''
-        if file_path in self.__cache:
-            return self.__cache[file_path]
+        if recursively:
+            for path in iterator:
+                self.__cache.update({path: Cache()})
+        else:
+            for path in iterator:
+                if is_file(path):
+                    self.__top_level_files.append(path)
+                    if not self.is_in_cache(path=path):
+                        self.__cache.update({path: Cache()})
+                else:
+                    self.__top_level_dirs.append(path)
+    
+
+    def _is_recursive_cache_empty(self):
+        '''
+        Returns ``True`` if no items have been cached \
+        recursively, else returns ``False``.
+        '''
+        return len([f for f in self.__cache if f not in set(self.__top_level_files)]) == 0
+    
+
+    def _is_top_level_empty(self):
+        '''
+        Returns ``True`` if the paths of any top-level \
+        objects have not been stored, else returns ``False``.
+        '''
+        return len(self.__top_level_files + self.__top_level_dirs) == 0
     

@@ -9,6 +9,9 @@ All notable changes to this project will be documented in this file.
 - *File* API now provides a *read* method
   in order to read a file's bytes. Added
   corresponding tests. (https://github.com/manoss96/fluke/issues/11)
+
+- *fluke.storage.AWSS3File* now has a *get_bucket_name* method.
+  (https://github.com/manoss96/fluke/issues/16)
    
 ### Changed
 

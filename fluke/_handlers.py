@@ -11,13 +11,14 @@ from azure.identity import ClientSecretCredential as _CSC
 from azure.storage.blob import ContainerClient as _ContainerClient
 
 
-from ._helper import join_paths as _join_paths
-from ._helper import infer_separator as _infer_sep
-from ._helper import relativize_path as _relativize
 from .auth import AWSAuth as _AWSAuth
 from .auth import AzureAuth as _AzureAuth
 from .auth import RemoteAuth as _RemoteAuth
+from ._cache import CacheManager as _CacheManager
 from ._exceptions import UnknownKeyTypeError as _UKTE
+from ._helper import join_paths as _join_paths
+from ._helper import infer_separator as _infer_sep
+from ._helper import relativize_path as _relativize
 
 
 class ClientHandler(_ABC):
@@ -25,6 +26,145 @@ class ClientHandler(_ABC):
     An abstract class which serves as the \
     base class for all client-like classes.
     '''
+
+    def __init__(self, cache: bool):
+        '''
+        An abstract class which serves as the \
+        base class for all client-like classes.
+        '''
+        self.__cache_manager = _CacheManager() if cache else None
+
+
+    def is_cacheable(self) -> bool:
+        '''
+        Returns a value indicating whether this \
+        handler instance has been defined so that \
+        it is able to cache data.
+        '''
+        return self.__cache_manager is not None
+    
+
+    def purge(self) -> None:
+        '''
+        If cacheable, then purges the handler's cache, \
+        else does nothing.
+        '''
+        if self.is_cacheable():
+            self.__cache_manager = _CacheManager()
+
+
+    def get_file_size(self, file_path: str) -> int:
+        '''
+        Returns the size of a file in bytes.
+        
+        :param str file_path: The path of the file in question.
+
+        :note: This method will go on to fetch the requested value \
+            from a remote resource only when one of the following is \
+            true:
+            - Caching has not been enabled.
+            - Caching has not been enabled, though \
+              the requested value has not been cached.
+
+            In the second case, the value will be cached \
+            after it has been retrieved.
+        '''
+        if self.is_cacheable():
+            if (size := self.__cache_manager.get_size(file_path=file_path)) is not None:
+                return size
+            else:
+                size = self.fetch_file_size(file_path)
+                self.__cache_manager.cache_size(file_path, size)
+        else:
+            return self.fetch_file_size(file_path)
+        
+
+    def get_file_metadata(self, file_path: str) -> dict[str, str]:
+        '''
+        Returns a dictionary containing the metadata of a file.
+        
+        :param str file_path: The path of the file in question.
+        
+        :note: This method will go on to fetch the requested value \
+            from a remote resource only when one of the following is \
+            true:
+            - Caching has not been enabled.
+            - Caching has not been enabled, though \
+              the requested value has not been cached.
+
+            In the second case, the value will be cached \
+            after it has been retrieved.
+        '''
+        if self.is_cacheable():
+            if (metadata := self.__cache_manager.get_metadata(file_path=file_path)) is not None:
+                return metadata
+            else:
+                metadata = self.fetch_file_metadata(file_path)
+                self.__cache_manager.cache_metadata(file_path, metadata)
+        else:
+            return self.fetch_file_metadata(file_path)
+        
+
+    def iterate_contents(
+        self,
+        dir_path: str,
+        recursively: bool,
+        include_dirs: bool,
+        show_abs_path: bool
+    ) -> _Iterator[str]:
+        '''
+        Returns an iterator capable of going through the paths \
+        of the dictionary's contents as strings.
+
+        :param str dir_path: The absolute path of the directory \
+            whose contents are to be iterated.
+        :param bool recursively: Indicates whether the directory \
+            is to be scanned recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories.
+        :param bool include_dirs: Indicates whether to include any \
+            directories in the results in case ``recursively`` is \
+            set to ``False``.
+        :param bool show_abs_path: Indicates whether it \
+            should be displayed the absolute or the relative \
+            path of the contents.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
+        '''
+
+        if self.is_cacheable():
+            # Grab content iterator from cache if it exists.
+            if (iterator := self.__cache_manager.get_content_iterator(
+                recursively=recursively,
+                include_dirs=include_dirs)
+            ) is not None:
+                return iterator
+            # Else...
+            else:
+                # Fetch content iterator.
+                iterator = self.iterate_contents_impl(
+                    dir_path=dir_path,
+                    recursively=recursively,
+                    show_abs_path=show_abs_path)
+                # Cache all contents.
+                self.__cache_manager.cache_contents(
+                    iterator=iterator,
+                    recursively=recursively,
+                    is_file=self.is_file)
+                # Reset iterator by grabbing it from cache.
+                return self.__cache_manager.get_content_iterator(
+                    recursively=recursively,
+                    include_dirs=include_dirs)
+        else:
+            return self.iterate_contents_impl(
+                dir_path=dir_path,
+                recursively=recursively,
+                show_abs_path=show_abs_path)
+
 
     @_absmethod
     def open_connections(self) -> None:
@@ -42,9 +182,9 @@ class ClientHandler(_ABC):
 
 
     @_absmethod
-    def get_file_size(self, file_path: str) -> int:
+    def fetch_file_size(self, file_path: str) -> int:
         '''
-        Returns the size of a file in bytes.
+        Fetches and returns the size of a file in bytes.
 
         :param str file_path: The path of the file in question.
         '''
@@ -52,11 +192,21 @@ class ClientHandler(_ABC):
 
 
     @_absmethod
-    def iterate_contents(
+    def fetch_file_metadata(self, file_path: str) -> dict[str, str]:
+        '''
+        Fetches and returns a dictionary containing the metadata of a file.
+
+        :param str file_path: The path of the file in question.
+        '''
+        pass
+
+
+    @_absmethod
+    def iterate_contents_impl(
         self,
         dir_path: str,
-        recursively: bool = False,
-        show_abs_path: bool = False
+        recursively: bool,
+        show_abs_path: bool
     ) -> _Iterator[str]:
         '''
         Returns an iterator capable of going through the paths \
@@ -70,10 +220,10 @@ class ClientHandler(_ABC):
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
             reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
+            its subdirectories.
         :param bool show_abs_path: Indicates whether it \
             should be displayed the absolute or the relative \
-            path of the contents. Defaults to ``False``.
+            path of the contents.
 
         :note: The resulting iterator may vary depending on the \
             value of parameter ``recursively``.
@@ -180,20 +330,29 @@ class SSHClientHandler(ClientHandler):
             self.__ssh = None
 
 
-    def get_file_size(self, file_path) -> int:
+    def fetch_file_size(self, file_path) -> int:
         '''
-        Returns the size of a file in bytes.
+        Fetches and returns the size of a file in bytes.
 
         :param str file_path: The path of the file in question.
         '''
         return self.__sftp.stat(path=file_path).st_size
+    
+
+    def fetch_file_metadata(self, file_path: str) -> dict[str, str]:
+        '''
+        Fetches and returns a dictionary containing the metadata of a file.
+
+        :param str file_path: The path of the file in question.
+        '''
+        raise NotImplementedError()
 
 
-    def iterate_contents(
+    def iterate_contents_impl(
         self,
         dir_path: str,
-        recursively: bool = False,
-        show_abs_path: bool = False
+        recursively: bool,
+        show_abs_path: bool
     ) -> _Iterator[str]:
         '''
         Returns an iterator capable of going through the paths \
@@ -207,10 +366,10 @@ class SSHClientHandler(ClientHandler):
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
             reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
+            its subdirectories.
         :param bool show_abs_path: Indicates whether it \
             should be displayed the absolute or the relative \
-            path of the contents. Defaults to ``False``.
+            path of the contents.
 
         :note: The resulting iterator may vary depending on the \
             value of parameter ``recursively``.
@@ -286,6 +445,14 @@ class AWSClientHandler(ClientHandler):
         self.__bucket = None
 
 
+    def get_bucket_name(self) -> str:
+        '''
+        Returns the name of the bucket to which \
+        a connection has been established.
+        '''
+        return self.__bucket_name
+
+
     def open_connections(self) -> None:
         '''
         Opens an HTTP connection to the Amazon S3 bucket.
@@ -309,20 +476,29 @@ class AWSClientHandler(ClientHandler):
             self.__bucket = None
 
 
-    def get_file_size(self, file_path) -> int:
+    def fetch_file_size(self, file_path) -> int:
         '''
-        Returns the size of a file in bytes.
+        Fetches and returns the size of a file in bytes.
 
         :param str file_path: The path of the file in question.
         '''
         return self.__bucket.Object(key=file_path).content_length
+    
+
+    def fetch_file_metadata(self, file_path: str) -> dict[str, str]:
+        '''
+        Fetches and returns a dictionary containing the metadata of a file.
+
+        :param str file_path: The path of the file in question.
+        '''
+        return self.__bucket.Object(key=file_path).metadata
 
 
-    def iterate_contents(
+    def iterate_contents_impl(
         self,
         dir_path: str,
-        recursively: bool = False,
-        show_abs_path: bool = False
+        recursively: bool,
+        show_abs_path: bool
     ) -> _Iterator[str]:
         '''
         Returns an iterator capable of going through the paths \
@@ -336,10 +512,10 @@ class AWSClientHandler(ClientHandler):
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
             reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
+            its subdirectories.
         :param bool show_abs_path: Indicates whether it \
             should be displayed the absolute or the relative \
-            path of the contents. Defaults to ``False``.
+            path of the contents.
 
         :note: The resulting iterator may vary depending on the \
             value of parameter ``recursively``.
@@ -424,6 +600,14 @@ class AzureClientHandler(ClientHandler):
         self.__container = None
 
 
+    def get_container_name(self) -> str:
+        '''
+        Returns the name of the container to which \
+        a connection has been established.
+        '''
+        return self.__container_name
+
+
     def open_connections(self) -> None:
         '''
         Opens an HTTP connection to the Azure blob container.
@@ -454,20 +638,30 @@ class AzureClientHandler(ClientHandler):
             self.__container = None
 
 
-    def get_file_size(self, file_path) -> int:
+    def fetch_file_size(self, file_path) -> int:
         '''
-        Returns the size of a file in bytes.
+        Fetches and returns the size of a file in bytes.
 
         :param str file_path: The path of the file in question.
         '''
         return self.__container.download_blob(blob=file_path).size
+    
+
+    def fetch_file_metadata(self, file_path: str) -> dict[str, str]:
+        '''
+        Fetches and returns a dictionary containing the metadata of a file.
+
+        :param str file_path: The path of the file in question.
+        '''
+        return self.__container.download_blob(
+            blob=file_path).properties.metadata
 
 
-    def iterate_contents(
+    def iterate_contents_impl(
         self,
         dir_path: str,
-        recursively: bool = False,
-        show_abs_path: bool = False
+        recursively: bool,
+        show_abs_path: bool
     ) -> _Iterator[str]:
         '''
         Returns an iterator capable of going through the paths \
@@ -481,10 +675,10 @@ class AzureClientHandler(ClientHandler):
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
             reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
+            its subdirectories.
         :param bool show_abs_path: Indicates whether it \
             should be displayed the absolute or the relative \
-            path of the contents. Defaults to ``False``.
+            path of the contents.
 
         :note: The resulting iterator may vary depending on the \
             value of parameter ``recursively``.
