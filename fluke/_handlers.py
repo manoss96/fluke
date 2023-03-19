@@ -83,11 +83,11 @@ class ClientHandler(_ABC):
             if (size := self.__cache_manager.get_size(file_path=file_path)) is not None:
                 return size
             else:
-                size = self.fetch_file_size(file_path)
+                size = self._get_file_size_impl(file_path)
                 self.__cache_manager.cache_size(file_path, size)
                 return size
         else:
-            return self.fetch_file_size(file_path)
+            return self._get_file_size_impl(file_path)
         
 
     def get_file_metadata(self, file_path: str) -> dict[str, str]:
@@ -110,11 +110,11 @@ class ClientHandler(_ABC):
             if (metadata := self.__cache_manager.get_metadata(file_path=file_path)) is not None:
                 return metadata
             else:
-                metadata = self.fetch_file_metadata(file_path)
+                metadata = self._get_file_metadata_impl(file_path)
                 self.__cache_manager.cache_metadata(file_path, metadata)
                 return metadata
         else:
-            return self.fetch_file_metadata(file_path)
+            return self._get_file_metadata_impl(file_path)
         
 
     def iterate_contents(
@@ -256,29 +256,6 @@ class ClientHandler(_ABC):
 
 
     @_absmethod
-    def fetch_file_size(self, file_path: str) -> int:
-        '''
-        Fetches and returns the size of a file in bytes.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        '''
-        pass
-
-
-    @_absmethod
-    def fetch_file_metadata(self, file_path: str) -> dict[str, str]:
-        '''
-        Fetches and returns a dictionary containing the \
-        metadata of a file.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        '''
-        pass
-
-
-    @_absmethod
     def download_file(
         self,
         file_path: str,
@@ -352,6 +329,29 @@ class ClientHandler(_ABC):
         pass
 
 
+    @_absmethod
+    def _get_file_size_impl(self, file_path: str) -> int:
+        '''
+        Fetches and returns the size of a file in bytes.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        pass
+
+
+    @_absmethod
+    def _get_file_metadata_impl(self, file_path: str) -> dict[str, str]:
+        '''
+        Fetches and returns a dictionary containing the \
+        metadata of a file.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        pass
+
+
 class FileSystemHandler(ClientHandler):
     '''
     A class used in handling all local file \
@@ -419,25 +419,6 @@ class FileSystemHandler(ClientHandler):
             that is to be created.
         '''
         _os.makedirs(path)
-
-
-    def fetch_file_size(self, file_path) -> int:
-        '''
-        Fetches and returns the size of a file in bytes.
-
-        :param str file_path: The path of the file in question.
-        '''
-        return _os.path.getsize(file_path)
-    
-
-    def fetch_file_metadata(self, file_path: str) -> dict[str, str]:
-        '''
-        Throws ``NotImplementedError``.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        '''
-        raise NotImplementedError()
     
 
     def download_file(
@@ -478,6 +459,25 @@ class FileSystemHandler(ClientHandler):
         :param dict[str, str] | None: If not ``None``, \
             then assigns the provided metadata to the file \
             during the upload.
+        '''
+        raise NotImplementedError()
+    
+
+    def _get_file_size_impl(self, file_path) -> int:
+        '''
+        Fetches and returns the size of a file in bytes.
+
+        :param str file_path: The path of the file in question.
+        '''
+        return _os.path.getsize(file_path)
+    
+
+    def _get_file_metadata_impl(self, file_path: str) -> dict[str, str]:
+        '''
+        Throws ``NotImplementedError``.
+
+        :param str file_path: The absolute path of the \
+            file in question.
         '''
         raise NotImplementedError()
 
@@ -679,26 +679,6 @@ class SSHClientHandler(ClientHandler):
             that is to be created.
         '''
         self.__sftp.mkdir(path=path)
-
-
-    def fetch_file_size(self, file_path) -> int:
-        '''
-        Fetches and returns the size of a file in bytes.
-
-        :param str file_path: The path of the file in question.
-        '''
-        return self.__sftp.stat(path=file_path).st_size
-    
-
-    def fetch_file_metadata(self, file_path: str) -> dict[str, str]:
-        '''
-        Fetches and returns a dictionary containing the \
-        metadata of a file.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        '''
-        raise NotImplementedError()
     
 
     def download_file(
@@ -741,6 +721,26 @@ class SSHClientHandler(ClientHandler):
             during the upload.
         '''
         self.__sftp.putfo(fl=buffer, remotepath=file_path)
+
+
+    def _get_file_size_impl(self, file_path) -> int:
+        '''
+        Fetches and returns the size of a file in bytes.
+
+        :param str file_path: The path of the file in question.
+        '''
+        return self.__sftp.stat(path=file_path).st_size
+    
+
+    def _get_file_metadata_impl(self, file_path: str) -> dict[str, str]:
+        '''
+        Fetches and returns a dictionary containing the \
+        metadata of a file.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        raise NotImplementedError()
 
 
     def _iterate_contents_impl(
@@ -941,25 +941,6 @@ class AWSClientHandler(ClientHandler):
         self.__bucket.put_object(
             Key=path,
             ContentType='application/x-directory; charset=UTF-8')
-
-
-    def fetch_file_size(self, file_path) -> int:
-        '''
-        Fetches and returns the size of a file in bytes.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        '''
-        return self.__bucket.Object(key=file_path).content_length
-    
-
-    def fetch_file_metadata(self, file_path: str) -> dict[str, str]:
-        '''
-        Fetches and returns a dictionary containing the metadata of a file.
-
-        :param str file_path: The path of the file in question.
-        '''
-        return self.__bucket.Object(key=file_path).metadata
     
 
     def download_file(
@@ -1008,7 +989,26 @@ class AWSClientHandler(ClientHandler):
             Key=file_path,
             Fileobj=buffer,
             ExtraArgs={ "Metadata": metadata }
-                if metadata else None)
+                if metadata is not None else None)
+        
+
+    def _get_file_size_impl(self, file_path) -> int:
+        '''
+        Fetches and returns the size of a file in bytes.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        return self.__bucket.Object(key=file_path).content_length
+    
+
+    def _get_file_metadata_impl(self, file_path: str) -> dict[str, str]:
+        '''
+        Fetches and returns a dictionary containing the metadata of a file.
+
+        :param str file_path: The path of the file in question.
+        '''
+        return self.__bucket.Object(key=file_path).metadata
 
 
     def _iterate_contents_impl(
@@ -1212,28 +1212,6 @@ class AzureClientHandler(ClientHandler):
         with self.__container.get_blob_client(blob=f"{path}DUMMY") as blob:
             blob.create_append_blob()
             blob.delete_blob()
-
-
-    def fetch_file_size(self, file_path) -> int:
-        '''
-        Fetches and returns the size of a file in bytes.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        '''
-        return self.__container.download_blob(blob=file_path).size
-    
-
-    def fetch_file_metadata(self, file_path: str) -> dict[str, str]:
-        '''
-        Fetches and returns a dictionary containing the \
-        metadata of a file.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        '''
-        return self.__container.download_blob(
-            blob=file_path).properties.metadata
     
 
     def download_file(
@@ -1281,8 +1259,30 @@ class AzureClientHandler(ClientHandler):
         self.__container.upload_blob(
             name=file_path,
             data=buffer,
-            metadata=metadata if metadata else None,
+            metadata=metadata if metadata is not None else None,
             overwrite=True)
+        
+
+    def _get_file_size_impl(self, file_path) -> int:
+        '''
+        Fetches and returns the size of a file in bytes.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        return self.__container.download_blob(blob=file_path).size
+    
+
+    def _get_file_metadata_impl(self, file_path: str) -> dict[str, str]:
+        '''
+        Fetches and returns a dictionary containing the \
+        metadata of a file.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        return self.__container.download_blob(
+            blob=file_path).properties.metadata
 
 
     def _iterate_contents_impl(

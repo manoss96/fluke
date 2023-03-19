@@ -12,6 +12,11 @@ All notable changes to this project will be documented in this file.
 
 - *fluke.storage.AWSS3File* now has a *get_bucket_name* method.
   (https://github.com/manoss96/fluke/issues/16)
+
+- *Dir* API now provides a *get_file* method in order to access
+  files within the directory through the *File* API. In the case
+  of remote files, they all share the same connection with the
+  directory that spawned them. (https://github.com/manoss96/fluke/issues/16)
    
 ### Changed
 
@@ -22,6 +27,10 @@ All notable changes to this project will be documented in this file.
 - Providing a path that starts with a separator, e.g. ``/``, to constructors
   *fluke.storage.AWSS3Dir* and *fluke.storage.AzureBlobDir* will now throw
   an ``InvalidPathError`` exception. (https://github.com/manoss96/fluke/issues/15)
+
+- Both *File* and *Dir* API methods *get_metadata* will now return
+  an empty dictionary instead of ``None`` when no metadata has been
+  set (https://github.com/manoss96/fluke/issues/16).
  
 ### Fixed
 
@@ -29,6 +38,13 @@ All notable changes to this project will be documented in this file.
 
 - Explicitly sort the results of ``os.listdir`` and ``os.walk``
   due to inconsistent order.
+
+- Bug where the recursive cache was considered empty if the directory
+  contained no sub-directories (https://github.com/manoss96/fluke/issues/16)
+
+- Bug where both *File* and *Dir* API methods *get_metadata* returned
+  the reference to the private metadata dictionary reference, instead
+  of a copy of said dictionary (https://github.com/manoss96/fluke/issues/16).
 
  
 ## [0.1.0] - 2023-03-06

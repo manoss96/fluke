@@ -39,7 +39,8 @@ class Cache():
         Returns a dictionary containing the metadata of the file. \
         Returns ``None`` if no metadata has been cached.
         '''
-        return dict(self.__metadata)
+        if self.__metadata is not None:
+            return dict(self.__metadata)
 
 
     def set_metadata(self, metadata: dict[str, str]) -> None:
@@ -157,9 +158,7 @@ class CacheManager():
             top_level = list(self.__top_level_files)
             if include_dirs:
                 top_level += self.__top_level_dirs
-            iterable = (key for key in top_level)
-
-        return iterable
+            return (key for key in top_level)
     
 
     def cache_contents(
@@ -199,6 +198,19 @@ class CacheManager():
         Returns ``True`` if no items have been cached \
         recursively, else returns ``False``.
         '''
+        # If top-level cache is empty, then check if
+        # the recursive cache has items...
+        if self._is_top_level_empty():
+            return len(self.__cache) == 0
+        
+        # If top-level cache is not empty,
+        # then consider the recursive cache
+        # not empty if no sub-directories exist.
+        if len(self.__top_level_dirs) == 0:
+            return False
+        
+        # Else if sub-directories exist, check whether
+        # this directory has been traversed recursively.
         return len([f for f in self.__cache if f not in set(self.__top_level_files)]) == 0
     
 

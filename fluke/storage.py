@@ -467,7 +467,6 @@ class _NonLocalFile(_File, _ABC):
             fetch_metadata = include_metadata
             if include_metadata and (
                 (custom_metadata := self.get_metadata())
-                is not None
             ):
                 ingester.set_metadata(metadata=custom_metadata)
                 fetch_metadata = False
@@ -568,6 +567,7 @@ class RemoteFile(_NonLocalFile):
             raise _IPE(path)
         
         if not ssh_handler.is_file(file_path=path):
+            self.close()
             raise _IFE(path)
 
 
@@ -614,6 +614,13 @@ class RemoteFile(_NonLocalFile):
             handler=handler,
             ingester=_RemoteIngester(handler=handler))
         return instance
+    
+
+    def __enter__(self) -> 'RemoteFile':
+        '''
+        Enter the runtime context related to this instance.
+        '''
+        return self
 
 
 class _CloudFile(_NonLocalFile, _ABC):
@@ -632,7 +639,7 @@ class _CloudFile(_NonLocalFile, _ABC):
             method will be overriden after invoking this \
             method.
         '''
-        metadata = self._get_handler().fetch_file_metadata(self.get_path())
+        metadata = self._get_handler().get_file_metadata(self.get_path())
         self.set_metadata(metadata=metadata)
 
 
@@ -709,6 +716,9 @@ class AWSS3File(_CloudFile):
             ingester=_AWSS3Ingester(aws_handler))
 
         if not aws_handler.path_exists(path=path):
+            if aws_handler.dir_exists(path=path):
+                self.close()
+                raise _IFE(path)
             self.close()
             raise _IPE(path)     
         if not aws_handler.is_file(file_path=path):
@@ -757,6 +767,13 @@ class AWSS3File(_CloudFile):
             handler=handler,
             ingester=_AWSS3Ingester(handler=handler))
         return instance
+    
+
+    def __enter__(self) -> 'AWSS3File':
+        '''
+        Enter the runtime context related to this instance.
+        '''
+        return self
 
 
 class AzureBlobFile(_CloudFile):
@@ -893,6 +910,13 @@ class AzureBlobFile(_CloudFile):
             handler=handler,
             ingester=_AzureIngester(handler=handler))
         return instance
+    
+
+    def __enter__(self) -> 'AzureBlobFile':
+        '''
+        Enter the runtime context related to this instance.
+        '''
+        return self
 
 
 class _Directory(_ABC):
@@ -1828,7 +1852,6 @@ class _NonLocalDir(_Directory, _ABC):
 
                 if include_metadata and (
                     (custom_metadata := self.get_metadata(file_path))
-                    is not None
                 ):
                     ingester.set_metadata(metadata=custom_metadata)
                     fetch_metadata = False
@@ -1929,6 +1952,19 @@ class _NonLocalDir(_Directory, _ABC):
                 uri=ingester.get_source(),
                 is_src=True,
                 msg=str(e))
+        
+
+    def __del__(self) -> None:
+        '''
+        The class destructor method.
+        '''
+        handler = self._get_handler()
+        if handler is not None and handler.is_open():
+            msg = f'You might want to consider instantiating class "{self.__class__.__name__}"'
+            msg += " through the use of a context manager by utilizing Python's"
+            msg += ' "with" statement, or by simply invoking an instance\'s'
+            msg += ' "close" method after being done using it.'
+            _warn.warn(msg, ResourceWarning)
     
 
     def __enter__(self) -> '_NonLocalDir':
@@ -2051,6 +2087,13 @@ class RemoteDir(_NonLocalDir):
             host=self.get_hostname(),
             handler=self._get_handler(),
             metadata=self._get_metadata_ref(file_path))
+    
+
+    def __enter__(self) -> 'RemoteDir':
+        '''
+        Enter the runtime context related to this instance.
+        '''
+        return super().__enter__()
 
 
 class _CloudDir(_NonLocalDir, _ABC):
@@ -2081,24 +2124,16 @@ class _CloudDir(_NonLocalDir, _ABC):
               method will be overriden after invoking this \
               method.
         '''
+        handler = self._get_handler()
 
-        cache_manager = self._get_cache_manager()
-
-        for file_path in self._get_contents_iterable(
+        for file_path in handler.iterate_contents(
+            dir_path=self.get_path(),
             recursively=recursively,
             include_dirs=False,
             show_abs_path=True
         ):
-            if self.is_cacheable():
-                if (metadata := cache_manager.get_metadata(file_path=file_path)) is not None:
-                    self.set_metadata(file_path, metadata)
-                else:
-                    metadata = self._load_metadata_impl(file_path)
-                    cache_manager.cache_metadata(file_path, metadata)
-                    self.set_metadata(file_path, metadata)
-            else:
-                self.set_metadata(file_path,
-                    self._load_metadata_impl(file_path))
+            metadata = handler.get_file_metadata(file_path)
+            self.set_metadata(file_path, metadata)
 
 
 class AWSS3Dir(_CloudDir):
@@ -2221,15 +2256,13 @@ class AWSS3Dir(_CloudDir):
             path=file_path,
             handler=self._get_handler(),
             metadata=self._get_metadata_ref(file_path))
+    
 
-
-    def __del__(self) -> None:
-        if self._get_handler().is_open():
-            msg = "You might want to consider instantiating class `AWSS3Dir``"
-            msg += " through the use of a context manager by utilizing Python's"
-            msg += " ``with`` statement, or by simply invoking an instance's"
-            msg += " ``close`` method after being done using it."
-            _warn.warn(msg, ResourceWarning)
+    def __enter__(self) -> 'AWSS3Dir':
+        '''
+        Enter the runtime context related to this instance.
+        '''
+        return super().__enter__()
 
 
 class AzureBlobDir(_CloudDir):
@@ -2368,12 +2401,10 @@ class AzureBlobDir(_CloudDir):
             path=file_path,
             handler=self._get_handler(),
             metadata=self._get_metadata_ref(file_path))
-
-
-    def __del__(self) -> None:
-        if self._get_handler().is_open():
-            msg = "You might want to consider instantiating class ``AzureBlobDir``"
-            msg += " through the use of a context manager by utilizing Python's"
-            msg += " ``with`` statement, or by simply invoking an instance's"
-            msg += " ``close`` method after being done using it."
-            _warn.warn(msg, ResourceWarning)
+    
+    
+    def __enter__(self) -> 'AzureBlobDir':
+        '''
+        Enter the runtime context related to this instance.
+        '''
+        return super().__enter__()

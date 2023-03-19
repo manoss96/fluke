@@ -54,7 +54,7 @@ class Ingester(_ABC):
         '''
         self.__snk = snk
 
-    def get_metadata(self) -> _typ.Optional[dict[str, str]]:
+    def get_metadata(self) -> dict[str, str]:
         '''
         Returns any metadata currently held \
         by the ingester.
@@ -147,7 +147,6 @@ class LocalIngester(Ingester):
         #       as local files are read directly into
         #       memory and are not written into a buffer.
         _copyfileobj(fsrc=self.get_source(), fdst=snk)
-
 
 
     def load(
@@ -376,7 +375,6 @@ class AzureIngester(Ingester):
             include_metadata=include_metadata)
         ) is not None:
             self.set_metadata(metadata)
-
 
 
     def load(

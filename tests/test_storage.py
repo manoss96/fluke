@@ -717,8 +717,32 @@ class TestAWSS3File(unittest.TestCase):
     def setUp(self):
         create_aws_s3_bucket(self.MOCK_S3, BUCKET, METADATA)
 
+        from fluke._handlers import AWSClientHandler
+
+        m1 = patch.object(AWSClientHandler, '_get_file_size_impl', autospec=True)
+        m2 = patch.object(AWSClientHandler, '_get_file_metadata_impl', autospec=True)
+        m3 = patch.object(AWSClientHandler, '_iterate_contents_impl', autospec=True)
+
+        def simulate_latency_1(*args, **kwargs):
+            time.sleep(0.2)
+            return m1.temp_original(*args, **kwargs)
+        
+        def simulate_latency_2(*args, **kwargs):
+            time.sleep(0.2)
+            return m2.temp_original(*args, **kwargs)
+        
+        def simulate_latency_3(*args, **kwargs):
+            time.sleep(0.2)
+            return m3.temp_original(*args, **kwargs)
+
+        m1.start().side_effect = simulate_latency_1
+        m2.start().side_effect = simulate_latency_2
+        m3.start().side_effect = simulate_latency_3
+
+
     def tearDown(self):
         self.MOCK_S3.stop()
+        patch.stopall()
     
     @staticmethod
     def build_file(path: str = REL_FILE_PATH, cache: bool = False) -> AWSS3File:
@@ -2039,8 +2063,31 @@ class TestAWSS3Dir(unittest.TestCase):
     def setUp(self):
         create_aws_s3_bucket(self.MOCK_S3, BUCKET, METADATA)
 
+        from fluke._handlers import AWSClientHandler
+
+        m1 = patch.object(AWSClientHandler, '_get_file_size_impl', autospec=True)
+        m2 = patch.object(AWSClientHandler, '_get_file_metadata_impl', autospec=True)
+        m3 = patch.object(AWSClientHandler, '_iterate_contents_impl', autospec=True)
+
+        def simulate_latency_1(*args, **kwargs):
+            time.sleep(0.2)
+            return m1.temp_original(*args, **kwargs)
+        
+        def simulate_latency_2(*args, **kwargs):
+            time.sleep(0.2)
+            return m2.temp_original(*args, **kwargs)
+        
+        def simulate_latency_3(*args, **kwargs):
+            time.sleep(0.2)
+            return m3.temp_original(*args, **kwargs)
+
+        m1.start().side_effect = simulate_latency_1
+        m2.start().side_effect = simulate_latency_2
+        m3.start().side_effect = simulate_latency_3
+
     def tearDown(self):
         self.MOCK_S3.stop()
+        patch.stopall()
     
     @staticmethod
     def build_dir(
@@ -2496,15 +2543,6 @@ class TestAWSS3Dir(unittest.TestCase):
             self.assertEqual(
                 ''.join([p for p in dir.iterate_contents(recursively=True)]),
                 ''.join(expected_results))
-            
-    def test_iterate_contents_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents(recursively=True))
-            self.assertEqual(
-                ''.join(dir.iterate_contents(
-                    recursively=False,
-                    include_dirs=True)),
-                '')
             
     def test_iterate_contents_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -3101,15 +3139,6 @@ class TestAzureBlobDir(unittest.TestCase):
             self.assertEqual(
                 ''.join([p for p in dir.iterate_contents(recursively=True)]),
                 ''.join(expected_results))
-            
-    def test_iterate_contents_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents(recursively=True))
-            self.assertEqual(
-                ''.join(dir.iterate_contents(
-                    recursively=False,
-                    include_dirs=True)),
-                '')
             
     def test_iterate_contents_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
