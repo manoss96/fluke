@@ -1008,7 +1008,7 @@ class AWSClientHandler(ClientHandler):
             Key=file_path,
             Fileobj=buffer,
             ExtraArgs={ "Metadata": metadata }
-                if metadata is not None else None)
+                if metadata else None)
 
 
     def _iterate_contents_impl(
@@ -1281,7 +1281,7 @@ class AzureClientHandler(ClientHandler):
         self.__container.upload_blob(
             name=file_path,
             data=buffer,
-            metadata=metadata,
+            metadata=metadata if metadata else None,
             overwrite=True)
 
 

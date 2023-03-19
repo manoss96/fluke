@@ -282,7 +282,7 @@ By executing the above code, we get the following output:
 
 .. code-block::
 
-    None
+    {}
 
 That's strange. Shouldn't we see a dictionary containing the metadata we just assigned to
 the object while transfering it to Amazon S3? Actually, the answer is no, and the reason
@@ -292,7 +292,7 @@ within our machine's local RAM. This consequently means that if we were to invok
 ``set_metadata`` method in order to assign some metadata to it, it would have absolutely no effect
 on the actual metadata of the instance's underlying object entity that is stored on Amazon S3.
 Similarly, invoking an instance's ``get_metadata`` method won't fetch the object's actual metadata,
-though it will look for any metadata we may have assigned to it locally.
+though it will search for any metadata we may have assigned to it locally.
 
 So how can we inspect the actual metadata of an object? This can be easily done
 by invoking an instance's ``load_metadata`` method, which goes on to fetch
