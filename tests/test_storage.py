@@ -1238,9 +1238,9 @@ class TestLocalDir(unittest.TestCase):
         dir = self.build_dir()
         self.assertRaises(InvalidFileError, dir.get_metadata, file_path="NON_EXISTING_PATH")
 
-    def test_get_metadata_on_none(self):
+    def test_get_metadata(self):
         dir = self.build_dir(path=ABS_DIR_PATH)
-        self.assertEqual(dir.get_metadata(file_path=DIR_FILE_NAME), None)
+        self.assertEqual(dir.get_metadata(file_path=DIR_FILE_NAME), {})
 
     def test_set_and_get_metadata_on_relative_path(self):
         dir = self.build_dir(path=ABS_DIR_PATH)
@@ -1486,7 +1486,7 @@ class TestLocalDir(unittest.TestCase):
         # tmp directory without including metadata.
         dir.transfer_to(dst=tmp_dir, include_metadata=False)
         # Assert that no metadata were transfered.
-        self.assertIsNone(tmp_dir.get_metadata(file_path=filename))
+        self.assertEqual(tmp_dir.get_metadata(file_path=filename), {})
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -1581,9 +1581,9 @@ class TestRemoteDir(unittest.TestCase):
             dir.set_metadata(file_path=file_path, metadata=metadata)
             self.assertEqual(dir.get_metadata(file_path=file_path), metadata)
 
-    def test_get_metadata_on_none(self):
+    def test_get_metadata(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_metadata(file_path=ABS_DIR_FILE_PATH), None)
+            self.assertEqual(dir.get_metadata(file_path=ABS_DIR_FILE_PATH), {})
 
     def test_get_metadata_on_invalid_file_error(self):
         with self.build_dir() as dir:
@@ -1827,8 +1827,8 @@ class TestRemoteDir(unittest.TestCase):
             # tmp directory without including metadata.
             dir.transfer_to(dst=tmp_dir, include_metadata=False)
         # Assert that no metadata have been transfered.
-        self.assertIsNone(tmp_dir.get_metadata(
-            file_path=filename.replace(ABS_DIR_PATH, '')))
+        self.assertEqual(tmp_dir.get_metadata(
+            file_path=filename.replace(ABS_DIR_PATH, '')), {})
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -1948,15 +1948,7 @@ class TestRemoteDir(unittest.TestCase):
             self.assertEqual(
                 ''.join([p for p in dir.iterate_contents(recursively=True)]),
                 ''.join(expected_results))
-            
-    def test_iterate_contents_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents(recursively=True))
-            self.assertEqual(
-                ''.join(dir._get_cache_manager().iterate_contents(
-                    recursively=False,
-                    include_dirs=True)),
-                '')
+
             
     def test_iterate_contents_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -1986,23 +1978,14 @@ class TestRemoteDir(unittest.TestCase):
 
     def test_get_size_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            dir.get_size()
-            self.assertEqual(
-                dir._get_cache_manager().get_size(ABS_DIR_FILE_PATH), 4)
+            _ = dir.get_size()
+            self.assertEqual(dir.get_size(), 4)
 
     def test_get_size_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             _ = dir.get_size(recursively=True)
             self.assertEqual(
-                dir._get_cache_manager().get_size(
-                    f"{ABS_DIR_PATH}subdir/file4.txt"), 4)
-            
-    def test_get_size_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            _ = dir.get_size()
-            self.assertIsNone(
-                dir._get_cache_manager().get_size(
-                    f"{ABS_DIR_PATH}subdir/file4.txt"))
+                dir.get_size(recursively=True), 16)
 
     def test_get_size_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -2106,9 +2089,9 @@ class TestAWSS3Dir(unittest.TestCase):
         with self.build_dir() as dir:
             self.assertEqual(dir.get_uri(), f"s3://{BUCKET}/{REL_DIR_PATH}")
 
-    def test_get_metadata_on_none(self):
+    def test_get_metadata(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_metadata(file_path='file2.txt'), None)
+            self.assertEqual(dir.get_metadata(file_path='file2.txt'), {})
 
     def test_get_metadata_on_invalid_file_error(self):
         with self.build_dir() as dir:
@@ -2401,7 +2384,7 @@ class TestAWSS3Dir(unittest.TestCase):
             # tmp directory without including metadata.
             dir.transfer_to(dst=tmp_dir, include_metadata=False)
         # Assert that no metadata have been transfered.
-        self.assertIsNone(tmp_dir.get_metadata(file_path=filename))
+        self.assertEqual(tmp_dir.get_metadata(file_path=filename), {})
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -2518,7 +2501,7 @@ class TestAWSS3Dir(unittest.TestCase):
         with self.build_dir(cache=True) as dir:
             _ = (_ for _ in dir.iterate_contents(recursively=True))
             self.assertEqual(
-                ''.join(dir._get_cache_manager().iterate_contents(
+                ''.join(dir.iterate_contents(
                     recursively=False,
                     include_dirs=True)),
                 '')
@@ -2554,39 +2537,26 @@ class TestAWSS3Dir(unittest.TestCase):
         with self.build_dir(cache=True) as dir:
             dir.load_metadata()
             self.assertEqual(
-                dir._get_cache_manager().get_metadata(REL_DIR_FILE_PATH),
+                dir.get_metadata(REL_DIR_FILE_PATH),
                 METADATA)
 
     def test_get_size_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            dir.get_size()
-            self.assertEqual(
-                dir._get_cache_manager().get_size(REL_DIR_FILE_PATH), 4)
+            _ = dir.get_size()
+            self.assertEqual(dir.get_size(), 4)
             
     def test_load_metadata_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             dir.load_metadata(recursively=True)
             self.assertEqual(
-                dir._get_cache_manager().get_metadata(f"{REL_DIR_PATH}subdir/file4.txt"),
+                dir.get_metadata(f"{REL_DIR_PATH}subdir/file4.txt"),
                 METADATA)
 
     def test_get_size_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             _ = dir.get_size(recursively=True)
-            self.assertEqual(
-                dir._get_cache_manager().get_size(f"{REL_DIR_PATH}subdir/file4.txt"), 4)
-            
-    def test_load_metadata_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            dir.load_metadata()
-            self.assertIsNone(
-                dir._get_cache_manager().get_metadata(f"{REL_DIR_PATH}subdir/file4.txt"))
-            
-    def test_get_size_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            _ = dir.get_size()
-            self.assertIsNone(
-                dir._get_cache_manager().get_size(f"{REL_DIR_PATH}subdir/file4.txt"))
+            self.assertEqual(dir.get_size(recursively=True), 16)
+
             
     def test_load_metadata_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -2709,9 +2679,9 @@ class TestAzureBlobDir(unittest.TestCase):
             uri += f".dfs.core.windows.net/{REL_DIR_PATH}"
             self.assertEqual(dir.get_uri(), uri)
 
-    def test_get_metadata_on_none(self):
+    def test_get_metadata(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_metadata(file_path='file2.txt'), None)
+            self.assertEqual(dir.get_metadata(file_path='file2.txt'), {})
 
     def test_get_metadata_on_invalid_file_error(self):
         with self.build_dir() as dir:
@@ -2997,7 +2967,7 @@ class TestAzureBlobDir(unittest.TestCase):
             # tmp directory without including metadata.
             dir.transfer_to(dst=tmp_dir, include_metadata=False)
         # Assert that no metadata have been transfered.
-        self.assertIsNone(tmp_dir.get_metadata(file_path=filename))
+        self.assertEqual(tmp_dir.get_metadata(file_path=filename), {})
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -3136,7 +3106,7 @@ class TestAzureBlobDir(unittest.TestCase):
         with self.build_dir(cache=True) as dir:
             _ = (_ for _ in dir.iterate_contents(recursively=True))
             self.assertEqual(
-                ''.join(dir._get_cache_manager().iterate_contents(
+                ''.join(dir.iterate_contents(
                     recursively=False,
                     include_dirs=True)),
                 '')
@@ -3172,40 +3142,26 @@ class TestAzureBlobDir(unittest.TestCase):
         with self.build_dir(cache=True) as dir:
             dir.load_metadata()
             self.assertEqual(
-                dir._get_cache_manager().get_metadata(REL_DIR_FILE_PATH),
+                dir.get_metadata(REL_DIR_FILE_PATH),
                 METADATA)
 
     def test_get_size_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            dir.get_size()
-            self.assertEqual(
-                dir._get_cache_manager().get_size(REL_DIR_FILE_PATH), 4)
+            _ = dir.get_size()
+            self.assertEqual(dir.get_size(), 4)
             
     def test_load_metadata_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             dir.load_metadata(recursively=True)
             self.assertEqual(
-                dir._get_cache_manager().get_metadata(f"{REL_DIR_PATH}subdir/file4.txt"),
+                dir.get_metadata(f"{REL_DIR_PATH}subdir/file4.txt"),
                 METADATA)
 
     def test_get_size_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             _ = dir.get_size(recursively=True)
-            self.assertEqual(
-                dir._get_cache_manager().get_size(f"{REL_DIR_PATH}subdir/file4.txt"), 4)
-            
-    def test_load_metadata_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            dir.load_metadata()
-            self.assertIsNone(
-                dir._get_cache_manager().get_metadata(f"{REL_DIR_PATH}subdir/file4.txt"))
-            
-    def test_get_size_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            _ = dir.get_size()
-            self.assertIsNone(
-                dir._get_cache_manager().get_size(f"{REL_DIR_PATH}subdir/file4.txt"))
-            
+            self.assertEqual(dir.get_size(recursively=True), 16)
+
     def test_load_metadata_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object metadata via HTTP.

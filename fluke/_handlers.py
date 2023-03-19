@@ -161,10 +161,8 @@ class ClientHandler(_ABC):
                 recursively=recursively,
                 include_dirs=include_dirs)
             ) is not None:
-                if show_abs_path:
-                    return iterator
-                else:
-                    return relativize_iter(iterator)
+                return iterator if show_abs_path \
+                    else relativize_iter(iterator)
             # Else...
             else:
                 # Fetch content iterator.
@@ -188,10 +186,13 @@ class ClientHandler(_ABC):
                 else:
                     return relativize_iter(iterator)
         else:
-            return self._iterate_contents_impl(
+            iterator = self._iterate_contents_impl(
                 dir_path=dir_path,
                 recursively=recursively,
                 show_abs_path=show_abs_path)
+            if not (recursively or include_dirs):
+                iterator = filter(self.is_file, iterator)
+            return iterator
 
 
     @_absmethod
@@ -521,10 +522,11 @@ class FileSystemHandler(ClientHandler):
                     yield _join_paths(sep, dp, file)
         else:
             for obj in sorted(_os.listdir(dir_path)):
-                if not self.is_file(obj):
+                abs_path = _join_paths(sep, dir_path, obj)
+                if not self.is_file(abs_path):
+                    abs_path += sep
                     obj += sep
-                yield _join_paths(sep, dir_path, obj) \
-                    if show_abs_path else obj
+                yield abs_path if show_abs_path else obj
 
 
 class SSHClientHandler(ClientHandler):
