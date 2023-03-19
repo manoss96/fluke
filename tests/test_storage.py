@@ -451,9 +451,9 @@ class TestLocalFile(unittest.TestCase):
         file = self.build_file()
         self.assertEqual(file.get_uri(), f"file:///{ABS_FILE_PATH.lstrip(SEPARATOR)}")
 
-    def test_get_metadata_on_none(self):
+    def test_get_metadata(self):
         file = self.build_file()
-        self.assertEqual(file.get_metadata(), None)
+        self.assertEqual(file.get_metadata(), {})
 
     def test_set_and_get_metadata(self):
         file = self.build_file()
@@ -543,9 +543,9 @@ class TestRemoteFile(unittest.TestCase):
         with self.build_file() as file:
             self.assertEqual(file.get_uri(), f"sftp://{HOST}/{ABS_FILE_PATH.lstrip(os.sep)}")
 
-    def test_get_metadata_on_None(self):
+    def test_get_metadata(self):
         with self.build_file() as file:
-            self.assertEqual(file.get_metadata(), None)
+            self.assertEqual(file.get_metadata(), {})
 
     def test_set_and_get_metadata(self):
         with self.build_file() as file:
@@ -655,13 +655,13 @@ class TestRemoteFile(unittest.TestCase):
         file = self.build_file()
         file.close()
         file.open()
-        self.assertIsNotNone(file._get_client())
+        self.assertTrue(file._get_handler().is_open())
         file.close()
 
     def test_close(self):
         file = self.build_file()
         file.close()
-        self.assertIsNone(file._get_client())
+        self.assertFalse(file._get_handler().is_open())
 
     '''
     Test cache methods.
@@ -747,9 +747,9 @@ class TestAWSS3File(unittest.TestCase):
         with self.build_file() as file:
             self.assertEqual(file.get_uri(), f"s3://{BUCKET}/{REL_FILE_PATH}")
 
-    def test_get_metadata_on_None(self):
+    def test_get_metadata(self):
         with self.build_file() as file:
-            self.assertEqual(file.get_metadata(), None)
+            self.assertEqual(file.get_metadata(), {})
 
     def test_set_and_get_metadata(self):
         with self.build_file() as file:
@@ -860,13 +860,13 @@ class TestAWSS3File(unittest.TestCase):
         file = self.build_file()
         file.close()
         file.open()
-        self.assertIsNotNone(file._get_client())
+        self.assertTrue(file._get_handler().is_open())
         file.close()
 
     def test_close(self):
         file = self.build_file()
         file.close()
-        self.assertIsNone(file._get_client())
+        self.assertFalse(file._get_handler().is_open())
 
     '''
     Test cache methods.
@@ -985,9 +985,9 @@ class TestAzureBlobFile(unittest.TestCase):
             uri += f".dfs.core.windows.net/{REL_FILE_PATH}"
             self.assertEqual(file.get_uri(), uri)
 
-    def test_get_metadata_on_None(self):
+    def test_get_metadata(self):
         with self.build_file() as file:
-            self.assertEqual(file.get_metadata(), None)
+            self.assertEqual(file.get_metadata(), {})
 
     def test_set_and_get_metadata(self):
         with self.build_file() as file:
@@ -1116,13 +1116,13 @@ class TestAzureBlobFile(unittest.TestCase):
         file = self.build_file()
         file.close()
         file.open()
-        self.assertIsNotNone(file._get_client())
+        self.assertTrue(file._get_handler().is_open())
         file.close()
 
     def test_close(self):
         file = self.build_file()
         file.close()
-        self.assertIsNone(file._get_client())
+        self.assertFalse(file._get_handler().is_open())
 
     '''
     Test cache methods.
@@ -1894,13 +1894,13 @@ class TestRemoteDir(unittest.TestCase):
         dir = self.build_dir()
         dir.close()
         dir.open()
-        self.assertIsNotNone(dir._get_client())
+        self.assertTrue(dir._get_handler().is_open())
         dir.close()
 
     def test_close(self):
         dir = self.build_dir()
         dir.close()
-        self.assertIsNone(dir._get_client())
+        self.assertFalse(dir._get_handler().is_open())
 
     '''
     Test cache methods.
@@ -2461,13 +2461,13 @@ class TestAWSS3Dir(unittest.TestCase):
         dir = self.build_dir()
         dir.close()
         dir.open()
-        self.assertIsNotNone(dir._get_client())
+        self.assertTrue(dir._get_handler().is_open())
         dir.close()
 
     def test_close(self):
         dir = self.build_dir()
         dir.close()
-        self.assertIsNone(dir._get_client())
+        self.assertFalse(dir._get_handler().is_open())
 
     '''
     Test cache methods.
@@ -3077,13 +3077,13 @@ class TestAzureBlobDir(unittest.TestCase):
         dir = self.build_dir()
         dir.close()
         dir.open()
-        self.assertIsNotNone(dir._get_client())
+        self.assertTrue(dir._get_handler().is_open())
         dir.close()
 
     def test_close(self):
         dir = self.build_dir()
         dir.close()
-        self.assertIsNone(dir._get_client())
+        self.assertFalse(dir._get_handler().is_open())
 
     '''
     Test cache methods.

@@ -842,7 +842,7 @@ class AWSClientHandler(ClientHandler):
             any fetched data to be cached for faster subsequent \
             access. Defaults to ``False``.
         '''
-        self.__init__(cache=cache)
+        super().__init__(cache=cache)
         self.__auth = auth
         self.__bucket_name = bucket
         self.__bucket = None
@@ -913,6 +913,20 @@ class AWSClientHandler(ClientHandler):
             file in question.
         '''
         return not file_path.endswith('/')
+    
+
+    def dir_exists(self, path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path exists \
+        and is a directory, else returns ``False``.
+
+        :param str path: Either an absolute path or a \
+            path relative to the parent directory.
+        '''
+        for _ in self.__bucket.objects.filter(Prefix=path):
+            return True
+        return False
+        
     
 
     def mkdir(self, path: str) -> None:
