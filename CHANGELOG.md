@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
   + *get_file(file_path: str) -> File*
   + *traverse_files(recursively: bool = False) -> Iterator[File]*
   + *get_files(recursively: bool = False, show_abs_path: bool = False) -> dict[str, File]*
+  
   All files spawned by a dictionary share the same metadata dictionaries
   with the directory that spawned them. In the case of remote files, they
   also share the same client and cache. (https://github.com/manoss96/fluke/issues/16)
