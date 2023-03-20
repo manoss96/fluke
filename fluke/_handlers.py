@@ -186,13 +186,20 @@ class ClientHandler(_ABC):
                 else:
                     return relativize_iter(iterator)
         else:
-            iterator = self._iterate_contents_impl(
-                dir_path=dir_path,
-                recursively=recursively,
-                show_abs_path=show_abs_path)
-            if not (recursively or include_dirs):
-                iterator = filter(self.is_file, iterator)
-            return iterator
+            if recursively or include_dirs:
+                return self._iterate_contents_impl(
+                    dir_path=dir_path,
+                    recursively=recursively,
+                    show_abs_path=show_abs_path)
+            else:
+                iterator = filter(
+                    self.is_file,
+                    self._iterate_contents_impl(
+                        dir_path=dir_path,
+                        recursively=recursively,
+                        show_abs_path=True)),
+                return iterator if show_abs_path \
+                    else relativize_iter(iterator)
 
 
     @_absmethod

@@ -771,6 +771,10 @@ class TestAWSS3File(unittest.TestCase):
         with self.build_file() as file:
             self.assertEqual(file.get_uri(), f"s3://{BUCKET}/{REL_FILE_PATH}")
 
+    def test_get_bucket_name(self):
+        with self.build_file() as file:
+            self.assertEqual(file.get_bucket_name(), BUCKET)
+
     def test_get_metadata(self):
         with self.build_file() as file:
             self.assertEqual(file.get_metadata(), {})
@@ -2135,6 +2139,10 @@ class TestAWSS3Dir(unittest.TestCase):
     def test_get_uri(self):
         with self.build_dir() as dir:
             self.assertEqual(dir.get_uri(), f"s3://{BUCKET}/{REL_DIR_PATH}")
+
+    def test_get_bucket_name(self):
+        with self.build_dir() as dir:
+            self.assertEqual(dir.get_bucket_name(), BUCKET)
 
     def test_get_metadata(self):
         with self.build_dir() as dir:

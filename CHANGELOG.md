@@ -13,10 +13,15 @@ All notable changes to this project will be documented in this file.
 - *fluke.storage.AWSS3File* now has a *get_bucket_name* method.
   (https://github.com/manoss96/fluke/issues/16)
 
-- *Dir* API now provides a *get_file* method in order to access
-  files within the directory through the *File* API. In the case
-  of remote files, they all share the same connection with the
-  directory that spawned them. (https://github.com/manoss96/fluke/issues/16)
+- *Dir* API now provides a set of methods in order to gain
+  access to the directory's files via the *File* API. These
+  methods are the following:
+  + *get_file(file_path: str) -> File*
+  + *traverse_files(recursively: bool = False) -> Iterator[File]*
+  + *get_files(recursively: bool = False, show_abs_path: bool = False) -> dict[str, File]*
+  All files spawned by a dictionary share the same metadata dictionaries
+  with the directory that spawned them. In the case of remote files, they
+  also share the same client and cache. (https://github.com/manoss96/fluke/issues/16)
    
 ### Changed
 

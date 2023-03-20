@@ -21,7 +21,6 @@ from abc import abstractmethod as _absmethod
 
 
 from tqdm import tqdm as _tqdm
-from azure.storage.blob import ContainerClient as _ContainerClient
 
 
 from ._helper import join_paths as _join_paths
@@ -60,6 +59,9 @@ class _File(_ABC):
     :param ClientHandler handler: A ``ClientHandler`` class \
         instance used for interacting with the underlying handler.
     :param Ingester ingester: An ``Ingester`` class instance.
+    :param bool close_after_use: This value indicates whether \
+        all open connections should close before the instance \
+        destructor is called.
     '''
 
     def __init__(
@@ -67,7 +69,8 @@ class _File(_ABC):
         path: str,
         metadata: dict[str, str],
         handler: _ClientHandler,
-        ingester: _Ingester
+        ingester: _Ingester,
+        close_after_use: bool = True
     ):
         '''
         An abstract class which serves as the \
@@ -79,6 +82,9 @@ class _File(_ABC):
         :param ClientHandler handler: A ``ClientHandler`` class \
             instance used for interacting with the underlying handler.
         :param Ingester ingester: An ``Ingester`` class instance.
+        :param bool close_after_use: This value indicates whether \
+            all open connections should close before the instance \
+            destructor is called.
         '''
         self.__path = path
         self.__metadata = metadata
@@ -86,6 +92,7 @@ class _File(_ABC):
         self.__name = path.split(self.__separator)[-1]
         self.__handler = handler
         self.__ingester = ingester
+        self.__close_after_use = close_after_use
 
 
     def get_path(self) -> str:
@@ -145,6 +152,14 @@ class _File(_ABC):
         Returns the file's size in bytes.
         '''
         return self._get_handler().get_file_size(self.get_path())
+    
+
+    def _get_close_after_use(self) -> bool:
+        '''
+        Returns a value indicating whether all open connections \
+        should close before the instance destructor is called.
+        '''
+        return self.__close_after_use
     
 
     def _get_handler(self) -> _ClientHandler:
@@ -347,7 +362,8 @@ class LocalFile(_File):
             path=path,
             metadata=metadata,
             handler=handler,
-            ingester=_LocalIngester())
+            ingester=_LocalIngester(),
+            close_after_use=False)
         return instance
 
 
@@ -500,13 +516,19 @@ class _NonLocalFile(_File, _ABC):
         '''
         The class destructor method.
         '''
-        handler = self._get_handler()
-        if handler is not None and handler.is_open():
-            msg = f'You might want to consider instantiating class "{self.__class__.__name__}"'
-            msg += " through the use of a context manager by utilizing Python's"
-            msg += ' "with" statement, or by simply invoking an instance\'s'
-            msg += ' "close" method after being done using it.'
-            _warn.warn(msg, ResourceWarning)
+        if self._get_close_after_use():
+            if (handler := self._get_handler()) is not None:
+                # Purge cache.
+                self.purge()
+                # Warn if connections are open.
+                if  handler.is_open():
+                    msg = f'You might want to consider instantiating class "{self.__class__.__name__}"'
+                    msg += " through the use of a context manager by utilizing Python's"
+                    msg += ' "with" statement, or by simply invoking an instance\'s'
+                    msg += ' "close" method after being done using it.'
+                    _warn.warn(msg, ResourceWarning)
+                    # Close connections.
+                    self.close()
 
 
 class RemoteFile(_NonLocalFile):
@@ -612,7 +634,8 @@ class RemoteFile(_NonLocalFile):
             path=path,
             metadata=metadata,
             handler=handler,
-            ingester=_RemoteIngester(handler=handler))
+            ingester=_RemoteIngester(handler=handler),
+            close_after_use=False)
         return instance
     
 
@@ -765,7 +788,8 @@ class AWSS3File(_CloudFile):
             path=path,
             metadata=metadata,
             handler=handler,
-            ingester=_AWSS3Ingester(handler=handler))
+            ingester=_AWSS3Ingester(handler=handler),
+            close_after_use=False)
         return instance
     
 
@@ -908,7 +932,8 @@ class AzureBlobFile(_CloudFile):
             path=path,
             metadata=metadata,
             handler=handler,
-            ingester=_AzureIngester(handler=handler))
+            ingester=_AzureIngester(handler=handler),
+            close_after_use=False)
         return instance
     
 
@@ -1062,7 +1087,7 @@ class _Directory(_ABC):
     ) -> _typ.Iterator[str]:
         '''
         Returns an iterator capable of going through the paths \
-        ofthe dictionary's contents as strings.
+        of the dictionary's contents as strings.
 
         :param bool recursively: Indicates whether the directory \
             is to be scanned recursively or not. If set to  ``False``, \
@@ -1192,6 +1217,68 @@ class _Directory(_ABC):
             size += handler.get_file_size(file_path)
 
         return size
+    
+
+    def traverse_files(
+        self,
+        recursively: bool = False
+    ) -> _typ.Iterator[_File]:
+        '''
+        Returns an iterator capable of going through the \
+        dictionaries files as ``File`` instances.
+
+        :param bool recursively: Indicates whether the directory \
+            is to be scanned recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
+        '''
+        for file_path in self.__handler.iterate_contents(
+            dir_path=self.get_path(),
+            recursively=recursively,
+            include_dirs=False,
+            show_abs_path=True
+        ):
+            yield self.get_file(file_path)
+
+
+    def get_files(
+        self,
+        recursively: bool = False,
+        show_abs_path: bool = False
+    ) -> dict[str, _File]:
+        '''
+        Returns a dictionary mapping file paths to ``File`` instances \
+        regarding the files contained within the directory.
+
+        :param bool recursively: Indicates whether the directory \
+            is to be scanned recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+        :param bool show_abs_path: Determines whether to include the \
+            files' absolute path or their path relative to this directory. \
+            Defaults to ``False``.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
+        '''
+        file_dict = dict()
+        for file_path in self.__handler.iterate_contents(
+            dir_path=self.get_path(),
+            recursively=recursively,
+            include_dirs=False,
+            show_abs_path=show_abs_path
+        ):
+            file_dict.update({ file_path: self.get_file(file_path)})
+        return file_dict
 
 
     def _get_separator(self) -> str:
@@ -1466,6 +1553,55 @@ class LocalDir(_Directory):
             path=file_path,
             handler=self._get_handler(),
             metadata=self._get_metadata_ref(file_path))
+    
+
+    def traverse_files(
+        self,
+        recursively: bool = False
+    ) -> _typ.Iterator[LocalFile]:
+        '''
+        Returns an iterator capable of going through the \
+        dictionaries files as ``File`` instances.
+
+        :param bool recursively: Indicates whether the directory \
+            is to be scanned recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
+        '''
+        yield from super().traverse_files(recursively=recursively)
+
+
+    def get_files(
+        self,
+        recursively: bool = False,
+        show_abs_path: bool = False
+    ) -> dict[str, LocalFile]:
+        '''
+        Returns a dictionary mapping file paths to ``File`` instances \
+        regarding the files contained within the directory.
+
+        :param bool recursively: Indicates whether the directory \
+            is to be scanned recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+        :param bool show_abs_path: Determines whether to include the \
+            files' absolute path or their path relative to this directory. \
+            Defaults to ``False``.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
+        '''
+        return super().get_files(
+            recursively=recursively, show_abs_path=show_abs_path)
 
     
     def transfer_to(
@@ -1570,7 +1706,7 @@ class LocalDir(_Directory):
     ) -> _typ.Iterator[str]:
         '''
         Returns an iterator capable of going through the paths \
-        ofthe dictionary's contents as strings.
+        of the dictionary's contents as strings.
 
         :param bool recursively: Indicates whether the directory \
             is to be scanned recursively or not. If set to  ``False``, \
@@ -1960,6 +2096,11 @@ class _NonLocalDir(_Directory, _ABC):
         '''
         handler = self._get_handler()
         if handler is not None and handler.is_open():
+            # Purge cache (if it exists).
+            self.purge()
+            # Close any open connections.
+            self.close()
+            # Display warning.
             msg = f'You might want to consider instantiating class "{self.__class__.__name__}"'
             msg += " through the use of a context manager by utilizing Python's"
             msg += ' "with" statement, or by simply invoking an instance\'s'
@@ -2087,6 +2228,55 @@ class RemoteDir(_NonLocalDir):
             host=self.get_hostname(),
             handler=self._get_handler(),
             metadata=self._get_metadata_ref(file_path))
+    
+
+    def traverse_files(
+        self,
+        recursively: bool = False
+    ) -> _typ.Iterator[RemoteFile]:
+        '''
+        Returns an iterator capable of going through the \
+        dictionaries files as ``File`` instances.
+
+        :param bool recursively: Indicates whether the directory \
+            is to be scanned recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
+        '''
+        yield from super().traverse_files(recursively=recursively)
+
+
+    def get_files(
+        self,
+        recursively: bool = False,
+        show_abs_path: bool = False
+    ) -> dict[str, RemoteFile]:
+        '''
+        Returns a dictionary mapping file paths to ``File`` instances \
+        regarding the files contained within the directory.
+
+        :param bool recursively: Indicates whether the directory \
+            is to be scanned recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+        :param bool show_abs_path: Determines whether to include the \
+            files' absolute path or their path relative to this directory. \
+            Defaults to ``False``.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
+        '''
+        return super().get_files(
+            recursively=recursively, show_abs_path=show_abs_path)
     
 
     def __enter__(self) -> 'RemoteDir':
@@ -2256,6 +2446,55 @@ class AWSS3Dir(_CloudDir):
             path=file_path,
             handler=self._get_handler(),
             metadata=self._get_metadata_ref(file_path))
+
+
+    def traverse_files(
+        self,
+        recursively: bool = False
+    ) -> _typ.Iterator[AWSS3File]:
+        '''
+        Returns an iterator capable of going through the \
+        dictionaries files as ``File`` instances.
+
+        :param bool recursively: Indicates whether the directory \
+            is to be scanned recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
+        '''
+        yield from super().traverse_files(recursively=recursively)
+
+
+    def get_files(
+        self,
+        recursively: bool = False,
+        show_abs_path: bool = False
+    ) -> dict[str, AWSS3File]:
+        '''
+        Returns a dictionary mapping file paths to ``File`` instances \
+        regarding the files contained within the directory.
+
+        :param bool recursively: Indicates whether the directory \
+            is to be scanned recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+        :param bool show_abs_path: Determines whether to include the \
+            files' absolute path or their path relative to this directory. \
+            Defaults to ``False``.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
+        '''
+        return super().get_files(
+            recursively=recursively, show_abs_path=show_abs_path)
     
 
     def __enter__(self) -> 'AWSS3Dir':
@@ -2401,6 +2640,55 @@ class AzureBlobDir(_CloudDir):
             path=file_path,
             handler=self._get_handler(),
             metadata=self._get_metadata_ref(file_path))
+    
+
+    def traverse_files(
+        self,
+        recursively: bool = False
+    ) -> _typ.Iterator[AzureBlobFile]:
+        '''
+        Returns an iterator capable of going through the \
+        dictionaries files as ``File`` instances.
+
+        :param bool recursively: Indicates whether the directory \
+            is to be scanned recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
+        '''
+        yield from super().traverse_files(recursively=recursively)
+
+
+    def get_files(
+        self,
+        recursively: bool = False,
+        show_abs_path: bool = False
+    ) -> dict[str, AzureBlobFile]:
+        '''
+        Returns a dictionary mapping file paths to ``File`` instances \
+        regarding the files contained within the directory.
+
+        :param bool recursively: Indicates whether the directory \
+            is to be scanned recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+        :param bool show_abs_path: Determines whether to include the \
+            files' absolute path or their path relative to this directory. \
+            Defaults to ``False``.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
+        '''
+        return super().get_files(
+            recursively=recursively, show_abs_path=show_abs_path)
     
     
     def __enter__(self) -> 'AzureBlobDir':
