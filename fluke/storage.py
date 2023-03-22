@@ -1215,7 +1215,6 @@ class _Directory(_ABC):
             include_dirs=False,
             show_abs_path=True
         ):
-            print(file_path)
             size += handler.get_file_size(file_path)
 
         return size

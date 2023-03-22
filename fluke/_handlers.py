@@ -60,6 +60,7 @@ class ClientHandler(_ABC):
         else does nothing.
         '''
         if self.is_cacheable():
+            self.__cache_manager.purge()
             self.__cache_manager = _CacheManager()
 
 
