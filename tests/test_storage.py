@@ -1345,26 +1345,26 @@ class TestLocalDir(unittest.TestCase):
                 show_abs_path=True, recursively=True),
             get_abs_contents(recursively=True))
         
-    def test_iterate_contents(self):
+    def test_traverse(self):
         self.assertEqual(list(self.build_dir(
-            path=ABS_DIR_PATH).iterate_contents()), CONTENTS)
+            path=ABS_DIR_PATH).traverse()), CONTENTS)
 
-    def test_iterate_contents_on_show_abs_path(self):
+    def test_traverse_on_show_abs_path(self):
         self.assertEqual(
             list(self.build_dir(
-                path=ABS_DIR_PATH).iterate_contents(show_abs_path=True)),
+                path=ABS_DIR_PATH).traverse(show_abs_path=True)),
             get_abs_contents(recursively=False))
         
-    def test_iterate_contents_on_recursively(self):
+    def test_traverse_on_recursively(self):
         self.assertEqual(
             list(self.build_dir(
-                path=ABS_DIR_PATH).iterate_contents(recursively=True)),
+                path=ABS_DIR_PATH).traverse(recursively=True)),
             RECURSIVE_CONTENTS)
         
-    def test_iterate_contents_on_show_abs_path_and_recursively(self):
+    def test_traverse_on_show_abs_path_and_recursively(self):
         self.assertEqual(
             list(self.build_dir(
-                path=ABS_DIR_PATH).iterate_contents(show_abs_path=True, recursively=True)),
+                path=ABS_DIR_PATH).traverse(show_abs_path=True, recursively=True)),
             get_abs_contents(recursively=True))
 
     def test_ls(self):
@@ -1671,26 +1671,26 @@ class TestRemoteDir(unittest.TestCase):
                 dir.get_contents(show_abs_path=True, recursively=True),
                 get_abs_contents(recursively=True))
             
-    def test_iterate_contents(self):
+    def test_traverse(self):
         with self.build_dir() as dir:
-            self.assertEqual(list(dir.iterate_contents()), CONTENTS)
+            self.assertEqual(list(dir.traverse()), CONTENTS)
 
-    def test_iterate_contents_on_show_abs_path(self):
+    def test_traverse_on_show_abs_path(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(show_abs_path=True)),
+                list(dir.traverse(show_abs_path=True)),
                 get_abs_contents(recursively=False))
         
-    def test_iterate_contents_on_recursively(self):
+    def test_traverse_on_recursively(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(recursively=True)),
+                list(dir.traverse(recursively=True)),
                 RECURSIVE_CONTENTS)
         
-    def test_iterate_contents_on_show_abs_path_and_recursively(self):
+    def test_traverse_on_show_abs_path_and_recursively(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(show_abs_path=True, recursively=True)),
+                list(dir.traverse(show_abs_path=True, recursively=True)),
                 get_abs_contents(recursively=True))
             
     def test_ls(self):
@@ -1957,16 +1957,16 @@ class TestRemoteDir(unittest.TestCase):
             normal_time = time.time() - t
             self.assertGreater(normal_time, cache_time)
 
-    def test_iterate_contents_from_cache_on_value(self):
+    def test_traverse_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             self.assertEqual(
-                ''.join([p for p in dir.iterate_contents()]),
+                ''.join([p for p in dir.traverse()]),
                 ''.join(CONTENTS))
             
-    def test_iterate_contents_recursively_from_cache_on_value(self):
+    def test_traverse_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents(recursively=True))
+            _ = (_ for _ in dir.traverse(recursively=True))
             expected_results = []
             for dp, dn, fn in os.walk(REL_DIR_PATH):
                 dn.sort()
@@ -1974,32 +1974,32 @@ class TestRemoteDir(unittest.TestCase):
                     expected_results.append(
                         join_paths(dp, f).removeprefix(REL_DIR_PATH))
             self.assertEqual(
-                ''.join([p for p in dir.iterate_contents(recursively=True)]),
+                ''.join([p for p in dir.traverse(recursively=True)]),
                 ''.join(expected_results))
 
             
-    def test_iterate_contents_from_cache_on_time(self):
+    def test_traverse_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             normal_time = time.time() - t
             # Fetch contents from cache.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
-    def test_iterate_contents_recursively_from_cache_on_time(self):
+    def test_traverse_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             normal_time = time.time() - t
             # Fetch contents from cache.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
@@ -2249,26 +2249,26 @@ class TestAWSS3Dir(unittest.TestCase):
                 dir.get_contents(show_abs_path=True, recursively=True),
                 self.get_abs_contents(recursively=True))
             
-    def test_iterate_contents(self):
+    def test_traverse(self):
         with self.build_dir() as dir:
-            self.assertEqual(list(dir.iterate_contents()), CONTENTS)
+            self.assertEqual(list(dir.traverse()), CONTENTS)
 
-    def test_iterate_contents_on_show_abs_path(self):
+    def test_traverse_on_show_abs_path(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(show_abs_path=True)),
+                list(dir.traverse(show_abs_path=True)),
                 self.get_abs_contents(recursively=False))
         
-    def test_iterate_contents_on_recursively(self):
+    def test_traverse_on_recursively(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(recursively=True)),
+                list(dir.traverse(recursively=True)),
                 RECURSIVE_CONTENTS)
         
-    def test_iterate_contents_on_show_abs_path_and_recursively(self):
+    def test_traverse_on_show_abs_path_and_recursively(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(show_abs_path=True, recursively=True)),
+                list(dir.traverse(show_abs_path=True, recursively=True)),
                 self.get_abs_contents(recursively=True))
             
     def test_ls(self):
@@ -2534,14 +2534,14 @@ class TestAWSS3Dir(unittest.TestCase):
             normal_time = time.time() - t
             self.assertGreater(normal_time, cache_time)
 
-    def test_iterate_contents_from_cache_on_value(self):
+    def test_traverse_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents())
-            self.assertEqual(list(dir.iterate_contents()), CONTENTS)
+            _ = (_ for _ in dir.traverse())
+            self.assertEqual(list(dir.traverse()), CONTENTS)
             
-    def test_iterate_contents_recursively_from_cache_on_value(self):
+    def test_traverse_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents(recursively=True))
+            _ = (_ for _ in dir.traverse(recursively=True))
             expected_results = []
             for dp, dn, fn in os.walk(REL_DIR_PATH):
                 dn.sort()
@@ -2549,31 +2549,31 @@ class TestAWSS3Dir(unittest.TestCase):
                     expected_results.append(
                         join_paths(dp, f).removeprefix(REL_DIR_PATH))
             self.assertEqual(
-                ''.join([p for p in dir.iterate_contents(recursively=True)]),
+                ''.join([p for p in dir.traverse(recursively=True)]),
                 ''.join(expected_results))
             
-    def test_iterate_contents_from_cache_on_time(self):
+    def test_traverse_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             normal_time = time.time() - t
             # Fetch contents from cache.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
-    def test_iterate_contents_recursively_from_cache_on_time(self):
+    def test_traverse_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             normal_time = time.time() - t
             # Fetch contents from cache.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
@@ -2828,26 +2828,26 @@ class TestAzureBlobDir(unittest.TestCase):
                 dir.get_contents(show_abs_path=True, recursively=True),
                 self.get_abs_contents(recursively=True))
             
-    def test_iterate_contents(self):
+    def test_traverse(self):
         with self.build_dir() as dir:
-            self.assertEqual(list(dir.iterate_contents()), CONTENTS)
+            self.assertEqual(list(dir.traverse()), CONTENTS)
 
-    def test_iterate_contents_on_show_abs_path(self):
+    def test_traverse_on_show_abs_path(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(show_abs_path=True)),
+                list(dir.traverse(show_abs_path=True)),
                 self.get_abs_contents(recursively=False))
         
-    def test_iterate_contents_on_recursively(self):
+    def test_traverse_on_recursively(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(recursively=True)),
+                list(dir.traverse(recursively=True)),
                 RECURSIVE_CONTENTS)
         
-    def test_iterate_contents_on_show_abs_path_and_recursively(self):
+    def test_traverse_on_show_abs_path_and_recursively(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(show_abs_path=True, recursively=True)),
+                list(dir.traverse(show_abs_path=True, recursively=True)),
                 self.get_abs_contents(recursively=True))
             
     def test_ls(self):
@@ -3128,16 +3128,16 @@ class TestAzureBlobDir(unittest.TestCase):
             normal_time = time.time() - t
             self.assertGreater(normal_time, cache_time)
 
-    def test_iterate_contents_from_cache_on_value(self):
+    def test_traverse_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             self.assertEqual(
-                ''.join([p for p in dir.iterate_contents()]),
+                ''.join([p for p in dir.traverse()]),
                 ''.join(CONTENTS))
             
-    def test_iterate_contents_recursively_from_cache_on_value(self):
+    def test_traverse_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents(recursively=True))
+            _ = (_ for _ in dir.traverse(recursively=True))
             expected_results = []
             for dp, dn, fn in os.walk(REL_DIR_PATH):
                 dn.sort()
@@ -3145,31 +3145,31 @@ class TestAzureBlobDir(unittest.TestCase):
                     expected_results.append(
                         join_paths(dp, f).removeprefix(REL_DIR_PATH))
             self.assertEqual(
-                ''.join([p for p in dir.iterate_contents(recursively=True)]),
+                ''.join([p for p in dir.traverse(recursively=True)]),
                 ''.join(expected_results))
             
-    def test_iterate_contents_from_cache_on_time(self):
+    def test_traverse_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             normal_time = time.time() - t
             # Fetch contents from cache.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
-    def test_iterate_contents_recursively_from_cache_on_time(self):
+    def test_traverse_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             normal_time = time.time() - t
             # Fetch contents from cache.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)

@@ -37,6 +37,8 @@ All notable changes to this project will be documented in this file.
 - Both *File* and *Dir* API methods *get_metadata* will now return
   an empty dictionary instead of ``None`` when no metadata has been
   set (https://github.com/manoss96/fluke/issues/16).
+
+- *Dir* API method *iterate_contents* has been renamed to *traverse*.
  
 ### Fixed
 

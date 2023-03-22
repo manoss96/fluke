@@ -1080,17 +1080,17 @@ class _Directory(_ABC):
             self._relativize(path=path)))
 
 
-    def iterate_contents(
+    def traverse(
         self,
         recursively: bool = False,
         show_abs_path: bool = False
     ) -> _typ.Iterator[str]:
         '''
-        Returns an iterator capable of going through the paths \
-        of the dictionary's contents as strings.
+        Returns an iterator capable of traversing the dictionary's \
+        contents as strings representing their paths.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1116,10 +1116,11 @@ class _Directory(_ABC):
         show_abs_path: bool = False
     ) -> list[str]:
         '''
-        Returns a list containing the paths of the directory's contents.
+        Returns an iterator capable of traversing the dictionary's \
+        contents as strings representing their paths.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1132,7 +1133,7 @@ class _Directory(_ABC):
         :note: The resulting list may vary depending on the value \
             of parameter ``recursively``.
         '''
-        return list(self.iterate_contents(
+        return list(self.traverse(
             recursively=recursively,
             show_abs_path=show_abs_path))
     
@@ -1142,7 +1143,7 @@ class _Directory(_ABC):
         Lists the contents of the directory.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1155,7 +1156,7 @@ class _Directory(_ABC):
         :note: The resulting output may vary depending on the value \
             of parameter ``recursively``.
         '''
-        for entity in self.iterate_contents(
+        for entity in self.traverse(
             recursively=recursively,
             show_abs_path=show_abs_path
         ):
@@ -1168,7 +1169,7 @@ class _Directory(_ABC):
         within the directory.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1180,7 +1181,7 @@ class _Directory(_ABC):
         '''
         count = 0
 
-        for _ in self.iterate_contents(
+        for _ in self.traverse(
             recursively=recursively,
             show_abs_path=True
         ):
@@ -1195,7 +1196,7 @@ class _Directory(_ABC):
         within the directory, in bytes.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1214,6 +1215,7 @@ class _Directory(_ABC):
             include_dirs=False,
             show_abs_path=True
         ):
+            print(file_path)
             size += handler.get_file_size(file_path)
 
         return size
@@ -1228,7 +1230,7 @@ class _Directory(_ABC):
         dictionaries files as ``File`` instances.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1257,7 +1259,7 @@ class _Directory(_ABC):
         regarding the files contained within the directory.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1409,7 +1411,7 @@ class _Directory(_ABC):
         :param _Directory dst: A ``_Directory`` class instance, \
             which represents the transfer operation's destination.
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1564,7 +1566,7 @@ class LocalDir(_Directory):
         dictionaries files as ``File`` instances.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1587,7 +1589,7 @@ class LocalDir(_Directory):
         regarding the files contained within the directory.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1619,7 +1621,7 @@ class LocalDir(_Directory):
         :param _Directory dst: A ``_Directory`` class instance, \
             which represents the transfer operation's destination.
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1697,47 +1699,6 @@ class LocalDir(_Directory):
             for err in errors:
                msg += str(err)
             print(msg)
-
-
-    def _iterate_contents_impl(
-        self,
-        recursively: bool = False,
-        show_abs_path: bool = False
-    ) -> _typ.Iterator[str]:
-        '''
-        Returns an iterator capable of going through the paths \
-        of the dictionary's contents as strings.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Indicates whether it \
-            should be displayed the absolute or the relative \
-            path of the contents. Defaults to ``False``.
-
-        :note: The resulting iterator may vary depending on the \
-            value of parameter ``recursively``.
-        '''
-
-        sep = self._get_separator()
-
-        if recursively:
-            for dp, dn, fn in _os.walk(self.get_path()):
-                dn.sort()
-                for file in sorted(fn):
-                    if not show_abs_path:
-                        dp = self._relativize(dp.replace(_os.sep, sep))
-                    yield _join_paths(sep, dp, file)
-        else:
-            for obj in sorted(_os.listdir(self.get_path())):
-                if not self._is_file(obj):
-                    obj += sep
-                yield _join_paths(sep, self.get_path(), obj) \
-                    if show_abs_path else obj
 
 
     def _load_from_source(
@@ -1922,7 +1883,7 @@ class _NonLocalDir(_Directory, _ABC):
         :param _Directory dst: A ``_Directory`` class instance, \
             which represents the transfer operation's destination.
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -2239,7 +2200,7 @@ class RemoteDir(_NonLocalDir):
         dictionaries files as ``File`` instances.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -2262,7 +2223,7 @@ class RemoteDir(_NonLocalDir):
         regarding the files contained within the directory.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -2300,7 +2261,7 @@ class _CloudDir(_NonLocalDir, _ABC):
         via the instance's ``get_metadata`` method.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -2457,7 +2418,7 @@ class AWSS3Dir(_CloudDir):
         dictionaries files as ``File`` instances.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -2480,7 +2441,7 @@ class AWSS3Dir(_CloudDir):
         regarding the files contained within the directory.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -2651,7 +2612,7 @@ class AzureBlobDir(_CloudDir):
         dictionaries files as ``File`` instances.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -2674,7 +2635,7 @@ class AzureBlobDir(_CloudDir):
         regarding the files contained within the directory.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \

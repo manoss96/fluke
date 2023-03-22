@@ -131,7 +131,7 @@ class ClientHandler(_ABC):
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -197,7 +197,7 @@ class ClientHandler(_ABC):
                     self._iterate_contents_impl(
                         dir_path=dir_path,
                         recursively=recursively,
-                        show_abs_path=True)),
+                        show_abs_path=True))
                 return iterator if show_abs_path \
                     else relativize_iter(iterator)
 
@@ -320,7 +320,7 @@ class ClientHandler(_ABC):
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -502,7 +502,7 @@ class FileSystemHandler(ClientHandler):
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -763,7 +763,7 @@ class SSHClientHandler(ClientHandler):
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1031,7 +1031,7 @@ class AWSClientHandler(ClientHandler):
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1305,7 +1305,7 @@ class AzureClientHandler(ClientHandler):
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
