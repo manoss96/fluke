@@ -39,6 +39,7 @@ All notable changes to this project will be documented in this file.
   set (https://github.com/manoss96/fluke/issues/16).
 
 - *Dir* API method *iterate_contents* has been renamed to *traverse*.
+  (https://github.com/manoss96/fluke/issues/16)
  
 ### Fixed
 

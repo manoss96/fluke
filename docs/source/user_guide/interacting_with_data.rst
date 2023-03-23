@@ -4,10 +4,9 @@
 Interacting with data
 ***********************
 
-Fluke makes it easy to inspect your data, but more imporantly,
-to transfer them from one location to another, no matter where
-they currently reside or to where they are being transfered.
-In this section, we will look at all aspects of working with
+Fluke makes it easy to interact with your data no matter
+where they currently reside or where they are going! In
+this section, we will look at all aspects of working with
 data through Fluke.
 
 ========================================
@@ -54,25 +53,28 @@ need a bit more information. This is typically an *Auth* instance used
 for authenticating with the remote host in order to gain access to its resources
 (see `Handling authentication <authentication.html>`_), as well as some
 more information regarding an entity's exact location. For example, in the
-case of an Amazon S3 object we also need the name of the bucket that contains
-it:
+case of a directory which resides within an Amazon S3 bucket, we also need
+the name of said bucket:
 
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.storage import AWSS3File
+  from fluke.storage import AWSS3Dir
 
   # Create an "AWSAuth" instance.
   auth = AWSAuth(**credentials)
 
-  # Gain access to an S3 object.
-  s3_obj = AWSS3File(
+  # Gain access to an Amazon S3 directory.
+  s3_dir = AWSS3Dir(
     auth=auth,
     bucket='bucket_name',
-    path='path/within/amazon/s3/bucket/obj.txt')
+    path='path/within/amazon/s3/bucket/dir')
+
+  # Interact with "s3_dir".
+  ...
 
   # Close any open connections.
-  s3_obj.close()
+  s3_dir.close()
 
 Notice how at the end we invoked the instance's ``close`` method? This is
 done in order to prevent any connection leaks from occurring, and is in fact
@@ -83,19 +85,98 @@ class's context manager:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.storage import AWSS3File
+  from fluke.storage import AWSS3Dir
 
   # Create an "AWSAuth" instance.
   auth = AWSAuth(**credentials)
 
-  # Gain access to an S3 object through a context manager.
-  with AWSS3File(
+  # Gain access to an S3 directory through a context manager.
+  with AWSS3Dir(
     auth=auth,
     bucket='bucket_name',
-    path='path/within/amazon/s3/bucket/obj.txt'
-  ) as s3_obj:
+    path='path/within/amazon/s3/bucket/dir'
+  ) as s3_dir:
 
-    # Interact with s3_obj...
+    # Interact with s3_dir.
+    ...
+
+.. _accesing-files-through-a-directory:
+
+----------------------------------------
+Accessing files through a directory
+----------------------------------------
+
+After having gained access to a directory via the *Dir* API,
+there is also the ability to access its files as individual
+*File* instances through certain methods which are part of
+the *Dir* API. These methods are the following:
+
+* ``get_file(file_path: str) -> File``
+* ``get_files(recursively: bool, show_abs_path: bool) -> dict[str, File]``
+* ``traverse_files(recursively: bool) -> Iterator[File]``
+
+Consider the following example in which we use the directory's
+``get_file`` method in order to access a file which resides
+directly within it, namely ``file1.txt``:
+
+.. code-block:: python
+
+  from fluke.storage import LocalDir, LocalFile
+
+  # Access directory.
+  local_dir: LocalDir = LocalDir(path='dir/')
+
+  # Access file through directory.
+  local_file: LocalFile = local_dir.get_file('file1.txt')
+
+This is almost equivalent to:
+
+.. code-block:: python
+
+  from fluke.storage import LocalFile
+
+  # Access file directly.
+  local_file: LocalFile = LocalFile(path='dir/file1.txt')
+
+The only difference between these two methods of accessing a file
+is that when doing so through a directory, this results in the two
+sharing a bunch of resources with each other, them being:
+
+* The file metadata
+* The underlying connection (in case of remote entities)
+* The cache storage (in case of remote entities)
+
+Regarding the case of remote entities, since a file shares
+the same connection with the directory from which it came,
+you should restrain from invoking the file's ``close`` method,
+as this would also impact your ability to interact with the
+directory:
+
+.. code-block:: python
+
+  from fluke.auth import AWSAuth
+  from fluke.storage import AWSS3Dir, AWSS3File
+
+  # Create an "AWSAuth" instance.
+  auth = AWSAuth(**credentials)
+
+  # Access directory.
+  aws_dir = AWSS3Dir(auth=auth, bucket="bucket_name", path='dir')
+
+  # Access file through directory.
+  aws_file: AWSS3File = aws_dir.get_file('file1.txt')
+
+  # Close connection through file.
+  aws_file.close()
+
+  # This would now cause an exception as
+  # the underlying connection has been closed.
+  dir_size = aws_dir.get_size()
+
+As for the file metadata and cache storage, you can read more in
+:ref:`Assigning metadata to files <assigning-metadata-to-files>` and
+:ref:`Speeding things up with caching <speeding-things-up-with-caching>`
+respectively.
 
 ========================================
 Inspecting data
@@ -111,6 +192,15 @@ fetch its size in bytes:
 
   file = LocalFile(path='/home/user/path/to/file.txt')
   size = file.get_size()
+
+or even read its entire contents:
+
+.. code-block:: python
+
+  from fluke.storage import LocalFile
+
+  file = LocalFile(path='/home/user/path/to/file.txt')
+  file_bytes = file.read()
 
 Since all *File* API methods are pretty self-explanatory, in this section
 we will focus on the *Dir* API, and more specifically, on parameter
@@ -167,14 +257,14 @@ would merely return the value ``1``.
 
 
 ========================================
-Moving data between locations
+Transfering data
 ========================================
 
-The ability to transfer data between various locations is arguably
-Fluke's predominant feature, and is rendered possible through
-the use of the ``transfer_to`` method, which is part of both
-*File* and *Dir* APIs. Below is a complete example in which we
-transfer the contents of a virtual directory residing within an
+The ability to move data between various locations is arguably
+Fluke's predominant feature, with this being rendered possible
+through the use of the ``transfer_to`` method, which is part of
+both *File* and *Dir* APIs. Below is a complete example in which
+we transfer the contents of a virtual directory residing within an
 Azure S3 bucket to a virtual directory of an Azure blob container,
 all in just a few lines of code:
 
@@ -224,6 +314,8 @@ or a remote file system, as standard file systems have no way of associating fil
 metadata, they are quite important when uploading files to the cloud in case you wish to assign
 any metadata to them.
 
+..  _assigning-metadata-to-files:
+
 --------------------------------------------
 Assigning metadata to files
 --------------------------------------------
@@ -260,6 +352,61 @@ which results in the following output being printed onto the console:
 
     {'id': '12345', 'type': 'txt'}
 
+Finally, note that when accessing a file through a directory,
+any modification made to its metadata through either API,
+will be reflected in the other. Consider the following example:
+
+.. code-block:: python
+
+    from fluke.storage import LocalDir, LocalFile
+
+    # Access directory.
+    local_dir: LocalDir = LocalDir(path='dir')
+
+    # Access file through directory.
+    file_name = 'file.txt'
+    local_file: LocalFile = local_dir.get_file(file_name)
+
+    # Set file metadata through the "File" API..
+    local_file.set_metadata(metadata={'id': '12345', 'type': 'txt'})
+
+    # Access metadata through the "Dir" API.
+    print(local_dir.get_metadata(file_path=file_name))
+
+Executing the above code produces the following output:
+
+.. code-block::
+
+    {'id': '12345', 'type': 'txt'}
+
+Even though ``local_dir.set_metadata`` was never invoked,
+``local_dir.get_metadata(file_path=file_name)`` returns the
+metadata dictionary that was set via the ``local_file.set_metadata``
+method. Naturally, the reverse is also possible:
+
+.. code-block:: python
+
+    from fluke.storage import LocalDir, LocalFile
+
+    # Access directory.
+    local_dir: LocalDir = LocalDir(path='dir')
+
+    # Access file through directory.
+    file_name = 'file.txt'
+    local_file: LocalFile = local_dir.get_file(file_name)
+
+    # Set file metadata through the "Dir" API..
+    local_dir.set_metadata(file_path=file_name, metadata={'id': '12345', 'type': 'txt'})
+
+    # Access metadata through the "File" API.
+    print(local_file.get_metadata())
+
+After being executed, this produces the same output as before:
+
+.. code-block::
+
+    {'id': '12345', 'type': 'txt'}
+
 --------------------------------------------
 Loading metadata
 --------------------------------------------
@@ -287,9 +434,9 @@ By executing the above code, we get the following output:
 That's strange. Shouldn't we see a dictionary containing the metadata we just assigned to
 the object while transfering it to Amazon S3? Actually, the answer is no, and the reason
 for this is quite simple: both methods ``get_metadata`` and ``set_metadata`` only interact
-with the instance through which they are being invoked, which is no more than an object stored
+with the instance through which they are being invoked, which is merely an object stored
 within our machine's local RAM. This consequently means that if we were to invoke an instance's
-``set_metadata`` method in order to assign some metadata to it, it would have absolutely no effect
+``set_metadata`` method in order to assign metadata to it, it would have absolutely no effect
 on the actual metadata of the instance's underlying object entity that is stored on Amazon S3.
 Similarly, invoking an instance's ``get_metadata`` method won't fetch the object's actual metadata,
 though it will search for any metadata we may have assigned to it locally.
@@ -334,9 +481,11 @@ has not been invoked:
 
   with (
       AWSS3File(auth=AWSAuth(**aws_credentials), bucket="bucket", path='dir/file.txt') as aws_obj,
-      AzureBlobDir(auth=AzureAuth(**azr_credentials), container="container", path='file.txt') as azr_blob
+      AzureBlobDir(auth=AzureAuth(**azr_credentials), container="container", path='file.txt') as azr_dir
   ):
-      aws_obj.transfer_to(dst=azr_blob, include_metadata=True)
+      aws_obj.transfer_to(dst=azr_dir, include_metadata=True)
+
+..  _speeding-things-up-with-caching:
 
 ========================================
 Speeding things up with caching
@@ -351,8 +500,8 @@ Consider for instance requesting the size of a virtual directory on
 the cloud. In order to compute this value, Fluke must not only list
 all individual files within the directory, but also fetch their
 respective sizes so that it computes the total size of the directory.
-As directories grow larger and larger, tasks like this require more
-and more time to complete.
+As directories grow larger and larger, tasks similar to this require
+more and more time to complete.
 
 Due to the above stated reasons, Fluke offers the ability to cache
 certain bits of information about remote entities after you've requested
@@ -369,7 +518,7 @@ setting parameter ``cache`` to ``True`` during its instantiation:
 
   auth = AWSAuth(**aws_credentials)
 
-  with AWSS3Dir(auth=auth, bucket="bucket", path='dir/', cache=True) as aws_dir:
+  with AWSS3Dir(auth=auth, bucket="bucket", path='dir', cache=True) as aws_dir:
       # Fetch metadata via HTTP.
       t = time.time()
       aws_dir.load_metadata()
@@ -388,22 +537,22 @@ Executing the above code block outputs the following:
     Fetched metadata in 0.01 seconds!
 
 Note, however, that after caching an entity you are going to
-be missing on any potential updates it receives, as any information
-relating to it would be retrieved straight from the cache.
-Be that as it may, you can always clear an instance's cache
-by invoking ``purge``:
+be missing on any potential updates it receives in real time,
+as any information relating to it would be retrieved straight
+from the cache. Be that as it may, you can always clear an
+instance's cache by invoking ``purge``:
 
 .. code-block:: python
   
   from fluke.auth import AWSAuth
   from fluke.storage import AWSS3File
 
-  with AWSS3Dir(auth=AWSAuth(**aws_credentials), bucket="bucket", path='dir/', cache=True) as aws_dir:
+  with AWSS3Dir(auth=AWSAuth(**aws_credentials), bucket="bucket", path='dir', cache=True) as aws_dir:
       # Count number of items in directory.
       print(f"Directory count: {aws_dir.count()}")
 
-      # At this point, one more file
-      # is uploaded onto the directory.
+      # At this point, assume that one more
+      # file is uploaded to the directory.
 
       # Re-count number of items in directory
       # without purging the cache.
@@ -422,4 +571,50 @@ By executing the above code, we get the following output:
     Directory count: 1
     Directory count: 2
 
+Lastly, as mentioned in
+:ref:`Accessing files through a directory <accesing-files-through-a-directory>`,
+all files that are generated by a directory share the same cache storage with it.
+This means that fetching some information about a file might speed up fetching
+information about the directory which generated it. Consider the following example:
 
+.. code-block:: python
+
+    from fluke.storage import AWSS3Dir
+
+    # This object will be used to authenticate with AWS.
+    aws_auth = AWSAuth(**aws_credentials)
+
+    # Access an AWS S3 directory and render it "cacheable".
+    with AWSS3Dir(auth=aws_auth, bucket="bucket", path='dir', cache=True) as aws_dir:
+      # Fetch the directory's total size and time it.
+      t = time.time()
+      _ = aws_dir.get_size(recursively=True)
+      print(f"Fetched size in {time.time() - t:.2f} seconds!")
+
+      # Now purge the directory's cache.
+      aws_dir.purge()
+
+      # Traverse the directory's files and fetch their respective sizes.
+      for file in aws_dir.traverse_files(recursively=True):
+        _ = file.get_size()
+
+      # Fetch the directory's total size and time it again.
+      t = time.time()
+      _ = aws_dir.get_size(recursively=True)
+      print(f"Fetched size in {time.time() - t:.2f} seconds!")
+
+The above code produces the following output when executed:
+
+.. code-block::
+
+    Fetched size in 21.17 seconds!
+    Fetched size in 0.03 seconds!
+
+The first time we requested the total size of the directory,
+Fluke had to list the directory recursively in order to fetch
+the respective sizes of all its files, and then finally
+compute their sum. However, the second time we requested the same
+value, we had already fetched all respective file sizes independently,
+resulting in these values being cached. Therefore, Fluke could just grab
+them from the cache and simply add them up so as to return the total
+size of the directory.

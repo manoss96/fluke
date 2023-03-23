@@ -2855,7 +2855,6 @@ class TestAWSS3Dir(unittest.TestCase):
             _ = dir.get_size(recursively=True)
             self.assertEqual(dir.get_size(recursively=True), 16)
 
-            
     def test_load_metadata_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object metadata via HTTP.
