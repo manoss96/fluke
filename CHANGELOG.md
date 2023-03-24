@@ -10,6 +10,10 @@ All notable changes to this project will be documented in this file.
   in order to read a file's bytes. Added
   corresponding tests. (https://github.com/manoss96/fluke/issues/11)
 
+- *Dir* API now provides an *is_file* method
+  used for determining whether the specified
+  path points to a file or not. (https://github.com/manoss96/fluke/issues/16)
+
 - *fluke.storage.AWSS3File* now has a *get_bucket_name* method.
   (https://github.com/manoss96/fluke/issues/16)
 
