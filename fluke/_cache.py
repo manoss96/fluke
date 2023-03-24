@@ -3,7 +3,6 @@ from typing import Iterator as _Iterator
 from typing import Callable as _Callable
 
 
-
 class Cache():
     '''
     A class whose instances represent cached \

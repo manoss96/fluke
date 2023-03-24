@@ -2,7 +2,7 @@ import os as _os
 import io as _io
 from abc import ABC as _ABC
 from abc import abstractmethod as _absmethod
-from typing import Any as _Any
+from shutil import copyfileobj as _copyfileobj
 from typing import Optional as _Optional
 from typing import Iterator as _Iterator
 
@@ -118,7 +118,7 @@ class ClientHandler(_ABC):
             return self._get_file_metadata_impl(file_path)
         
 
-    def iterate_contents(
+    def traverse_dir(
         self,
         dir_path: str,
         recursively: bool,
@@ -169,7 +169,7 @@ class ClientHandler(_ABC):
                 # Fetch content iterator.
                 # NOTE: Set "show_abs_path" to "True" so that all
                 #       contents are cached via their absolute paths.
-                iterator = self._iterate_contents_impl(
+                iterator = self._traverse_dir_impl(
                     dir_path=dir_path,
                     recursively=recursively,
                     show_abs_path=True)
@@ -188,14 +188,14 @@ class ClientHandler(_ABC):
                     return relativize_iter(iterator)
         else:
             if recursively or include_dirs:
-                return self._iterate_contents_impl(
+                return self._traverse_dir_impl(
                     dir_path=dir_path,
                     recursively=recursively,
                     show_abs_path=show_abs_path)
             else:
                 iterator = filter(
                     self.is_file,
-                    self._iterate_contents_impl(
+                    self._traverse_dir_impl(
                         dir_path=dir_path,
                         recursively=recursively,
                         show_abs_path=True))
@@ -264,14 +264,14 @@ class ClientHandler(_ABC):
 
 
     @_absmethod
-    def download_file(
+    def read(
         self,
         file_path: str,
         buffer: _io.BytesIO,
         include_metadata: bool
     ) -> _Optional[dict[str, str]]:
         '''
-        Downloads a file into the provided buffer. \
+        Reads the bytes of a file into the provided buffer. \
         Returns either ``None`` or a dictionary containing \
         file metadata, depending on the value of parameter \
         ``include_metadata``.
@@ -287,14 +287,15 @@ class ClientHandler(_ABC):
 
 
     @_absmethod
-    def upload_file(
+    def write(
         self,
         file_path: str,
         buffer: _io.BytesIO,
         metadata: _Optional[dict[str, str]]
     ) -> None:
         '''
-        Uploads the file contained within the provided buffer.
+        Writes the bytes contained within the provided \
+        buffer into the specified path.
 
         :param str file_path: The absolute path of the \
             file in question.
@@ -308,7 +309,7 @@ class ClientHandler(_ABC):
 
 
     @_absmethod
-    def _iterate_contents_impl(
+    def _traverse_dir_impl(
         self,
         dir_path: str,
         recursively: bool,
@@ -426,17 +427,17 @@ class FileSystemHandler(ClientHandler):
         :param str path: The path of the directory \
             that is to be created.
         '''
-        _os.makedirs(path)
+        _os.makedirs(path, exist_ok=True)
     
 
-    def download_file(
+    def read(
         self,
         file_path: str,
         buffer: _io.BytesIO,
         include_metadata: bool
     ) -> _Optional[dict[str, str]]:
         '''
-        Downloads a file into the provided buffer. \
+        Reads the bytes of a file into the provided buffer. \
         Returns either ``None`` or a dictionary containing \
         file metadata, depending on the value of parameter \
         ``include_metadata``.
@@ -448,17 +449,19 @@ class FileSystemHandler(ClientHandler):
         :param bool include_metadata: Indicates whether \
             to download any existing file metadata as well.
         '''
-        raise NotImplementedError()
+        with open(file=file_path, mode='rb') as file:
+            _copyfileobj(fsrc=file, fdst=buffer)
 
 
-    def upload_file(
+    def write(
         self,
         file_path: str,
         buffer: _io.BytesIO,
         metadata: _Optional[dict[str, str]]
     ) -> None:
         '''
-        Uploads the file contained within the provided buffer.
+        Writes the bytes contained within the provided \
+        buffer into the specified path.
 
         :param str file_path: The absolute path of the \
             file in question.
@@ -468,7 +471,11 @@ class FileSystemHandler(ClientHandler):
             then assigns the provided metadata to the file \
             during the upload.
         '''
-        raise NotImplementedError()
+        # Create any necessary directories.
+        self.mkdir(_os.path.dirname(file_path))
+        # Write file.
+        with open(file=file_path, mode='wb') as file:
+            _copyfileobj(fsrc=buffer, fdst=file)
     
 
     def _get_file_size_impl(self, file_path) -> int:
@@ -490,7 +497,7 @@ class FileSystemHandler(ClientHandler):
         raise NotImplementedError()
 
 
-    def _iterate_contents_impl(
+    def _traverse_dir_impl(
         self,
         dir_path: str,
         recursively: bool,
@@ -522,10 +529,11 @@ class FileSystemHandler(ClientHandler):
             for dp, dn, fn in _os.walk(dir_path):
                 dn.sort()
                 for file in sorted(fn):
+                    dp = dp.replace(_os.sep, sep)
                     if not show_abs_path:
                         dp = _relativize(
                             parent=dir_path,
-                            child=dp.replace(_os.sep, sep),
+                            child=dp,
                             sep=sep)
                     yield _join_paths(sep, dp, file)
         else:
@@ -689,14 +697,14 @@ class SSHClientHandler(ClientHandler):
         self.__sftp.mkdir(path=path)
     
 
-    def download_file(
+    def read(
         self,
         file_path: str,
         buffer: _io.BytesIO,
         include_metadata: bool
     ) -> _Optional[dict[str, str]]:
         '''
-        Downloads a file into the provided buffer. \
+        Reads the bytes of a file into the provided buffer. \
         Returns either ``None`` or a dictionary containing \
         file metadata, depending on the value of parameter \
         ``include_metadata``.
@@ -711,14 +719,15 @@ class SSHClientHandler(ClientHandler):
         self.__sftp.getfo(remotepath=file_path, fl=buffer)
 
 
-    def upload_file(
+    def write(
         self,
         file_path: str,
         buffer: _io.BytesIO,
         metadata: _Optional[dict[str, str]]
     ) -> None:
         '''
-        Uploads the file contained within the provided buffer.
+        Writes the bytes contained within the provided \
+        buffer into the specified path.
 
         :param str file_path: The absolute path of the \
             file in question.
@@ -728,6 +737,32 @@ class SSHClientHandler(ClientHandler):
             then assigns the provided metadata to the file \
             during the upload.
         '''
+
+        sep = _infer_sep(file_path)
+
+        def get_parent_dir(file_path: str) -> _Optional[str]:
+            '''
+            Returns the path to the parent directory \
+            of the provided file path. Returns ``None`` \
+            if said directory is the root directory.
+
+            :param str file_path: The path of the file \
+                in question.
+            '''
+            file_path = file_path.rstrip(sep)
+            if sep in file_path:
+                return f"{sep.join(file_path.split(sep)[:-1])}{sep}"
+            return None
+
+        # Create any directories necessary.
+        parent_dir, non_existing_dirs = file_path, []
+        while (parent_dir := get_parent_dir(parent_dir)) is not None:
+            if not self.path_exists(path=parent_dir):
+                non_existing_dirs.append(parent_dir)
+        for dir in reversed(non_existing_dirs):
+            self.mkdir(path=dir)
+
+        # Write file from buffer.
         self.__sftp.putfo(fl=buffer, remotepath=file_path)
 
 
@@ -751,7 +786,7 @@ class SSHClientHandler(ClientHandler):
         raise NotImplementedError()
 
 
-    def _iterate_contents_impl(
+    def _traverse_dir_impl(
         self,
         dir_path: str,
         recursively: bool,
@@ -951,14 +986,14 @@ class AWSClientHandler(ClientHandler):
             ContentType='application/x-directory; charset=UTF-8')
     
 
-    def download_file(
+    def read(
         self,
         file_path: str,
         buffer: _io.BytesIO,
         include_metadata: bool
     ) -> _Optional[dict[str, str]]:
         '''
-        Downloads a file into the provided buffer. \
+        Reads the bytes of a file into the provided buffer. \
         Returns either ``None`` or a dictionary containing \
         file metadata, depending on the value of parameter \
         ``include_metadata``.
@@ -976,14 +1011,15 @@ class AWSClientHandler(ClientHandler):
             return obj.metadata
         
 
-    def upload_file(
+    def write(
         self,
         file_path: str,
         buffer: _io.BytesIO,
         metadata: _Optional[dict[str, str]]
     ) -> None:
         '''
-        Uploads the file contained within the provided buffer.
+        Writes the bytes contained within the provided \
+        buffer into the specified path.
 
         :param str file_path: The absolute path of the \
             file in question.
@@ -1019,7 +1055,7 @@ class AWSClientHandler(ClientHandler):
         return self.__bucket.Object(key=file_path).metadata
 
 
-    def _iterate_contents_impl(
+    def _traverse_dir_impl(
         self,
         dir_path: str,
         recursively: bool,
@@ -1222,14 +1258,14 @@ class AzureClientHandler(ClientHandler):
             blob.delete_blob()
     
 
-    def download_file(
+    def read(
         self,
         file_path: str,
         buffer: _io.BytesIO,
         include_metadata: bool
     ) -> _Optional[dict[str, str]]:
         '''
-        Downloads a file into the provided buffer. \
+        Reads the bytes of a file into the provided buffer. \
         Returns either ``None`` or a dictionary containing \
         file metadata, depending on the value of parameter \
         ``include_metadata``.
@@ -1247,14 +1283,15 @@ class AzureClientHandler(ClientHandler):
             return blob.properties.metadata
         
 
-    def upload_file(
+    def write(
         self,
         file_path: str,
         buffer: _io.BytesIO,
         metadata: _Optional[dict[str, str]]
     ) -> None:
         '''
-        Uploads the file contained within the provided buffer.
+        Writes the bytes contained within the provided \
+        buffer into the specified path.
 
         :param str file_path: The absolute path of the \
             file in question.
@@ -1293,7 +1330,7 @@ class AzureClientHandler(ClientHandler):
             blob=file_path).properties.metadata
 
 
-    def _iterate_contents_impl(
+    def _traverse_dir_impl(
         self,
         dir_path: str,
         recursively: bool,

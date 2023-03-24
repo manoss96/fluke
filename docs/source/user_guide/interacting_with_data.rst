@@ -106,10 +106,10 @@ class's context manager:
 Accessing files through a directory
 ----------------------------------------
 
-After having gained access to a directory via the *Dir* API,
-there is also the ability to access its files as individual
-*File* instances through certain methods which are part of
-the *Dir* API. These methods are the following:
+After having gained access to a directory, you may also
+access its files as individual *File* instances through
+certain methods which are part of the *Dir* API. These
+methods are the following:
 
 * ``get_file(file_path: str) -> File``
 * ``get_files(recursively: bool, show_abs_path: bool) -> dict[str, File]``
@@ -117,17 +117,17 @@ the *Dir* API. These methods are the following:
 
 Consider the following example in which we use the directory's
 ``get_file`` method in order to access a file which resides
-directly within it, namely ``file1.txt``:
+directly within it, namely ``file.txt``:
 
 .. code-block:: python
 
   from fluke.storage import LocalDir, LocalFile
 
   # Access directory.
-  local_dir: LocalDir = LocalDir(path='dir/')
+  local_dir: LocalDir = LocalDir(path='dir')
 
   # Access file through directory.
-  local_file: LocalFile = local_dir.get_file('file1.txt')
+  local_file: LocalFile = local_dir.get_file('file.txt')
 
 This is almost equivalent to:
 
@@ -136,7 +136,7 @@ This is almost equivalent to:
   from fluke.storage import LocalFile
 
   # Access file directly.
-  local_file: LocalFile = LocalFile(path='dir/file1.txt')
+  local_file: LocalFile = LocalFile(path='dir/file.txt')
 
 The only difference between these two methods of accessing a file
 is that when doing so through a directory, this results in the two
@@ -146,7 +146,7 @@ sharing a bunch of resources with each other, them being:
 * The underlying connection (in case of remote entities)
 * The cache storage (in case of remote entities)
 
-Regarding the case of remote entities, since a file shares
+Regarding remote entities, seeing that a file shares
 the same connection with the directory from which it came,
 you should restrain from invoking the file's ``close`` method,
 as this would also impact your ability to interact with the
@@ -164,7 +164,7 @@ directory:
   aws_dir = AWSS3Dir(auth=auth, bucket="bucket_name", path='dir')
 
   # Access file through directory.
-  aws_file: AWSS3File = aws_dir.get_file('file1.txt')
+  aws_file: AWSS3File = aws_dir.get_file('file.txt')
 
   # Close connection through file.
   aws_file.close()
@@ -179,7 +179,7 @@ As for the file metadata and cache storage, you can read more in
 respectively.
 
 ========================================
-Inspecting data
+Exploring data
 ========================================
 
 After having gained access to an entity, you are then
@@ -251,7 +251,7 @@ counting three separate entities within the context of our example, namely
 
 Note that whenever ``recursively`` is set to ``True``,
 subdirectories are not considered to be additional entities,
-and are only searched for any files that may or reside within them.
+and are only searched for any files that may reside within them.
 If, for example, ``subdir`` were empty, then ``dir.count(recursively=True)``
 would merely return the value ``1``.
 
@@ -261,7 +261,7 @@ Transfering data
 ========================================
 
 The ability to move data between various locations is arguably
-Fluke's predominant feature, with this being rendered possible
+Fluke's predominant feature, and it is rendered possible
 through the use of the ``transfer_to`` method, which is part of
 both *File* and *Dir* APIs. Below is a complete example in which
 we transfer the contents of a virtual directory residing within an
@@ -280,8 +280,8 @@ all in just a few lines of code:
   azr_auth = AzureAuth(**azr_credentials)
 
   with (
-      AWSS3Dir(auth=aws_auth, bucket="bucket", path='dir/') as aws_dir,
-      AzureBlobDir(auth=azr_auth, container="container", path='dir/') as azr_dir
+      AWSS3Dir(auth=aws_auth, bucket="bucket", path='dir') as aws_dir,
+      AzureBlobDir(auth=azr_auth, container="container", path='dir') as azr_dir
   ):
       aws_dir.transfer_to(dst=azr_dir, recursively=True)
 
@@ -334,8 +334,8 @@ some metadata to it through the ``set_metadata`` method:
   file = LocalFile(path='/home/user/path/to/file.txt')
   file.set_metadata({'id': '12345', 'type': 'txt'})
 
-  # Transfer file to Amazon S3 along with its metadata.
-  with AWSS3Dir(auth=AWSAuth(**aws_credentials), bucket="bucket", path='dir/') as aws_dir:
+  # Transfer file to Amazon S3, assigning the defined metadata to it.
+  with AWSS3Dir(auth=AWSAuth(**aws_credentials), bucket="bucket", path='dir') as aws_dir:
       file.transfer_to(dst=aws_dir, include_metadata=True)
 
 Along with *file.txt* being uploaded to Amazon S3, any metadata that
@@ -370,7 +370,7 @@ will be reflected in the other. Consider the following example:
     # Set file metadata through the "File" API..
     local_file.set_metadata(metadata={'id': '12345', 'type': 'txt'})
 
-    # Access metadata through the "Dir" API.
+    # Get file metadata through the "Dir" API.
     print(local_dir.get_metadata(file_path=file_name))
 
 Executing the above code produces the following output:
@@ -381,8 +381,8 @@ Executing the above code produces the following output:
 
 Even though ``local_dir.set_metadata`` was never invoked,
 ``local_dir.get_metadata(file_path=file_name)`` returns the
-metadata dictionary that was set via the ``local_file.set_metadata``
-method. Naturally, the reverse is also possible:
+metadata dictionary that was set via ``local_file.set_metadata``.
+Naturally, the reverse is also possible:
 
 .. code-block:: python
 
@@ -398,7 +398,7 @@ method. Naturally, the reverse is also possible:
     # Set file metadata through the "Dir" API..
     local_dir.set_metadata(file_path=file_name, metadata={'id': '12345', 'type': 'txt'})
 
-    # Access metadata through the "File" API.
+    # Get file metadata through the "File" API.
     print(local_file.get_metadata())
 
 After being executed, this produces the same output as before:
@@ -575,7 +575,7 @@ Lastly, as mentioned in
 :ref:`Accessing files through a directory <accesing-files-through-a-directory>`,
 all files that are generated by a directory share the same cache storage with it.
 This means that fetching some information about a file might speed up fetching
-information about the directory which generated it. Consider the following example:
+information about the directory which spawned it. Consider the following example:
 
 .. code-block:: python
 

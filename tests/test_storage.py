@@ -725,7 +725,7 @@ class TestAWSS3File(unittest.TestCase):
 
         m1 = patch.object(AWSClientHandler, '_get_file_size_impl', autospec=True)
         m2 = patch.object(AWSClientHandler, '_get_file_metadata_impl', autospec=True)
-        m3 = patch.object(AWSClientHandler, '_iterate_contents_impl', autospec=True)
+        m3 = patch.object(AWSClientHandler, '_traverse_dir_impl', autospec=True)
 
         def simulate_latency_1(*args, **kwargs):
             time.sleep(0.2)
@@ -2255,7 +2255,7 @@ class TestAWSS3Dir(unittest.TestCase):
 
         m1 = patch.object(AWSClientHandler, '_get_file_size_impl', autospec=True)
         m2 = patch.object(AWSClientHandler, '_get_file_metadata_impl', autospec=True)
-        m3 = patch.object(AWSClientHandler, '_iterate_contents_impl', autospec=True)
+        m3 = patch.object(AWSClientHandler, '_traverse_dir_impl', autospec=True)
 
         def simulate_latency_1(*args, **kwargs):
             time.sleep(0.2)
