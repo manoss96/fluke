@@ -65,16 +65,16 @@ the name of said bucket:
   auth = AWSAuth(**credentials)
 
   # Gain access to an Amazon S3 directory.
-  s3_dir = AWSS3Dir(
+  aws_dir = AWSS3Dir(
     auth=auth,
     bucket='bucket_name',
     path='path/within/amazon/s3/bucket/dir')
 
-  # Interact with "s3_dir".
+  # Interact with "aws_dir".
   ...
 
   # Close any open connections.
-  s3_dir.close()
+  aws_dir.close()
 
 Notice how at the end we invoked the instance's ``close`` method? This is
 done in order to prevent any connection leaks from occurring, and is in fact
@@ -95,9 +95,9 @@ class's context manager:
     auth=auth,
     bucket='bucket_name',
     path='path/within/amazon/s3/bucket/dir'
-  ) as s3_dir:
+  ) as aws_dir:
 
-    # Interact with s3_dir.
+    # Interact with aws_dir.
     ...
 
 .. _accesing-files-through-a-directory:
@@ -161,7 +161,7 @@ directory:
   auth = AWSAuth(**credentials)
 
   # Access directory.
-  aws_dir = AWSS3Dir(auth=auth, bucket="bucket_name", path='dir')
+  aws_dir = AWSS3Dir(auth=auth, bucket='bucket_name', path='dir')
 
   # Access file through directory.
   aws_file: AWSS3File = aws_dir.get_file('file.txt')
@@ -226,12 +226,12 @@ printed onto the console after executing it:
 
 .. code-block:: python
 
-    from fluke.storage import LocalDir
+  from fluke.storage import LocalDir
 
-    dir = LocalDir(path='dir/')
+  local_dir = LocalDir(path='dir')
 
-    print(f"Ordinary count: {dir.count()}")
-    print(f"Recursive count: {dir.count(recursively=True)}")
+  print(f"Ordinary count: {local_dir.count()}")
+  print(f"Recursive count: {local_dir.count(recursively=True)}")
 
 This is the output we get after executing the above code block:
 
@@ -280,8 +280,8 @@ all in just a few lines of code:
   azr_auth = AzureAuth(**azr_credentials)
 
   with (
-      AWSS3Dir(auth=aws_auth, bucket="bucket", path='dir') as aws_dir,
-      AzureBlobDir(auth=azr_auth, container="container", path='dir') as azr_dir
+      AWSS3Dir(auth=aws_auth, bucket='bucket', path='dir') as aws_dir,
+      AzureBlobDir(auth=azr_auth, container='container', path='dir') as azr_dir
   ):
       aws_dir.transfer_to(dst=azr_dir, recursively=True)
 
@@ -334,8 +334,8 @@ some metadata to it through the ``set_metadata`` method:
   file = LocalFile(path='/home/user/path/to/file.txt')
   file.set_metadata({'id': '12345', 'type': 'txt'})
 
-  # Transfer file to Amazon S3, assigning the defined metadata to it.
-  with AWSS3Dir(auth=AWSAuth(**aws_credentials), bucket="bucket", path='dir') as aws_dir:
+  # Transfer file to Amazon S3 along with its metadata.
+  with AWSS3Dir(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir') as aws_dir:
       file.transfer_to(dst=aws_dir, include_metadata=True)
 
 Along with *file.txt* being uploaded to Amazon S3, any metadata that
@@ -344,13 +344,13 @@ In fact, we can easily confirm this by executing the following code:
 
 .. code-block:: python
 
-    print(aws_dir.get_metadata('file.txt'))
+  print(aws_dir.get_metadata('file.txt'))
 
 which results in the following output being printed onto the console:
 
 .. code-block::
 
-    {'id': '12345', 'type': 'txt'}
+  {'id': '12345', 'type': 'txt'}
 
 Finally, note that when accessing a file through a directory,
 any modification made to its metadata through either API,
@@ -358,26 +358,26 @@ will be reflected in the other. Consider the following example:
 
 .. code-block:: python
 
-    from fluke.storage import LocalDir, LocalFile
+  from fluke.storage import LocalDir, LocalFile
 
-    # Access directory.
-    local_dir: LocalDir = LocalDir(path='dir')
+  # Access directory.
+  local_dir: LocalDir = LocalDir(path='dir')
 
-    # Access file through directory.
-    file_name = 'file.txt'
-    local_file: LocalFile = local_dir.get_file(file_name)
+  # Access file through directory.
+  file_name = 'file.txt'
+  local_file: LocalFile = local_dir.get_file(file_name)
 
-    # Set file metadata through the "File" API..
-    local_file.set_metadata(metadata={'id': '12345', 'type': 'txt'})
+  # Set file metadata through the "File" API..
+  local_file.set_metadata(metadata={'id': '12345', 'type': 'txt'})
 
-    # Get file metadata through the "Dir" API.
-    print(local_dir.get_metadata(file_path=file_name))
+  # Get file metadata through the "Dir" API.
+  print(local_dir.get_metadata(file_path=file_name))
 
 Executing the above code produces the following output:
 
 .. code-block::
 
-    {'id': '12345', 'type': 'txt'}
+  {'id': '12345', 'type': 'txt'}
 
 Even though ``local_dir.set_metadata`` was never invoked,
 ``local_dir.get_metadata(file_path=file_name)`` returns the
@@ -386,26 +386,26 @@ Naturally, the reverse is also possible:
 
 .. code-block:: python
 
-    from fluke.storage import LocalDir, LocalFile
+  from fluke.storage import LocalDir, LocalFile
 
-    # Access directory.
-    local_dir: LocalDir = LocalDir(path='dir')
+  # Access directory.
+  local_dir: LocalDir = LocalDir(path='dir')
 
-    # Access file through directory.
-    file_name = 'file.txt'
-    local_file: LocalFile = local_dir.get_file(file_name)
+  # Access file through directory.
+  file_name = 'file.txt'
+  local_file: LocalFile = local_dir.get_file(file_name)
 
-    # Set file metadata through the "Dir" API..
-    local_dir.set_metadata(file_path=file_name, metadata={'id': '12345', 'type': 'txt'})
+  # Set file metadata through the "Dir" API..
+  local_dir.set_metadata(file_path=file_name, metadata={'id': '12345', 'type': 'txt'})
 
-    # Get file metadata through the "File" API.
-    print(local_file.get_metadata())
+  # Get file metadata through the "File" API.
+  print(local_file.get_metadata())
 
 After being executed, this produces the same output as before:
 
 .. code-block::
 
-    {'id': '12345', 'type': 'txt'}
+  {'id': '12345', 'type': 'txt'}
 
 --------------------------------------------
 Loading metadata
@@ -422,14 +422,14 @@ assigned to it. Let's do just that and see what happens:
   from fluke.storage import AWSS3File
 
   # Gain access to 'file.txt' on Amazon S3 and print its metadata.
-  with AWSS3File(auth=AWSAuth(**aws_credentials), bucket="bucket", path='dir/file.txt') as aws_obj:
+  with AWSS3File(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir/file.txt') as aws_obj:
       print(aws_obj.get_metadata())
 
 By executing the above code, we get the following output:
 
 .. code-block::
 
-    {}
+  {}
 
 That's strange. Shouldn't we see a dictionary containing the metadata we just assigned to
 the object while transfering it to Amazon S3? Actually, the answer is no, and the reason
@@ -453,7 +453,7 @@ add the aforementioned line of code:
   from fluke.storage import AWSS3File
 
   # Gain access to 'file.txt' on Amazon S3 and print its metadata.
-  with AWSS3File(auth=AWSAuth(**aws_credentials), bucket="bucket", path='dir/file.txt') as aws_obj:
+  with AWSS3File(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir/file.txt') as aws_obj:
       # Load metadata first.
       aws_obj.load_metadata()
       # Then print it.
@@ -463,7 +463,7 @@ By executing the above code, we now get the expected output:
 
 .. code-block::
 
-    {'id': '12345', 'type': 'txt'}
+  {'id': '12345', 'type': 'txt'}
 
 As a final note, whenever setting ``include_metadata`` to ``True``, ``transfer_to`` will
 always look first for any local metadata that can be assigned to the file(s) resulting from
@@ -480,8 +480,8 @@ has not been invoked:
   from fluke.storage import AWSS3File, AzureBlobFile
 
   with (
-      AWSS3File(auth=AWSAuth(**aws_credentials), bucket="bucket", path='dir/file.txt') as aws_obj,
-      AzureBlobDir(auth=AzureAuth(**azr_credentials), container="container", path='file.txt') as azr_dir
+      AWSS3File(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir/file.txt') as aws_obj,
+      AzureBlobDir(auth=AzureAuth(**azr_credentials), container='container', path='file.txt') as azr_dir
   ):
       aws_obj.transfer_to(dst=azr_dir, include_metadata=True)
 
@@ -518,58 +518,58 @@ setting parameter ``cache`` to ``True`` during its instantiation:
 
   auth = AWSAuth(**aws_credentials)
 
-  with AWSS3Dir(auth=auth, bucket="bucket", path='dir', cache=True) as aws_dir:
-      # Fetch metadata via HTTP.
-      t = time.time()
-      aws_dir.load_metadata()
-      print(f"Fetched metadata in {time.time() - t:.2f} seconds!")
+  with AWSS3Dir(auth=auth, bucket='bucket', path='dir', cache=True) as aws_dir:
+    # Fetch metadata via HTTP.
+    t = time.time()
+    aws_dir.load_metadata()
+    print(f"Fetched metadata in {time.time() - t:.2f} seconds!")
 
-      # Fetch metadata from cache.
-      t = time.time()
-      aws_dir.load_metadata()
-      print(f"Fetched metadata in {time.time() - t:.2f} seconds!")
+    # Fetch metadata from cache.
+    t = time.time()
+    aws_dir.load_metadata()
+    print(f"Fetched metadata in {time.time() - t:.2f} seconds!")
 
 Executing the above code block outputs the following:
 
 .. code-block::
 
-    Fetched metadata in 7.91 seconds!
-    Fetched metadata in 0.01 seconds!
+  Fetched metadata in 7.91 seconds!
+  Fetched metadata in 0.01 seconds!
 
-Note, however, that after caching an entity you are going to
-be missing on any potential updates it receives in real time,
-as any information relating to it would be retrieved straight
-from the cache. Be that as it may, you can always clear an
-instance's cache by invoking ``purge``:
+Note, however, that after caching information about a remote entity
+you are going to be missing on any potential updates it receives,
+as said information would be retrieved straight from the cache.
+Be that as it may, you can always clear an instance's cache
+by invoking ``purge``:
 
 .. code-block:: python
   
   from fluke.auth import AWSAuth
   from fluke.storage import AWSS3File
 
-  with AWSS3Dir(auth=AWSAuth(**aws_credentials), bucket="bucket", path='dir', cache=True) as aws_dir:
-      # Count number of items in directory.
-      print(f"Directory count: {aws_dir.count()}")
+  with AWSS3Dir(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir', cache=True) as aws_dir:
+    # Count number of items in directory.
+    print(f"Directory count: {aws_dir.count()}")
 
-      # At this point, assume that one more
-      # file is uploaded to the directory.
+    # At this point, assume that one more
+    # file is uploaded to the directory.
 
-      # Re-count number of items in directory
-      # without purging the cache.
-      print(f"Directory count: {aws_dir.count()}")
+    # Re-count number of items in directory
+    # without purging the cache.
+    print(f"Directory count: {aws_dir.count()}")
 
-      # Re-count number of items in directory
-      # after purging the cache.
-      aws_dir.purge()
-      print(f"Directory count: {aws_dir.count()}")
+    # Re-count number of items in directory
+    # after purging the cache.
+    aws_dir.purge()
+    print(f"Directory count: {aws_dir.count()}")
 
 By executing the above code, we get the following output:
 
 .. code-block::
 
-    Directory count: 1
-    Directory count: 1
-    Directory count: 2
+  Directory count: 1
+  Directory count: 1
+  Directory count: 2
 
 Lastly, as mentioned in
 :ref:`Accessing files through a directory <accesing-files-through-a-directory>`,
@@ -579,36 +579,36 @@ information about the directory which spawned it. Consider the following example
 
 .. code-block:: python
 
-    from fluke.storage import AWSS3Dir
+  from fluke.storage import AWSS3Dir
 
-    # This object will be used to authenticate with AWS.
-    aws_auth = AWSAuth(**aws_credentials)
+  # This object will be used to authenticate with AWS.
+  aws_auth = AWSAuth(**aws_credentials)
 
-    # Access an AWS S3 directory and render it "cacheable".
-    with AWSS3Dir(auth=aws_auth, bucket="bucket", path='dir', cache=True) as aws_dir:
-      # Fetch the directory's total size and time it.
-      t = time.time()
-      _ = aws_dir.get_size(recursively=True)
-      print(f"Fetched size in {time.time() - t:.2f} seconds!")
+  # Access an AWS S3 directory and render it "cacheable".
+  with AWSS3Dir(auth=aws_auth, bucket="bucket", path='dir', cache=True) as aws_dir:
+    # Fetch the directory's total size and time it.
+    t = time.time()
+    _ = aws_dir.get_size(recursively=True)
+    print(f"Fetched size in {time.time() - t:.2f} seconds!")
 
-      # Now purge the directory's cache.
-      aws_dir.purge()
+    # Now purge the directory's cache.
+    aws_dir.purge()
 
-      # Traverse the directory's files and fetch their respective sizes.
-      for file in aws_dir.traverse_files(recursively=True):
-        _ = file.get_size()
+    # Traverse the directory's files and fetch their respective sizes.
+    for file in aws_dir.traverse_files(recursively=True):
+      _ = file.get_size()
 
-      # Fetch the directory's total size and time it again.
-      t = time.time()
-      _ = aws_dir.get_size(recursively=True)
-      print(f"Fetched size in {time.time() - t:.2f} seconds!")
+    # Fetch the directory's total size and time it again.
+    t = time.time()
+    _ = aws_dir.get_size(recursively=True)
+    print(f"Fetched size in {time.time() - t:.2f} seconds!")
 
 The above code produces the following output when executed:
 
 .. code-block::
 
-    Fetched size in 21.17 seconds!
-    Fetched size in 0.03 seconds!
+  Fetched size in 21.17 seconds!
+  Fetched size in 0.03 seconds!
 
 The first time we requested the total size of the directory,
 Fluke had to list the directory recursively in order to fetch

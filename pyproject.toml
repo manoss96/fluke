@@ -1,6 +1,6 @@
 [project]
 name = "fluke-api"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
   {email = "manosstoumpos@gmail.com"},
   {name = "Manos Stoumpos"}
@@ -33,4 +33,4 @@ tests = [
 "Homepage" = "https://github.com/manoss96/fluke"
 "Bug Tracker" = "https://github.com/manoss96/fluke/issues"
 "Documentation" = "https://fluke.rtfd.io"
-"Changelog" = "https://github.com/manoss96/fluke/CHANGELOG.md"
+"Changelog" = "https://github.com/manoss96/fluke/blob/main/CHANGELOG.md"

@@ -140,7 +140,7 @@ def simulate_latency(func: Callable):
 CONSTANTS
 '''
 SEPARATOR = '/'
-TEST_FILES_DIR = "test_files"
+TEST_FILES_DIR = "tests/test_files"
 METADATA = {'1': '1'}
 
 '''

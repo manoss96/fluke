@@ -2,7 +2,7 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] - DATE
+## [0.2.0] - 2023/03/25
 
 ### Added
 
@@ -31,7 +31,7 @@ All notable changes to this project will be documented in this file.
 
 - Parameter *path* in *fluke.storage.AWSS3Dir* and *fluke.storage.AzureBlobDir*
   constructors now defaults to ``None`` in order to reference the whole
-  container and bucker respectively (https://github.com/manoss96/fluke/issues/15)
+  container and bucket respectively (https://github.com/manoss96/fluke/issues/15)
 
 - Providing a path that starts with a separator, e.g. ``/``, to constructors
   *fluke.storage.AWSS3Dir* and *fluke.storage.AzureBlobDir* will now throw
@@ -59,6 +59,6 @@ All notable changes to this project will be documented in this file.
   of a copy of said dictionary (https://github.com/manoss96/fluke/issues/16).
 
  
-## [0.1.0] - 2023-03-06
+## [0.1.0] - 2023/03/06
  
 First release

@@ -9,7 +9,7 @@ resources require some form of authentication during which a user must identify
 themselves so that they are granted access to said resources. Fluke itself
 manages authentication through the `fluke.auth <../documentation/auth.html>`_ module.
 The general idea is that you must first initialize some *Auth* instance,
-which is then provided to the resource you wish to gain access to:
+which is then provided to the resource with which you wish to interact:
 
 .. code-block:: python
 
@@ -31,7 +31,8 @@ Authenticating with AWS
 ==========================================
 
 In order to use any AWS resource, you have to be able to authenticate with
-AWS first. This can be easily achieved by creating an ``AWSAuth`` instance
+AWS first. This can be easily achieved by creating an
+`AWSAuth <../documentation/auth.html#fluke.auth.AWSAuth>`_ instance
 and providing it with your access key:
 
 .. code-block:: python
@@ -95,8 +96,8 @@ Authenticating via an Azure service principal
 ----------------------------------------------
 
 In order to authenticate via an Azure service principal,
-you may use the ordinary ``AzureAuth`` class constructor,
-providing it with the storage account's URL, as well as
+you may use the ordinary `AzureAuth <../documentation/auth.html#fluke.auth.AzureAuth>`_
+class constructor, providing it with the storage account's URL, as well as
 all information relevant to the service principal, that is,
 the *tenant ID*, *client ID* and finally the *client secret*:
 
@@ -116,8 +117,9 @@ the *tenant ID*, *client ID* and finally the *client secret*:
 Authenticating via a connection string
 ----------------------------------------------
 
-Alternatively, you are able to use ``AzureAuth.from_conn_string`` so
-as to authenticate with a resource by using a connection string,
+Alternatively, you are able to use
+`AzureAuth.from_conn_string <../documentation/auth.html#fluke.auth.AzureAuth.from_conn_string>`_
+so as to authenticate with a resource by using a connection string,
 which must typically include the account's name and key, as well
 as all necessary endpoints regarding the resources to which we request
 access to:
@@ -166,9 +168,12 @@ This way of authentication has the following two prerequisites:
 * There exists a public/private SSH key pair on your local machine.
 * The remote machine to which you will be connecting has a copy of your public key.
 
-If both of the above are true, then you can simply create a ``RemoteAuth`` instance
-through the use of the function ``RemoteAuth.from_key``, to which you must provide
-via the ``pkey`` parameter the path of the file containing your private key:
+If both of the above are true, then you can simply create a
+`RemoteAuth <../documentation/auth.html#fluke.auth.RemoteAuth>`_ 
+instance through the use of the function
+`RemoteAuth.from_key <../documentation/auth.html#fluke.auth.RemoteAuth.from_key>`_,
+to which you must provide the path of the file containing your private key
+via the ``pkey`` parameter:
 
 .. code-block:: python
 
@@ -188,8 +193,8 @@ Authenticating via password is more straightforward
 as you only need to know the password of the user as
 which you will be logging into the remote machine.
 To do that, you simply need to invoke the function
-``RemoteAuth.from_password``, providing it with said
-password:
+`RemoteAuth.from_password <../documentation/auth.html#fluke.auth.RemoteAuth.from_password>`_,
+providing it with said password:
 
 .. code-block:: python
 
