@@ -451,9 +451,9 @@ class TestLocalFile(unittest.TestCase):
         file = self.build_file()
         self.assertEqual(file.get_uri(), f"file:///{ABS_FILE_PATH.lstrip(SEPARATOR)}")
 
-    def test_get_metadata_on_none(self):
+    def test_get_metadata(self):
         file = self.build_file()
-        self.assertEqual(file.get_metadata(), None)
+        self.assertEqual(file.get_metadata(), {})
 
     def test_set_and_get_metadata(self):
         file = self.build_file()
@@ -539,13 +539,17 @@ class TestRemoteFile(unittest.TestCase):
         with self.build_file() as file:
             self.assertEqual(file.get_name(), FILE_NAME)
 
+    def test_get_hostname(self):
+        with self.build_file() as file:
+            self.assertEqual(file.get_hostname(), HOST)
+
     def test_get_uri(self):
         with self.build_file() as file:
             self.assertEqual(file.get_uri(), f"sftp://{HOST}/{ABS_FILE_PATH.lstrip(os.sep)}")
 
-    def test_get_metadata_on_None(self):
+    def test_get_metadata(self):
         with self.build_file() as file:
-            self.assertEqual(file.get_metadata(), None)
+            self.assertEqual(file.get_metadata(), {})
 
     def test_set_and_get_metadata(self):
         with self.build_file() as file:
@@ -655,13 +659,13 @@ class TestRemoteFile(unittest.TestCase):
         file = self.build_file()
         file.close()
         file.open()
-        self.assertIsNotNone(file._get_client())
+        self.assertTrue(file._get_handler().is_open())
         file.close()
 
     def test_close(self):
         file = self.build_file()
         file.close()
-        self.assertIsNone(file._get_client())
+        self.assertFalse(file._get_handler().is_open())
 
     '''
     Test cache methods.
@@ -717,8 +721,32 @@ class TestAWSS3File(unittest.TestCase):
     def setUp(self):
         create_aws_s3_bucket(self.MOCK_S3, BUCKET, METADATA)
 
+        from fluke._handlers import AWSClientHandler
+
+        m1 = patch.object(AWSClientHandler, '_get_file_size_impl', autospec=True)
+        m2 = patch.object(AWSClientHandler, '_get_file_metadata_impl', autospec=True)
+        m3 = patch.object(AWSClientHandler, '_traverse_dir_impl', autospec=True)
+
+        def simulate_latency_1(*args, **kwargs):
+            time.sleep(0.2)
+            return m1.temp_original(*args, **kwargs)
+        
+        def simulate_latency_2(*args, **kwargs):
+            time.sleep(0.2)
+            return m2.temp_original(*args, **kwargs)
+        
+        def simulate_latency_3(*args, **kwargs):
+            time.sleep(0.2)
+            return m3.temp_original(*args, **kwargs)
+
+        m1.start().side_effect = simulate_latency_1
+        m2.start().side_effect = simulate_latency_2
+        m3.start().side_effect = simulate_latency_3
+
+
     def tearDown(self):
         self.MOCK_S3.stop()
+        patch.stopall()
     
     @staticmethod
     def build_file(path: str = REL_FILE_PATH, cache: bool = False) -> AWSS3File:
@@ -747,9 +775,13 @@ class TestAWSS3File(unittest.TestCase):
         with self.build_file() as file:
             self.assertEqual(file.get_uri(), f"s3://{BUCKET}/{REL_FILE_PATH}")
 
-    def test_get_metadata_on_None(self):
+    def test_get_bucket_name(self):
         with self.build_file() as file:
-            self.assertEqual(file.get_metadata(), None)
+            self.assertEqual(file.get_bucket_name(), BUCKET)
+
+    def test_get_metadata(self):
+        with self.build_file() as file:
+            self.assertEqual(file.get_metadata(), {})
 
     def test_set_and_get_metadata(self):
         with self.build_file() as file:
@@ -860,13 +892,13 @@ class TestAWSS3File(unittest.TestCase):
         file = self.build_file()
         file.close()
         file.open()
-        self.assertIsNotNone(file._get_client())
+        self.assertTrue(file._get_handler().is_open())
         file.close()
 
     def test_close(self):
         file = self.build_file()
         file.close()
-        self.assertIsNone(file._get_client())
+        self.assertFalse(file._get_handler().is_open())
 
     '''
     Test cache methods.
@@ -985,9 +1017,9 @@ class TestAzureBlobFile(unittest.TestCase):
             uri += f".dfs.core.windows.net/{REL_FILE_PATH}"
             self.assertEqual(file.get_uri(), uri)
 
-    def test_get_metadata_on_None(self):
+    def test_get_metadata(self):
         with self.build_file() as file:
-            self.assertEqual(file.get_metadata(), None)
+            self.assertEqual(file.get_metadata(), {})
 
     def test_set_and_get_metadata(self):
         with self.build_file() as file:
@@ -1116,13 +1148,13 @@ class TestAzureBlobFile(unittest.TestCase):
         file = self.build_file()
         file.close()
         file.open()
-        self.assertIsNotNone(file._get_client())
+        self.assertTrue(file._get_handler().is_open())
         file.close()
 
     def test_close(self):
         file = self.build_file()
         file.close()
-        self.assertIsNone(file._get_client())
+        self.assertFalse(file._get_handler().is_open())
 
     '''
     Test cache methods.
@@ -1238,9 +1270,9 @@ class TestLocalDir(unittest.TestCase):
         dir = self.build_dir()
         self.assertRaises(InvalidFileError, dir.get_metadata, file_path="NON_EXISTING_PATH")
 
-    def test_get_metadata_on_none(self):
+    def test_get_metadata(self):
         dir = self.build_dir(path=ABS_DIR_PATH)
-        self.assertEqual(dir.get_metadata(file_path=DIR_FILE_NAME), None)
+        self.assertEqual(dir.get_metadata(file_path=DIR_FILE_NAME), {})
 
     def test_set_and_get_metadata_on_relative_path(self):
         dir = self.build_dir(path=ABS_DIR_PATH)
@@ -1317,26 +1349,26 @@ class TestLocalDir(unittest.TestCase):
                 show_abs_path=True, recursively=True),
             get_abs_contents(recursively=True))
         
-    def test_iterate_contents(self):
+    def test_traverse(self):
         self.assertEqual(list(self.build_dir(
-            path=ABS_DIR_PATH).iterate_contents()), CONTENTS)
+            path=ABS_DIR_PATH).traverse()), CONTENTS)
 
-    def test_iterate_contents_on_show_abs_path(self):
+    def test_traverse_on_show_abs_path(self):
         self.assertEqual(
             list(self.build_dir(
-                path=ABS_DIR_PATH).iterate_contents(show_abs_path=True)),
+                path=ABS_DIR_PATH).traverse(show_abs_path=True)),
             get_abs_contents(recursively=False))
         
-    def test_iterate_contents_on_recursively(self):
+    def test_traverse_on_recursively(self):
         self.assertEqual(
             list(self.build_dir(
-                path=ABS_DIR_PATH).iterate_contents(recursively=True)),
+                path=ABS_DIR_PATH).traverse(recursively=True)),
             RECURSIVE_CONTENTS)
         
-    def test_iterate_contents_on_show_abs_path_and_recursively(self):
+    def test_traverse_on_show_abs_path_and_recursively(self):
         self.assertEqual(
             list(self.build_dir(
-                path=ABS_DIR_PATH).iterate_contents(show_abs_path=True, recursively=True)),
+                path=ABS_DIR_PATH).traverse(show_abs_path=True, recursively=True)),
             get_abs_contents(recursively=True))
 
     def test_ls(self):
@@ -1349,7 +1381,6 @@ class TestLocalDir(unittest.TestCase):
 
             ls_expected_output = '\n'.join(CONTENTS) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
-
 
     def test_ls_on_show_abs_path(self):
         with io.StringIO() as stdo:
@@ -1486,7 +1517,7 @@ class TestLocalDir(unittest.TestCase):
         # tmp directory without including metadata.
         dir.transfer_to(dst=tmp_dir, include_metadata=False)
         # Assert that no metadata were transfered.
-        self.assertIsNone(tmp_dir.get_metadata(file_path=filename))
+        self.assertEqual(tmp_dir.get_metadata(file_path=filename), {})
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -1526,6 +1557,73 @@ class TestLocalDir(unittest.TestCase):
                         aws_dir.get_bucket_name(),
                         REL_DIR_FILE_PATH).metadata,
                     metadata)
+                
+    def test_traverse_files(self):
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        self.assertEqual(
+            ''.join(map(lambda file: file.get_path(), dir.traverse_files())),
+            ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
+
+    def test_traverse_files_on_recursively(self):
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        self.assertEqual(
+            ''.join(map(lambda file: file.get_path(), dir.traverse_files(recursively=True))),
+            ''.join(get_abs_contents(recursively=True)))
+        
+    def test_get_files(self):
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        files = dir.get_files()
+        self.assertEqual(
+            ''.join(map(lambda path: files[path].get_path(), files)),
+            ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
+
+    def test_get_files_on_recursively(self):
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        files = dir.get_files(recursively=True)
+        self.assertEqual(
+            ''.join(map(lambda path: files[path].get_path(), files)),
+            ''.join(get_abs_contents(recursively=True)))
+        
+    def test_get_files_on_show_abs_path(self):
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        files = dir.get_files(show_abs_path=True)
+        self.assertEqual(
+            ''.join(files),
+            ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
+        
+    def test_get_files_on_recursively_and_show_abs_path(self):
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        files = dir.get_files(recursively=True, show_abs_path=True)
+        self.assertEqual(
+            ''.join(files),
+            ''.join(get_abs_contents(recursively=True)))
+        
+    def test_get_file(self):
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+        file = dir.get_file(file_path)
+        self.assertEqual(file.get_path(), ABS_DIR_FILE_PATH)
+
+    def test_file_shared_metadata_on_modify_from_dir(self):
+        # Create dir and get file.
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+        file = dir.get_file(file_path)
+        # Change metadata via "Dir" API.
+        dir.set_metadata(file_path, METADATA)
+        # Assert file metadata have been changed.
+        self.assertEqual(file.get_metadata(), METADATA)
+
+    def test_file_shared_metadata_on_modify_from_file(self):
+        # Create dir and get file.
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+        file = dir.get_file(file_path)
+        # Change metadata via "File" API.
+        file.set_metadata(METADATA)
+        # Assert file metadata have been changed.
+        self.assertEqual(dir.get_metadata(file_path), METADATA)
+        
 
 
 class TestRemoteDir(unittest.TestCase):
@@ -1566,6 +1664,10 @@ class TestRemoteDir(unittest.TestCase):
     def test_constructor_on_invalid_path_error(self):
         self.assertRaises(InvalidPathError, self.build_dir, path="NON_EXISTING_PATH")
 
+    def test_get_hostname(self):
+        with self.build_dir() as dir:
+            self.assertEqual(dir.get_hostname(), HOST)
+
     def test_get_name(self):
         with self.build_dir() as dir:
             self.assertEqual(dir.get_name(), DIR_NAME)    
@@ -1581,9 +1683,9 @@ class TestRemoteDir(unittest.TestCase):
             dir.set_metadata(file_path=file_path, metadata=metadata)
             self.assertEqual(dir.get_metadata(file_path=file_path), metadata)
 
-    def test_get_metadata_on_none(self):
+    def test_get_metadata(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_metadata(file_path=ABS_DIR_FILE_PATH), None)
+            self.assertEqual(dir.get_metadata(file_path=ABS_DIR_FILE_PATH), {})
 
     def test_get_metadata_on_invalid_file_error(self):
         with self.build_dir() as dir:
@@ -1643,26 +1745,26 @@ class TestRemoteDir(unittest.TestCase):
                 dir.get_contents(show_abs_path=True, recursively=True),
                 get_abs_contents(recursively=True))
             
-    def test_iterate_contents(self):
+    def test_traverse(self):
         with self.build_dir() as dir:
-            self.assertEqual(list(dir.iterate_contents()), CONTENTS)
+            self.assertEqual(list(dir.traverse()), CONTENTS)
 
-    def test_iterate_contents_on_show_abs_path(self):
+    def test_traverse_on_show_abs_path(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(show_abs_path=True)),
+                list(dir.traverse(show_abs_path=True)),
                 get_abs_contents(recursively=False))
         
-    def test_iterate_contents_on_recursively(self):
+    def test_traverse_on_recursively(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(recursively=True)),
+                list(dir.traverse(recursively=True)),
                 RECURSIVE_CONTENTS)
         
-    def test_iterate_contents_on_show_abs_path_and_recursively(self):
+    def test_traverse_on_show_abs_path_and_recursively(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(show_abs_path=True, recursively=True)),
+                list(dir.traverse(show_abs_path=True, recursively=True)),
                 get_abs_contents(recursively=True))
             
     def test_ls(self):
@@ -1827,8 +1929,8 @@ class TestRemoteDir(unittest.TestCase):
             # tmp directory without including metadata.
             dir.transfer_to(dst=tmp_dir, include_metadata=False)
         # Assert that no metadata have been transfered.
-        self.assertIsNone(tmp_dir.get_metadata(
-            file_path=filename.replace(ABS_DIR_PATH, '')))
+        self.assertEqual(tmp_dir.get_metadata(
+            file_path=filename.replace(ABS_DIR_PATH, '')), {})
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -1886,6 +1988,72 @@ class TestRemoteDir(unittest.TestCase):
             ''.join(s for s in sorted(os.listdir(tmp_dir_path))))
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
+
+    def test_traverse_files(self):
+        with self.build_dir() as dir:
+            self.assertEqual(
+                ''.join(map(lambda file: file.get_path(), dir.traverse_files())),
+                ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
+
+    def test_traverse_files_on_recursively(self):
+        with self.build_dir() as dir:
+            self.assertEqual(
+                ''.join(map(lambda file: file.get_path(), dir.traverse_files(recursively=True))),
+                ''.join(get_abs_contents(recursively=True)))
+        
+    def test_get_files(self):
+        with self.build_dir() as dir:
+            files = dir.get_files()
+            self.assertEqual(
+                ''.join(map(lambda path: files[path].get_path(), files)),
+                ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
+
+    def test_get_files_on_recursively(self):
+        with self.build_dir() as dir:
+            files = dir.get_files(recursively=True)
+            self.assertEqual(
+                ''.join(map(lambda path: files[path].get_path(), files)),
+                ''.join(get_abs_contents(recursively=True)))
+        
+    def test_get_files_on_show_abs_path(self):
+        with self.build_dir() as dir:
+            files = dir.get_files(show_abs_path=True)
+            self.assertEqual(
+                ''.join(files),
+                ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
+        
+    def test_get_files_on_recursively_and_show_abs_path(self):
+        with self.build_dir() as dir:
+            files = dir.get_files(recursively=True, show_abs_path=True)
+            self.assertEqual(
+                ''.join(files),
+                ''.join(get_abs_contents(recursively=True)))
+        
+    def test_get_file(self):
+        with self.build_dir() as dir:
+            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+            file = dir.get_file(file_path)
+            self.assertEqual(file.get_path(), ABS_DIR_FILE_PATH)
+
+    def test_file_shared_metadata_on_modify_from_dir(self):
+        with self.build_dir() as dir:
+            # Access file via dir.
+            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+            file = dir.get_file(file_path)
+            # Change metadata via "Dir" API.
+            dir.set_metadata(file_path, METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(file.get_metadata(), METADATA)
+
+    def test_file_shared_metadata_on_modify_from_file(self):
+        with self.build_dir() as dir:
+            # Access file via dir.
+            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+            file = dir.get_file(file_path)
+            # Change metadata via "File" API.
+            file.set_metadata(METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(dir.get_metadata(file_path), METADATA)
         
     '''
     Test connection methods.
@@ -1894,13 +2062,13 @@ class TestRemoteDir(unittest.TestCase):
         dir = self.build_dir()
         dir.close()
         dir.open()
-        self.assertIsNotNone(dir._get_client())
+        self.assertTrue(dir._get_handler().is_open())
         dir.close()
 
     def test_close(self):
         dir = self.build_dir()
         dir.close()
-        self.assertIsNone(dir._get_client())
+        self.assertFalse(dir._get_handler().is_open())
 
     '''
     Test cache methods.
@@ -1929,16 +2097,16 @@ class TestRemoteDir(unittest.TestCase):
             normal_time = time.time() - t
             self.assertGreater(normal_time, cache_time)
 
-    def test_iterate_contents_from_cache_on_value(self):
+    def test_traverse_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             self.assertEqual(
-                ''.join([p for p in dir.iterate_contents()]),
+                ''.join([p for p in dir.traverse()]),
                 ''.join(CONTENTS))
             
-    def test_iterate_contents_recursively_from_cache_on_value(self):
+    def test_traverse_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents(recursively=True))
+            _ = (_ for _ in dir.traverse(recursively=True))
             expected_results = []
             for dp, dn, fn in os.walk(REL_DIR_PATH):
                 dn.sort()
@@ -1946,63 +2114,45 @@ class TestRemoteDir(unittest.TestCase):
                     expected_results.append(
                         join_paths(dp, f).removeprefix(REL_DIR_PATH))
             self.assertEqual(
-                ''.join([p for p in dir.iterate_contents(recursively=True)]),
+                ''.join([p for p in dir.traverse(recursively=True)]),
                 ''.join(expected_results))
-            
-    def test_iterate_contents_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents(recursively=True))
-            self.assertEqual(
-                ''.join(dir._get_cache_manager().iterate_contents(
-                    recursively=False,
-                    include_dirs=True)),
-                '')
-            
-    def test_iterate_contents_from_cache_on_time(self):
+
+    def test_traverse_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             normal_time = time.time() - t
             # Fetch contents from cache.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
-    def test_iterate_contents_recursively_from_cache_on_time(self):
+    def test_traverse_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             normal_time = time.time() - t
             # Fetch contents from cache.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
     def test_get_size_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            dir.get_size()
-            self.assertEqual(
-                dir._get_cache_manager().get_size(ABS_DIR_FILE_PATH), 4)
+            _ = dir.get_size()
+            self.assertEqual(dir.get_size(), 4)
 
     def test_get_size_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             _ = dir.get_size(recursively=True)
             self.assertEqual(
-                dir._get_cache_manager().get_size(
-                    f"{ABS_DIR_PATH}subdir/file4.txt"), 4)
-            
-    def test_get_size_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            _ = dir.get_size()
-            self.assertIsNone(
-                dir._get_cache_manager().get_size(
-                    f"{ABS_DIR_PATH}subdir/file4.txt"))
+                dir.get_size(recursively=True), 16)
 
     def test_get_size_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -2026,6 +2176,51 @@ class TestRemoteDir(unittest.TestCase):
             # Fetch object size from cache.
             t = time.time()
             _ = dir.get_size(recursively=True)
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_file_shared_cache_on_cache_via_dir(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Access file via both dirs.
+            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+            no_cache_file = no_cache_dir.get_file(file_path)
+            cache_file = cache_dir.get_file(file_path)
+            # Count total size for both dirs.
+            _ = no_cache_dir.get_size()
+            _ = cache_dir.get_size()
+            # Time no-cache-file's "get_size"
+            t = time.time()
+            _ = no_cache_file.get_size()
+            normal_time = time.time() - t
+            # Time cache-file's "get_size"
+            t = time.time()
+            _ = cache_file.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_file_shared_cache_on_cache_via_file(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Count size of files via both dirs using the "File" API.
+            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+            for file in no_cache_dir.get_files().values():
+                _ = file.get_size()
+            for file in cache_dir.get_files().values():
+                _ = file.get_size()
+            # Time no-cache-dir's "get_size"
+            t = time.time()
+            _ = no_cache_dir.get_size()
+            normal_time = time.time() - t
+            # Time cache-dir's "get_size"
+            t = time.time()
+            _ = cache_dir.get_size()
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
@@ -2056,8 +2251,31 @@ class TestAWSS3Dir(unittest.TestCase):
     def setUp(self):
         create_aws_s3_bucket(self.MOCK_S3, BUCKET, METADATA)
 
+        from fluke._handlers import AWSClientHandler
+
+        m1 = patch.object(AWSClientHandler, '_get_file_size_impl', autospec=True)
+        m2 = patch.object(AWSClientHandler, '_get_file_metadata_impl', autospec=True)
+        m3 = patch.object(AWSClientHandler, '_traverse_dir_impl', autospec=True)
+
+        def simulate_latency_1(*args, **kwargs):
+            time.sleep(0.2)
+            return m1.temp_original(*args, **kwargs)
+        
+        def simulate_latency_2(*args, **kwargs):
+            time.sleep(0.2)
+            return m2.temp_original(*args, **kwargs)
+        
+        def simulate_latency_3(*args, **kwargs):
+            time.sleep(0.2)
+            return m3.temp_original(*args, **kwargs)
+
+        m1.start().side_effect = simulate_latency_1
+        m2.start().side_effect = simulate_latency_2
+        m3.start().side_effect = simulate_latency_3
+
     def tearDown(self):
         self.MOCK_S3.stop()
+        patch.stopall()
     
     @staticmethod
     def build_dir(
@@ -2106,9 +2324,13 @@ class TestAWSS3Dir(unittest.TestCase):
         with self.build_dir() as dir:
             self.assertEqual(dir.get_uri(), f"s3://{BUCKET}/{REL_DIR_PATH}")
 
-    def test_get_metadata_on_none(self):
+    def test_get_bucket_name(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_metadata(file_path='file2.txt'), None)
+            self.assertEqual(dir.get_bucket_name(), BUCKET)
+
+    def test_get_metadata(self):
+        with self.build_dir() as dir:
+            self.assertEqual(dir.get_metadata(file_path='file2.txt'), {})
 
     def test_get_metadata_on_invalid_file_error(self):
         with self.build_dir() as dir:
@@ -2211,26 +2433,26 @@ class TestAWSS3Dir(unittest.TestCase):
                 dir.get_contents(show_abs_path=True, recursively=True),
                 self.get_abs_contents(recursively=True))
             
-    def test_iterate_contents(self):
+    def test_traverse(self):
         with self.build_dir() as dir:
-            self.assertEqual(list(dir.iterate_contents()), CONTENTS)
+            self.assertEqual(list(dir.traverse()), CONTENTS)
 
-    def test_iterate_contents_on_show_abs_path(self):
+    def test_traverse_on_show_abs_path(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(show_abs_path=True)),
+                list(dir.traverse(show_abs_path=True)),
                 self.get_abs_contents(recursively=False))
         
-    def test_iterate_contents_on_recursively(self):
+    def test_traverse_on_recursively(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(recursively=True)),
+                list(dir.traverse(recursively=True)),
                 RECURSIVE_CONTENTS)
         
-    def test_iterate_contents_on_show_abs_path_and_recursively(self):
+    def test_traverse_on_show_abs_path_and_recursively(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(show_abs_path=True, recursively=True)),
+                list(dir.traverse(show_abs_path=True, recursively=True)),
                 self.get_abs_contents(recursively=True))
             
     def test_ls(self):
@@ -2401,7 +2623,7 @@ class TestAWSS3Dir(unittest.TestCase):
             # tmp directory without including metadata.
             dir.transfer_to(dst=tmp_dir, include_metadata=False)
         # Assert that no metadata have been transfered.
-        self.assertIsNone(tmp_dir.get_metadata(file_path=filename))
+        self.assertEqual(tmp_dir.get_metadata(file_path=filename), {})
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -2454,6 +2676,74 @@ class TestAWSS3Dir(unittest.TestCase):
             get_aws_s3_object(BUCKET, REL_DIR_FILE_PATH).metadata,
             metadata)
         
+    def test_traverse_files(self):
+        with self.build_dir() as dir:
+            self.assertEqual(
+                ''.join(map(lambda file: file.get_path(), dir.traverse_files())),
+                ''.join(filter(lambda path: not path.endswith('/'), self.get_abs_contents(recursively=False))))
+
+    def test_traverse_files_on_recursively(self):
+        with self.build_dir() as dir:
+            self.assertEqual(
+                ''.join(map(lambda file: file.get_path(), dir.traverse_files(recursively=True))),
+                ''.join(self.get_abs_contents(recursively=True)))
+        
+    def test_get_files(self):
+        with self.build_dir() as dir:
+            files = dir.get_files()
+            self.assertEqual(
+                ''.join(map(lambda path: files[path].get_path(), files)),
+                ''.join(filter(lambda path: not path.endswith('/'),
+                    self.get_abs_contents(recursively=False))))
+
+    def test_get_files_on_recursively(self):
+        with self.build_dir() as dir:
+            files = dir.get_files(recursively=True)
+            self.assertEqual(
+                ''.join(map(lambda path: files[path].get_path(), files)),
+                ''.join(self.get_abs_contents(recursively=True)))
+        
+    def test_get_files_on_show_abs_path(self):
+        with self.build_dir() as dir:
+            files = dir.get_files(show_abs_path=True)
+            self.assertEqual(
+                ''.join(files),
+                ''.join(filter(lambda path: not path.endswith('/'),
+                    self.get_abs_contents(recursively=False))))
+        
+    def test_get_files_on_recursively_and_show_abs_path(self):
+        with self.build_dir() as dir:
+            files = dir.get_files(recursively=True, show_abs_path=True)
+            self.assertEqual(
+                ''.join(files),
+                ''.join(self.get_abs_contents(recursively=True)))
+        
+    def test_get_file(self):
+        with self.build_dir() as dir:
+            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+            file = dir.get_file(file_path)
+            self.assertEqual(file.get_path(), REL_DIR_FILE_PATH)
+
+    def test_file_shared_metadata_on_modify_from_dir(self):
+        with self.build_dir() as dir:
+            # Access file via dir.
+            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+            file = dir.get_file(file_path)
+            # Change metadata via "Dir" API.
+            dir.set_metadata(file_path, METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(file.get_metadata(), METADATA)
+
+    def test_file_shared_metadata_on_modify_from_file(self):
+        with self.build_dir() as dir:
+            # Access file via dir.
+            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+            file = dir.get_file(file_path)
+            # Change metadata via "File" API.
+            file.set_metadata(METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(dir.get_metadata(file_path), METADATA)
+        
     '''
     Test connection methods.
     '''
@@ -2461,13 +2751,13 @@ class TestAWSS3Dir(unittest.TestCase):
         dir = self.build_dir()
         dir.close()
         dir.open()
-        self.assertIsNotNone(dir._get_client())
+        self.assertTrue(dir._get_handler().is_open())
         dir.close()
 
     def test_close(self):
         dir = self.build_dir()
         dir.close()
-        self.assertIsNone(dir._get_client())
+        self.assertFalse(dir._get_handler().is_open())
 
     '''
     Test cache methods.
@@ -2496,14 +2786,14 @@ class TestAWSS3Dir(unittest.TestCase):
             normal_time = time.time() - t
             self.assertGreater(normal_time, cache_time)
 
-    def test_iterate_contents_from_cache_on_value(self):
+    def test_traverse_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents())
-            self.assertEqual(list(dir.iterate_contents()), CONTENTS)
+            _ = (_ for _ in dir.traverse())
+            self.assertEqual(list(dir.traverse()), CONTENTS)
             
-    def test_iterate_contents_recursively_from_cache_on_value(self):
+    def test_traverse_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents(recursively=True))
+            _ = (_ for _ in dir.traverse(recursively=True))
             expected_results = []
             for dp, dn, fn in os.walk(REL_DIR_PATH):
                 dn.sort()
@@ -2511,40 +2801,31 @@ class TestAWSS3Dir(unittest.TestCase):
                     expected_results.append(
                         join_paths(dp, f).removeprefix(REL_DIR_PATH))
             self.assertEqual(
-                ''.join([p for p in dir.iterate_contents(recursively=True)]),
+                ''.join([p for p in dir.traverse(recursively=True)]),
                 ''.join(expected_results))
             
-    def test_iterate_contents_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents(recursively=True))
-            self.assertEqual(
-                ''.join(dir._get_cache_manager().iterate_contents(
-                    recursively=False,
-                    include_dirs=True)),
-                '')
-            
-    def test_iterate_contents_from_cache_on_time(self):
+    def test_traverse_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             normal_time = time.time() - t
             # Fetch contents from cache.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
-    def test_iterate_contents_recursively_from_cache_on_time(self):
+    def test_traverse_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             normal_time = time.time() - t
             # Fetch contents from cache.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
@@ -2554,40 +2835,26 @@ class TestAWSS3Dir(unittest.TestCase):
         with self.build_dir(cache=True) as dir:
             dir.load_metadata()
             self.assertEqual(
-                dir._get_cache_manager().get_metadata(REL_DIR_FILE_PATH),
+                dir.get_metadata(REL_DIR_FILE_PATH),
                 METADATA)
 
     def test_get_size_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            dir.get_size()
-            self.assertEqual(
-                dir._get_cache_manager().get_size(REL_DIR_FILE_PATH), 4)
+            _ = dir.get_size()
+            self.assertEqual(dir.get_size(), 4)
             
     def test_load_metadata_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             dir.load_metadata(recursively=True)
             self.assertEqual(
-                dir._get_cache_manager().get_metadata(f"{REL_DIR_PATH}subdir/file4.txt"),
+                dir.get_metadata(f"{REL_DIR_PATH}subdir/file4.txt"),
                 METADATA)
 
     def test_get_size_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             _ = dir.get_size(recursively=True)
-            self.assertEqual(
-                dir._get_cache_manager().get_size(f"{REL_DIR_PATH}subdir/file4.txt"), 4)
-            
-    def test_load_metadata_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            dir.load_metadata()
-            self.assertIsNone(
-                dir._get_cache_manager().get_metadata(f"{REL_DIR_PATH}subdir/file4.txt"))
-            
-    def test_get_size_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            _ = dir.get_size()
-            self.assertIsNone(
-                dir._get_cache_manager().get_size(f"{REL_DIR_PATH}subdir/file4.txt"))
-            
+            self.assertEqual(dir.get_size(recursively=True), 16)
+
     def test_load_metadata_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object metadata via HTTP.
@@ -2636,6 +2903,51 @@ class TestAWSS3Dir(unittest.TestCase):
             # Fetch object size from cache.
             t = time.time()
             _ = dir.get_size(recursively=True)
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_file_shared_cache_on_cache_via_dir(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Access file via both dirs.
+            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+            no_cache_file = no_cache_dir.get_file(file_path)
+            cache_file = cache_dir.get_file(file_path)
+            # Count total size for both dirs.
+            _ = no_cache_dir.get_size()
+            _ = cache_dir.get_size()
+            # Time no-cache-file's "get_size"
+            t = time.time()
+            _ = no_cache_file.get_size()
+            normal_time = time.time() - t
+            # Time cache-file's "get_size"
+            t = time.time()
+            _ = cache_file.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_file_shared_cache_on_cache_via_file(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Count size of files via both dirs using the "File" API.
+            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+            for file in no_cache_dir.get_files().values():
+                _ = file.get_size()
+            for file in cache_dir.get_files().values():
+                _ = file.get_size()
+            # Time no-cache-dir's "get_size"
+            t = time.time()
+            _ = no_cache_dir.get_size()
+            normal_time = time.time() - t
+            # Time cache-dir's "get_size"
+            t = time.time()
+            _ = cache_dir.get_size()
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
@@ -2709,9 +3021,9 @@ class TestAzureBlobDir(unittest.TestCase):
             uri += f".dfs.core.windows.net/{REL_DIR_PATH}"
             self.assertEqual(dir.get_uri(), uri)
 
-    def test_get_metadata_on_none(self):
+    def test_get_metadata(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_metadata(file_path='file2.txt'), None)
+            self.assertEqual(dir.get_metadata(file_path='file2.txt'), {})
 
     def test_get_metadata_on_invalid_file_error(self):
         with self.build_dir() as dir:
@@ -2812,26 +3124,26 @@ class TestAzureBlobDir(unittest.TestCase):
                 dir.get_contents(show_abs_path=True, recursively=True),
                 self.get_abs_contents(recursively=True))
             
-    def test_iterate_contents(self):
+    def test_traverse(self):
         with self.build_dir() as dir:
-            self.assertEqual(list(dir.iterate_contents()), CONTENTS)
+            self.assertEqual(list(dir.traverse()), CONTENTS)
 
-    def test_iterate_contents_on_show_abs_path(self):
+    def test_traverse_on_show_abs_path(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(show_abs_path=True)),
+                list(dir.traverse(show_abs_path=True)),
                 self.get_abs_contents(recursively=False))
         
-    def test_iterate_contents_on_recursively(self):
+    def test_traverse_on_recursively(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(recursively=True)),
+                list(dir.traverse(recursively=True)),
                 RECURSIVE_CONTENTS)
         
-    def test_iterate_contents_on_show_abs_path_and_recursively(self):
+    def test_traverse_on_show_abs_path_and_recursively(self):
         with self.build_dir() as dir:
             self.assertEqual(
-                list(dir.iterate_contents(show_abs_path=True, recursively=True)),
+                list(dir.traverse(show_abs_path=True, recursively=True)),
                 self.get_abs_contents(recursively=True))
             
     def test_ls(self):
@@ -2997,7 +3309,7 @@ class TestAzureBlobDir(unittest.TestCase):
             # tmp directory without including metadata.
             dir.transfer_to(dst=tmp_dir, include_metadata=False)
         # Assert that no metadata have been transfered.
-        self.assertIsNone(tmp_dir.get_metadata(file_path=filename))
+        self.assertEqual(tmp_dir.get_metadata(file_path=filename), {})
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
@@ -3069,6 +3381,74 @@ class TestAzureBlobDir(unittest.TestCase):
             ''.join(s for s in sorted(os.listdir(tmp_dir_path))))
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
+
+    def test_traverse_files(self):
+        with self.build_dir() as dir:
+            self.assertEqual(
+                ''.join(map(lambda file: file.get_path(), dir.traverse_files())),
+                ''.join(filter(lambda path: not path.endswith('/'), self.get_abs_contents(recursively=False))))
+
+    def test_traverse_files_on_recursively(self):
+        with self.build_dir() as dir:
+            self.assertEqual(
+                ''.join(map(lambda file: file.get_path(), dir.traverse_files(recursively=True))),
+                ''.join(self.get_abs_contents(recursively=True)))
+        
+    def test_get_files(self):
+        with self.build_dir() as dir:
+            files = dir.get_files()
+            self.assertEqual(
+                ''.join(map(lambda path: files[path].get_path(), files)),
+                ''.join(filter(lambda path: not path.endswith('/'),
+                    self.get_abs_contents(recursively=False))))
+
+    def test_get_files_on_recursively(self):
+        with self.build_dir() as dir:
+            files = dir.get_files(recursively=True)
+            self.assertEqual(
+                ''.join(map(lambda path: files[path].get_path(), files)),
+                ''.join(self.get_abs_contents(recursively=True)))
+        
+    def test_get_files_on_show_abs_path(self):
+        with self.build_dir() as dir:
+            files = dir.get_files(show_abs_path=True)
+            self.assertEqual(
+                ''.join(files),
+                ''.join(filter(lambda path: not path.endswith('/'),
+                    self.get_abs_contents(recursively=False))))
+        
+    def test_get_files_on_recursively_and_show_abs_path(self):
+        with self.build_dir() as dir:
+            files = dir.get_files(recursively=True, show_abs_path=True)
+            self.assertEqual(
+                ''.join(files),
+                ''.join(self.get_abs_contents(recursively=True)))
+        
+    def test_get_file(self):
+        with self.build_dir() as dir:
+            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+            file = dir.get_file(file_path)
+            self.assertEqual(file.get_path(), REL_DIR_FILE_PATH)
+            
+    def test_file_shared_metadata_on_modify_from_dir(self):
+        with self.build_dir() as dir:
+            # Access file via dir.
+            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+            file = dir.get_file(file_path)
+            # Change metadata via "Dir" API.
+            dir.set_metadata(file_path, METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(file.get_metadata(), METADATA)
+
+    def test_file_shared_metadata_on_modify_from_file(self):
+        with self.build_dir() as dir:
+            # Access file via dir.
+            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+            file = dir.get_file(file_path)
+            # Change metadata via "File" API.
+            file.set_metadata(METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(dir.get_metadata(file_path), METADATA)
         
     '''
     Test connection methods.
@@ -3077,13 +3457,13 @@ class TestAzureBlobDir(unittest.TestCase):
         dir = self.build_dir()
         dir.close()
         dir.open()
-        self.assertIsNotNone(dir._get_client())
+        self.assertTrue(dir._get_handler().is_open())
         dir.close()
 
     def test_close(self):
         dir = self.build_dir()
         dir.close()
-        self.assertIsNone(dir._get_client())
+        self.assertFalse(dir._get_handler().is_open())
 
     '''
     Test cache methods.
@@ -3112,16 +3492,16 @@ class TestAzureBlobDir(unittest.TestCase):
             normal_time = time.time() - t
             self.assertGreater(normal_time, cache_time)
 
-    def test_iterate_contents_from_cache_on_value(self):
+    def test_traverse_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             self.assertEqual(
-                ''.join([p for p in dir.iterate_contents()]),
+                ''.join([p for p in dir.traverse()]),
                 ''.join(CONTENTS))
             
-    def test_iterate_contents_recursively_from_cache_on_value(self):
+    def test_traverse_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents(recursively=True))
+            _ = (_ for _ in dir.traverse(recursively=True))
             expected_results = []
             for dp, dn, fn in os.walk(REL_DIR_PATH):
                 dn.sort()
@@ -3129,40 +3509,31 @@ class TestAzureBlobDir(unittest.TestCase):
                     expected_results.append(
                         join_paths(dp, f).removeprefix(REL_DIR_PATH))
             self.assertEqual(
-                ''.join([p for p in dir.iterate_contents(recursively=True)]),
+                ''.join([p for p in dir.traverse(recursively=True)]),
                 ''.join(expected_results))
             
-    def test_iterate_contents_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            _ = (_ for _ in dir.iterate_contents(recursively=True))
-            self.assertEqual(
-                ''.join(dir._get_cache_manager().iterate_contents(
-                    recursively=False,
-                    include_dirs=True)),
-                '')
-            
-    def test_iterate_contents_from_cache_on_time(self):
+    def test_traverse_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             normal_time = time.time() - t
             # Fetch contents from cache.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
-    def test_iterate_contents_recursively_from_cache_on_time(self):
+    def test_traverse_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             normal_time = time.time() - t
             # Fetch contents from cache.
             t = time.time()
-            _ = (_ for _ in dir.iterate_contents())
+            _ = (_ for _ in dir.traverse())
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
@@ -3172,40 +3543,26 @@ class TestAzureBlobDir(unittest.TestCase):
         with self.build_dir(cache=True) as dir:
             dir.load_metadata()
             self.assertEqual(
-                dir._get_cache_manager().get_metadata(REL_DIR_FILE_PATH),
+                dir.get_metadata(REL_DIR_FILE_PATH),
                 METADATA)
 
     def test_get_size_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
-            dir.get_size()
-            self.assertEqual(
-                dir._get_cache_manager().get_size(REL_DIR_FILE_PATH), 4)
+            _ = dir.get_size()
+            self.assertEqual(dir.get_size(), 4)
             
     def test_load_metadata_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             dir.load_metadata(recursively=True)
             self.assertEqual(
-                dir._get_cache_manager().get_metadata(f"{REL_DIR_PATH}subdir/file4.txt"),
+                dir.get_metadata(f"{REL_DIR_PATH}subdir/file4.txt"),
                 METADATA)
 
     def test_get_size_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             _ = dir.get_size(recursively=True)
-            self.assertEqual(
-                dir._get_cache_manager().get_size(f"{REL_DIR_PATH}subdir/file4.txt"), 4)
-            
-    def test_load_metadata_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            dir.load_metadata()
-            self.assertIsNone(
-                dir._get_cache_manager().get_metadata(f"{REL_DIR_PATH}subdir/file4.txt"))
-            
-    def test_get_size_non_recursively_from_cache_on_none(self):
-        with self.build_dir(cache=True) as dir:
-            _ = dir.get_size()
-            self.assertIsNone(
-                dir._get_cache_manager().get_size(f"{REL_DIR_PATH}subdir/file4.txt"))
-            
+            self.assertEqual(dir.get_size(recursively=True), 16)
+
     def test_load_metadata_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object metadata via HTTP.
@@ -3254,6 +3611,51 @@ class TestAzureBlobDir(unittest.TestCase):
             # Fetch object size from cache.
             t = time.time()
             _ = dir.get_size(recursively=True)
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_file_shared_cache_on_cache_via_dir(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Access file via both dirs.
+            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+            no_cache_file = no_cache_dir.get_file(file_path)
+            cache_file = cache_dir.get_file(file_path)
+            # Count total size for both dirs.
+            _ = no_cache_dir.get_size()
+            _ = cache_dir.get_size()
+            # Time no-cache-file's "get_size"
+            t = time.time()
+            _ = no_cache_file.get_size()
+            normal_time = time.time() - t
+            # Time cache-file's "get_size"
+            t = time.time()
+            _ = cache_file.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_file_shared_cache_on_cache_via_file(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Count size of files via both dirs using the "File" API.
+            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
+            for file in no_cache_dir.get_files().values():
+                _ = file.get_size()
+            for file in cache_dir.get_files().values():
+                _ = file.get_size()
+            # Time no-cache-dir's "get_size"
+            t = time.time()
+            _ = no_cache_dir.get_size()
+            normal_time = time.time() - t
+            # Time cache-dir's "get_size"
+            t = time.time()
+            _ = cache_dir.get_size()
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
