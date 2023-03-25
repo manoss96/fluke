@@ -20,9 +20,7 @@ from abc import ABC as _ABC
 from abc import abstractmethod as _absmethod
 
 
-import paramiko as _prmk
 from tqdm import tqdm as _tqdm
-from azure.storage.blob import ContainerClient as _ContainerClient
 
 
 from ._helper import join_paths as _join_paths
@@ -30,10 +28,9 @@ from ._helper import infer_separator as _infer_sep
 from ._errors import Error as _Error
 from .auth import AWSAuth as _AWSAuth
 from .auth import AzureAuth as _AzureAuth
-from ._cache import Cache as _Cache
-from ._cache import CacheManager as _CacheManager
 from .auth import RemoteAuth as _RemoteAuth
 from ._handlers import ClientHandler as _ClientHandler
+from ._handlers import FileSystemHandler as _FileSystemHandler
 from ._handlers import SSHClientHandler as _SSHClientHandler
 from ._handlers import AWSClientHandler as _AWSClientHandler
 from ._handlers import AzureClientHandler as _AzureClientHandler
@@ -44,11 +41,6 @@ from ._exceptions import OverwriteError as _OverwriteError
 from ._exceptions import NonStringMetadataKeyError as _NSMKE
 from ._exceptions import NonStringMetadataValueError as _NSMVE
 from ._exceptions import AzureBlobContainerNotFoundError as _ABCNFE 
-from ._ingesters import Ingester as _Ingester
-from ._ingesters import LocalIngester as _LocalIngester
-from ._ingesters import RemoteIngester as _RemoteIngester
-from ._ingesters import AWSS3Ingester as _AWSS3Ingester
-from ._ingesters import AzureIngester as _AzureIngester
 
 
 class _File(_ABC):
@@ -57,22 +49,41 @@ class _File(_ABC):
     base class for all file-like classes.
 
     :param str path: A path pointing to the file.
-    :param Ingester ingester: An ``Ingester`` class instance.
+    :param dict[str, str] metadata: A dictionary \
+        containing any metadata associated with the file.
+    :param ClientHandler handler: A ``ClientHandler`` class \
+        instance used for interacting with the underlying handler.
+    :param bool close_after_use: This value indicates whether \
+        all open connections should close before the instance \
+        destructor is called.
     '''
 
-    def __init__(self, path: str, ingester: _Ingester):
+    def __init__(
+        self,
+        path: str,
+        metadata: dict[str, str],
+        handler: _ClientHandler,
+        close_after_use: bool = True
+    ):
         '''
         An abstract class which serves as the \
         base class for all file-like classes.
 
         :param str path: A path pointing to the file.
-        :param Ingester ingester: An ``Ingester`` class instance.
+        :param dict[str, str] metadata: A dictionary \
+            containing any metadata associated with the file.
+        :param ClientHandler handler: A ``ClientHandler`` class \
+            instance used for interacting with the underlying handler.
+        :param bool close_after_use: This value indicates whether \
+            all open connections should close before the instance \
+            destructor is called.
         '''
         self.__path = path
+        self.__metadata = metadata
         self.__separator = _infer_sep(path=path)
-        self.__ingester = ingester
         self.__name = path.split(self.__separator)[-1]
-        self.__metadata = None
+        self.__handler = handler
+        self.__close_after_use = close_after_use
 
 
     def get_path(self) -> str:
@@ -82,20 +93,19 @@ class _File(_ABC):
         return self.__path
     
 
-    def _get_separator(self) -> str:
+    def get_name(self) -> str:
         '''
-        Returns the file's path separator.
+        Returns the file's name.
         '''
-        return self.__separator
+        return self.__name
 
 
-    def get_metadata(self) -> _typ.Optional[dict[str, str]]:
+    def get_metadata(self) -> dict[str, str]:
         '''
         Returns a dictionary containing any \
-        metadata associated with the file. \
-        Returns ``None`` if no metadata are found.
+        metadata associated with the file.
         '''
-        return self.__metadata
+        return dict(self.__metadata)
 
 
     def set_metadata(self, metadata: dict[str, str]) -> None:
@@ -119,41 +129,33 @@ class _File(_ABC):
                 raise _NSMKE(key=key)
             if not isinstance(val, str):
                 raise _NSMVE(val=val)
-
-        self.__metadata = metadata
-
-
-    def get_name(self) -> str:
-        '''
-        Returns the file's name.
-        '''
-        return self.__name
+            
+        # NOTE: Update the metadata dictionary without
+        #       creating a new reference.
+        self.__metadata.clear()
+        for (key, val) in metadata.items():
+            self.__metadata.update({ key: val })
 
 
-    def _get_ingester(self) -> _Ingester:
-        '''
-        Returns the instance's ingester.
-        '''
-        return self.__ingester
-    
-
-    @_absmethod
-    def get_uri(self) -> str:
-        '''
-        Returns the file's URI.
-        '''
-        pass
-
-
-    @_absmethod
     def get_size(self) -> int:
         '''
         Returns the file's size in bytes.
         '''
-        pass
+        return self._get_handler().get_file_size(self.get_path())
+    
+
+    def read(self) -> bytes:
+        '''
+        Reads and returns the file's bytes.
+        '''
+        with _io.BytesIO() as buffer:
+            self._get_handler().read(
+                file_path=self.get_path(),
+                buffer=buffer,
+                include_metadata=False)
+            return buffer.getvalue()
 
 
-    @_absmethod
     def transfer_to(
         self,
         dst: '_Directory',
@@ -173,6 +175,93 @@ class _File(_ABC):
 
         :raises OverwriteError: File already exists while parameter \
             ``overwrite`` has been set to ``False``.
+        '''
+        destination = dst.get_uri() \
+            if isinstance(dst, _NonLocalDir) \
+            else dst.get_path()
+        print(f'\nCopying file "{self.get_path()}" into "{destination}".')
+
+        file_name = self.get_name()
+        error = None
+
+        if not overwrite and dst.path_exists(file_name):
+            raise _OverwriteError(
+                file_path=_join_paths(self._get_separator(), destination, file_name))
+        else:
+            with _io.BytesIO() as buffer:
+                # Read file contents (and metadata optionally)
+                try:
+                    metadata = self.__handler.read(self.get_path(), buffer, include_metadata)
+                    # Update metadata dictionary if necessary.
+                    if include_metadata and (custom_metadata := self.get_metadata()):
+                        metadata = custom_metadata
+                    # Rewind buffer.
+                    buffer.seek(0)
+                    # Write file contents.
+                    dst_file_path = _join_paths(dst._get_separator(), dst.get_path(), file_name)
+                    try:
+                        dst._get_handler().write(
+                            file_path=dst_file_path,
+                            buffer=buffer,
+                            metadata=metadata)
+                        # Upsert the destination's metadata dictionary.
+                        if metadata is not None:
+                            dst._upsert_metadata(file_path=dst_file_path, metadata=metadata)
+                    except Exception as e:
+                        error = _Error(uri=dst_file_path, is_src=False, msg=str(e))
+                except Exception as e:
+                    error = _Error(uri=self.get_uri(), is_src=True, msg=str(e))
+                
+        if error is None:
+            print("Operation successful!")
+        else:
+            print(f"Operation unsuccessful: {error.get_message()}")
+    
+
+    def _get_close_after_use(self) -> bool:
+        '''
+        Returns a value indicating whether all open connections \
+        should close before the instance destructor is called.
+        '''
+        return self.__close_after_use
+    
+
+    def _get_handler(self) -> _ClientHandler:
+        '''
+        Returns this instance's ``ClientHandler``.
+        '''
+        return self.__handler
+    
+
+    def _get_separator(self) -> str:
+        '''
+        Returns the file's path separator.
+        '''
+        return self.__separator
+    
+
+    def __new__(
+        cls,
+        *args,
+        **kwargs
+    ) -> 'LocalFile':
+        '''
+        Creates an instance of this class.
+
+        :note: This method defines field ``__handler`` \
+            so that throwing an exception before invoking \
+            the parent constructor does not result in a \
+            second exception being thrown due to ``__del__``.
+        '''
+        instance = object.__new__(cls)
+        instance.__handler = None
+        return instance
+    
+
+    @_absmethod
+    def get_uri(self) -> str:
+        '''
+        Returns the file's URI.
         '''
         pass
 
@@ -210,7 +299,8 @@ class LocalFile(_File):
         sep = _infer_sep(path=path)
         super().__init__(
             path=_os.path.abspath(path).replace(_os.sep, sep),
-            ingester=_LocalIngester())
+            metadata=dict(),
+            handler=_FileSystemHandler())
         
 
     def get_uri(self) -> str:
@@ -218,57 +308,32 @@ class LocalFile(_File):
         Returns the file's URI.
         '''
         return f"file:///{self.get_path().lstrip(self._get_separator())}"
-        
 
-    def get_size(self) -> int:
+
+    @classmethod
+    def _create_file(
+        cls,
+        path: str,
+        handler: _FileSystemHandler,
+        metadata: dict[str, str]
+    ) -> 'LocalFile':
         '''
-        Returns the file's size in bytes.
+        Creates and returns a ``LocalFile`` instance.
+
+        :param str path: The path pointing to the file.
+        :param FileSystemHandler handler: A ``FileSystemHandler`` \
+            class instance.
+        :param dict[str, str] metadata: A dictionary containing \
+            any metadata associated with the file.
         '''
-        return _os.path.getsize(self.get_path())
-
-
-    def transfer_to(
-        self,
-        dst: '_Directory',
-        overwrite: bool = False,
-        include_metadata: bool = False
-    ) -> None:
-        '''
-        Copies the file into the provided directory.
-
-        :param _Directory dst: A ``_Directory`` class instance, \
-            which represents the transfer operation's destination.
-        :param bool overwrite: Indicates whether to overwrite \
-            the file if it already exists. Defaults to ``False``.
-        :param bool include_metadata: Indicates whether any \
-            existing metadata are to be assigned to the resulting \
-            file. Defaults to ``False``.
-
-        :raises OverwriteError: File already exists while parameter \
-            ``overwrite`` has been set to ``False``.
-        '''
-        destination = dst.get_uri() \
-            if isinstance(dst, _NonLocalDir) \
-            else dst.get_path()
-        print(f'\nCopying file "{self.get_path()}" into "{destination}".')
-
-        file_name = self.get_name()
-
-        if not overwrite and dst.path_exists(file_name):
-            raise _OverwriteError(
-                file_path=_join_paths(self._get_separator(), destination, file_name))
-        else:
-            with open(self.get_path(), "rb") as file:
-                error = dst._load_from_source(
-                    file_name=file_name,
-                    src=file,
-                    metadata=self.get_metadata()
-                        if include_metadata else None)
-
-            if error is None:
-                print("Operation successful!")
-            else:
-                print(f"Operation unsuccessful: {error.get_message()}")
+        instance = cls.__new__(cls)
+        _File.__init__(
+            instance,
+            path=path,
+            metadata=metadata,
+            handler=handler,
+            close_after_use=False)
+        return instance
 
 
 class _NonLocalFile(_File, _ABC):
@@ -278,21 +343,14 @@ class _NonLocalFile(_File, _ABC):
     or files in the cloud.
 
     :param str path: A path pointing to the file.
-    :param bool cache: Indicates whether it is allowed for \
-        any fetched data to be cached for faster subsequent \
-        access.
-    :param ClientHandler handler: A ``ClientHandler`` class instance used \
-        in handling connections.
-    :param Ingester ingester: An ``Ingester`` class instance used \
-        for ingesting data.
+    :param ClientHandler handler: A ``ClientHandler`` class \
+        instance used for interacting with the underlying handler.
     '''
 
     def __init__(
         self,
         path: str,
-        cache: bool,
-        handler: _ClientHandler,
-        ingester: _Ingester
+        handler: _ClientHandler
     ):
         '''
         An abstract class which serves as the base class for \
@@ -300,17 +358,13 @@ class _NonLocalFile(_File, _ABC):
         or files in the cloud.
 
         :param str path: A path pointing to the file.
-        :param bool cache: Indicates whether it is allowed for \
-            any fetched data to be cached for faster subsequent \
-            access.
-        :param ClientHandler handler: A ``ClientHandler`` class instance used \
-            in handling connections.
-        :param Ingester ingester: An ``Ingester`` class instance used \
-            for ingesting data.
+        :param ClientHandler handler: A ``ClientHandler`` class \
+            instance used for interacting with the underlying handler.
         '''
-        super().__init__(path=path, ingester=ingester)
-        self.__cache = _Cache() if cache else None
-        self.__handler = handler
+        super().__init__(
+            path=path,
+            metadata=dict(),
+            handler=handler)
         self.open()
 
 
@@ -319,7 +373,7 @@ class _NonLocalFile(_File, _ABC):
         Returns ``True`` if file has been defined \
         as cacheable, else returns ``False``.
         '''
-        return self.__cache is not None
+        return self._get_handler().is_cacheable()
 
 
     def purge(self) -> None:
@@ -327,138 +381,22 @@ class _NonLocalFile(_File, _ABC):
         If cacheable, then purges the file's cache, \
         else does nothing.
         '''
-        if self.is_cacheable():
-            self.__cache = _Cache()
+        self._get_handler().purge()
 
 
     def open(self) -> None:
         '''
         Opens all necessary connections.
         '''
-        self.__handler.open_connections()
+        self._get_handler().open_connections()
 
 
     def close(self) -> None:
         '''
         Closes all open connections.
         '''
-        self.__handler.close_connections()
-
-
-    def get_size(self) -> int:
-        '''
-        Returns the file's size in bytes.
-        '''
-        if self.is_cacheable():
-            if (size := self.__get_size_from_cache()) is not None:
-                return size
-            else:
-                size = self._get_size_impl()
-                self.__cache_size(size)
-                return size
-        return self._get_size_impl()
-        
-
-    def transfer_to(
-        self,
-        dst: '_Directory',
-        overwrite: bool = False,
-        include_metadata: bool = False
-    ) -> None:
-        '''
-        Copies the file into the provided directory.
-
-        :param _Directory dst: A ``_Directory`` class instance, \
-            which represents the transfer operation's destination.
-        :param bool overwrite: Indicates whether to overwrite \
-            the file if it already exists. Defaults to ``False``.
-        :param bool include_metadata: Indicates whether any \
-            existing metadata are to be assigned to the resulting \
-            file. Defaults to ``False``.
-
-        :raises OverwriteError: File already exists while parameter \
-            ``overwrite`` has been set to ``False``.
-        '''
-        destination = dst.get_uri() \
-            if isinstance(dst, _NonLocalDir) \
-            else dst.get_path()
-        print(f'\nCopying file "{self.get_uri()}" into "{destination}".')
-
-        file_name = self.get_name()
-
-        if not overwrite and dst.path_exists(file_name):
-            raise _OverwriteError(
-                file_path=_join_paths(self._get_separator(), destination, file_name))
-        else:
-            ingester = self._get_ingester()
-            ingester.set_source(src=self.get_path())
-
-            fetch_metadata = include_metadata
-            if include_metadata and (
-                (custom_metadata := self.get_metadata())
-                is not None
-            ):
-                ingester.set_metadata(metadata=custom_metadata)
-                fetch_metadata = False
-
-            error = dst._load_from_ingester(
-                file_name=file_name,
-                ingester=ingester,
-                fetch_metadata=fetch_metadata)
-
-            if error is None:
-                print("Operation successful!")
-            else:
-                print(f"Operation unsuccessful: {error.get_message()}")
-
-
-    def _get_client(self) -> _typ.Any:
-        '''
-        Returns the underlying client of this \
-        instance's ``ClientHandler`` instance.
-        '''
-        return self.__handler.get_client() \
-            if self.__handler is not None \
-            else None
-
-
-    def _get_metadata_from_cache(self) -> _typ.Optional[dict[str, str]]:
-        '''
-        Returns the file's cached metadata if they exist, \
-        else returns ``None``.
-        '''
-        if self.__cache is not None:
-            return self.__cache.get_metadata()
-
-
-    def _cache_metadata(self, metadata: dict[str, str]) -> None:
-        '''
-        Caches the provided metadata.
-
-        :param dict[str, str] metadata: The metadata that is to be cached.
-        '''
-        if self.__cache is not None:
-            self.__cache.set_metadata(metadata=metadata)
-
-
-    def __get_size_from_cache(self) -> _typ.Optional[int]:
-        '''
-        Returns the file's cached size if it exists, \
-        else returns ``None``.
-        '''
-        if self.__cache is not None:
-            return self.__cache.get_size()
-
-
-    def __cache_size(self, size: int) -> None:
-        '''
-        Caches the provided size.
-
-        :param int size: The size that is to be cached.
-        '''
-        if self.__cache is not None:
-            self.__cache.set_size(size=size)
-
+        self._get_handler().close_connections()
+    
 
     def __enter__(self) -> '_NonLocalFile':
         '''
@@ -474,12 +412,23 @@ class _NonLocalFile(_File, _ABC):
         self.close()
 
 
-    @_absmethod
-    def _get_size_impl(self) -> int:
+    def __del__(self) -> None:
         '''
-        Returns the size of the file in bytes.
+        The class destructor method.
         '''
-        pass
+        if self._get_close_after_use():
+            if (handler := self._get_handler()) is not None:
+                # Purge cache.
+                self.purge()
+                # Warn if connections are open.
+                if  handler.is_open():
+                    msg = f'You might want to consider instantiating class "{self.__class__.__name__}"'
+                    msg += " through the use of a context manager by utilizing Python's"
+                    msg += ' "with" statement, or by simply invoking an instance\'s'
+                    msg += ' "close" method after being done using it.'
+                    _warn.warn(msg, ResourceWarning)
+                    # Close connections.
+                    self.close()
 
 
 class RemoteFile(_NonLocalFile):
@@ -524,28 +473,21 @@ class RemoteFile(_NonLocalFile):
         :raises InvalidFileError: The provided path \
             points to a directory.
         '''
-        ssh_handler = _SSHClientHandler(auth=auth)
+        # Instantiate a connection handler,
+        # if none has been set.
+        if (ssh_handler := self._get_handler()) is None:
+            ssh_handler = _SSHClientHandler(auth=auth, cache=cache)
+            self.__host = auth.get_credentials()['hostname']
+
         super().__init__(
             path=path,
-            cache=cache,
-            handler=ssh_handler,
-            ingester=_RemoteIngester(ssh_handler))
-        sftp = self._get_client()
+            handler=ssh_handler)
 
-        self.__host = auth.get_credentials()['hostname']
-
-        from stat import S_ISDIR as _is_dir
-
-        try:
-            stats = sftp.stat(path=path)
-        except FileNotFoundError:
+        if not ssh_handler.path_exists(path=path):
             self.close()
             raise _IPE(path)
-        except:
-            self.close()
-            raise ConnectionError()
-
-        if _is_dir(stats.st_mode):
+        
+        if not ssh_handler.is_file(file_path=path):
             self.close()
             raise _IFE(path)
 
@@ -563,22 +505,43 @@ class RemoteFile(_NonLocalFile):
         Returns the file's URI.
         '''
         return f"sftp://{self.__host}/{self.get_path().lstrip(self._get_separator())}"
+    
 
-
-    def _get_size_impl(self) -> int:
+    @classmethod
+    def _create_file(
+        cls,
+        path: str,
+        host: str,
+        handler: _SSHClientHandler,
+        metadata: dict[str, str]
+    ) -> 'RemoteFile':
         '''
-        Returns the size of the file in bytes.
+        Creates and returns a ``RemoteFile`` instance.
+
+        :param str path: The path pointing to the file.
+        :param str host: The name of the host in which \
+            the file resides.
+        :param SSHClientHandler handler: An ``SSHClientHandler`` \
+            class instance.
+        :param dict[str, str] metadata: A dictionary containing \
+            any metadata associated with the file.
         '''
-        return self._get_client().stat(path=self.get_path()).st_size
+        instance = cls.__new__(cls)
+        instance.__host = host
+        _File.__init__(
+            instance,
+            path=path,
+            metadata=metadata,
+            handler=handler,
+            close_after_use=False)
+        return instance
+    
 
-
-    def __del__(self) -> None:
-        if self._get_client() is not None:
-            msg = "You might want to consider instantiating class ``RemoteFile``"
-            msg += " through the use of a context manager by utilizing Python's"
-            msg += " ``with`` statement, or by simply invoking an instance's"
-            msg += " ``close`` method after being done using it."
-            _warn.warn(msg, ResourceWarning)
+    def __enter__(self) -> 'RemoteFile':
+        '''
+        Enter the runtime context related to this instance.
+        '''
+        return self
 
 
 class _CloudFile(_NonLocalFile, _ABC):
@@ -597,24 +560,8 @@ class _CloudFile(_NonLocalFile, _ABC):
             method will be overriden after invoking this \
             method.
         '''
-        if self.is_cacheable():
-            metadata = self._get_metadata_from_cache()
-            if metadata is None:
-                metadata = self._load_metadata_impl()
-                self._cache_metadata(metadata=metadata) 
-        else:
-            metadata = self._load_metadata_impl()
+        metadata = self._get_handler().get_file_metadata(self.get_path())
         self.set_metadata(metadata=metadata)
-
-
-    @_absmethod
-    def _load_metadata_impl(self) -> dict[str, str]:
-        '''
-        Loads any metadata associated with the file, \
-        which can then be accessed via the instance's \
-        ``get_metadata`` method.
-        '''
-        pass
 
 
 class AWSS3File(_CloudFile):
@@ -635,6 +582,10 @@ class AWSS3File(_CloudFile):
         does not exist.
     :raises InvalidFileError: The provided path \
         points to a directory.
+
+    :note: The provided path must not begin with a separator.
+        - Wrong: ``/path/to/file.txt``
+        - Right: ``path/to/file.txt``
     '''
 
     def __init__(
@@ -661,65 +612,88 @@ class AWSS3File(_CloudFile):
             does not exist.
         :raises InvalidFileError: The provided path \
             points to a directory.
+
+        :note: The provided path must not begin with a separator.
+            - Wrong: ``/path/to/file.txt``
+            - Right: ``path/to/file.txt``
         '''
-        aws_handler = _AWSClientHandler(
-            auth=auth,
-            bucket=bucket
-        )
+        # Validate path.
+        sep = _infer_sep(path=path)
+
+        if path.startswith(sep):
+            raise _IPE(path=path)
+        
+        # Instantiate a connection handler,
+        # if none has been set.
+        if (aws_handler := self._get_handler()) is None:
+            aws_handler = _AWSClientHandler(
+                auth=auth,
+                bucket=bucket,
+                cache=cache)
+        
         super().__init__(
             path=path,
-            cache=cache,
-            handler=aws_handler,
-            ingester=_AWSS3Ingester(aws_handler))
-        
-        # Check whether this is a path to
-        # a directory instead of a file.
-        if path.endswith(self._get_separator()):
+            handler=aws_handler)
+
+        if not aws_handler.path_exists(path=path):
+            if aws_handler.dir_exists(path=path):
+                self.close()
+                raise _IFE(path)
+            self.close()
+            raise _IPE(path)     
+        if not aws_handler.is_file(file_path=path):
             self.close()
             raise _IFE(path)
+        
 
-        # Check whether the file exists.
-        from botocore.exceptions import ClientError as _CE
-
-        try:
-            self._get_client().Object(key=path).load()
-        except _CE:
-            self.close()
-            raise _IPE(path)
+    def get_bucket_name(self) -> str:
+        '''
+        Returns the name of the bucket in which \
+        the directory resides.
+        '''
+        return self._get_handler().get_bucket_name()
 
 
     def get_uri(self) -> str:
         '''
         Returns the object's URI.
         '''
-        return f"s3://{self._get_client().name}{self._get_separator()}{self.get_path()}"
+        return f"s3://{self.get_bucket_name()}{self._get_separator()}{self.get_path()}"
+    
 
-
-    def _get_size_impl(self) -> int:
+    @classmethod
+    def _create_file(
+        cls,
+        path: str,
+        handler: _AWSClientHandler,
+        metadata: dict[str, str]
+    ) -> 'AWSS3File':
         '''
-        Returns the size of the file in bytes.
+        Creates and returns an ``AWSS3File`` instance.
+
+        :param str path: The path pointing to the file.
+        :param str host: The name of the host in which \
+            the file resides.
+        :param AWSClientHandler handler: An ``AWSClientHandler`` \
+            class instance.
+        :param dict[str, str] metadata: A dictionary containing \
+            any metadata associated with the file.
         '''
-        return self._get_client().Object(
-            key=self.get_path()).content_length
+        instance = cls.__new__(cls)
+        _File.__init__(
+            instance,
+            path=path,
+            metadata=metadata,
+            handler=handler,
+            close_after_use=False)
+        return instance
+    
 
-
-    def _load_metadata_impl(self) -> dict[str, str]:
+    def __enter__(self) -> 'AWSS3File':
         '''
-        Loads any metadata associated with the file, \
-        which can then be accessed via the instance's \
-        ``get_metadata`` method.
+        Enter the runtime context related to this instance.
         '''
-        return self._get_client().Object(
-            key=self.get_path()).metadata
-
-
-    def __del__(self) -> None:
-        if self._get_client() is not None:
-            msg = "You might want to consider instantiating class `AWSS3File``"
-            msg += " through the use of a context manager by utilizing Python's"
-            msg += " ``with`` statement, or by simply invoking an instance's"
-            msg += " ``close`` method after being done using it."
-            _warn.warn(msg, ResourceWarning)
+        return self
 
 
 class AzureBlobFile(_CloudFile):
@@ -736,10 +710,16 @@ class AzureBlobFile(_CloudFile):
         any fetched data to be cached for faster subsequent \
         access.
 
+    :raises AzureBlobContainerNotFoundError: The \
+        specified container does not exist.
     :raises InvalidPathError: The provided path \
         does not exist.
     :raises InvalidFileError: The provided path \
         points to a directory.
+
+    :note: The provided path must not begin with a separator.
+        - Wrong: ``/path/to/file.txt``
+        - Right: ``path/to/file.txt``
     '''
 
     def __init__(
@@ -762,42 +742,48 @@ class AzureBlobFile(_CloudFile):
             any fetched data to be cached for faster subsequent \
             access. Defaults to ``False``.
 
+        :raises AzureBlobContainerNotFoundError: The \
+            specified container does not exist.
         :raises InvalidPathError: The provided path \
             does not exist.
         :raises InvalidFileError: The provided path \
             points to a directory.
+
+        :note: The provided path must not begin with a separator.
+            - Wrong: ``/path/to/file.txt``
+            - Right: ``path/to/file.txt``
         '''
-        azr_handler = _AzureClientHandler(
-            auth=auth,
-            container=container)
+        # Validate path.
+        sep = _infer_sep(path=path)
+        if path.startswith(sep):
+            raise _IPE(path=path)
+
+        # Instantiate a connection handler,
+        # if none has been set.
+        if (azr_handler := self._get_handler()) is None:
+            azr_handler = _AzureClientHandler(
+                auth=auth,
+                container=container,
+                cache=cache)
         
+        # Infer storage account.
         self.__storage_account = auth._get_storage_account()
         
         super().__init__(
             path=path,
-            cache=cache,
-            handler=azr_handler,
-            ingester=_AzureIngester(handler=azr_handler))
+            handler=azr_handler)
         
-        # Check whether this is a path to
-        # a directory instead of a file.
-        if path.endswith(self._get_separator()):
-            self.close()
-            raise _IFE(path)
-
-        # Fetch container client.
-        azr_container: _ContainerClient = azr_handler.get_client()
-
         # Throw an exception if container does not exist.
-        if not azr_container.exists():
+        if not azr_handler.container_exists():
             self.close()
             raise _ABCNFE(container)
-
-        # Throw an exception if blob does not exist.  
-        with azr_container.get_blob_client(blob=path) as blob:
-            if not blob.exists():
-                self.close()
-                raise _IPE(path)
+        
+        if not azr_handler.path_exists(path=path):
+            self.close()
+            raise _IPE(path)
+        if not azr_handler.is_file(file_path=path):
+            self.close()
+            raise _IFE(path)
             
 
     def get_container_name(self) -> str:
@@ -805,7 +791,7 @@ class AzureBlobFile(_CloudFile):
         Returns the name of the bucket in which \
         the directory resides.
         '''
-        return self._get_client().container_name
+        return self._get_handler().get_container_name()
 
 
     def get_uri(self) -> str:
@@ -815,33 +801,41 @@ class AzureBlobFile(_CloudFile):
         uri = f"abfss://{self.get_container_name()}@{self.__storage_account}"
         uri += f".dfs.core.windows.net/{self.get_path()}"
         return uri
+    
 
-
-    def _get_size_impl(self) -> int:
+    @classmethod
+    def _create_file(
+        cls,
+        path: str,
+        handler: _AzureClientHandler,
+        metadata: dict[str, str]
+    ) -> 'AzureBlobFile':
         '''
-        Returns the size of the file in bytes.
+        Creates and returns an ``AzureBlobFile`` instance.
+
+        :param str path: The path pointing to the file.
+        :param str host: The name of the host in which \
+            the file resides.
+        :param AWSClientHandler handler: An ``AzureClientHandler`` \
+            class instance.
+        :param dict[str, str] metadata: A dictionary containing \
+            any metadata associated with the file.
         '''
-        return self._get_client().download_blob(
-            blob=self.get_path()).size
+        instance = cls.__new__(cls)
+        _File.__init__(
+            instance,
+            path=path,
+            metadata=metadata,
+            handler=handler,
+            close_after_use=False)
+        return instance
+    
 
-
-    def _load_metadata_impl(self) -> dict[str, str]:
+    def __enter__(self) -> 'AzureBlobFile':
         '''
-        Loads any metadata associated with the file, \
-        which can then be accessed via the instance's \
-        ``get_metadata`` method.
+        Enter the runtime context related to this instance.
         '''
-        return self._get_client().download_blob(
-            blob=self.get_path()).properties.metadata
-
-
-    def __del__(self) -> None:
-        if self._get_client() is not None:
-            msg = "You might want to consider instantiating class `AzureBlobFile``"
-            msg += " through the use of a context manager by utilizing Python's"
-            msg += " ``with`` statement, or by simply invoking an instance's"
-            msg += " ``close`` method after being done using it."
-            _warn.warn(msg, ResourceWarning)
+        return self
 
 
 class _Directory(_ABC):
@@ -850,24 +844,31 @@ class _Directory(_ABC):
     for all directory-like classes.
 
     :param str path: The path pointing to the directory.
-    :param Ingester ingester: An "Ingester" class instance used \
-        for ingesting data.
+    :param ClientHandler handler: A ``ClientHandler`` class \
+        instance used for interacting with the underlying handler.
     '''
 
-    def __init__(self, path: str, ingester: _Ingester):
+    def __init__(
+        self,
+        path: str,
+        handler: _ClientHandler,
+    ):
         '''
         An abstract class which serves as the base class \
         for all directory-like classes.
 
         :param str path: The path pointing to the directory.
-        :param Ingester ingester: An "Ingester" class instance used \
-            for ingesting data.
+        :param ClientHandler handler: A ``ClientHandler`` class \
+            instance used for interacting with the underlying handler.
         '''
         sep = _infer_sep(path)
         self.__path = f"{path.rstrip(sep)}{sep}" if path != '' else path
+        self.__name = name if (
+                name := self.__path.rstrip(sep).split(sep)[-1]
+            ) != '' else None
         self.__separator = sep
-        self.__ingester = ingester
-        self.__metadata: dict[str, _typ.Optional[dict[str, str]]] = {}
+        self.__handler = handler
+        self.__metadata: dict[str, dict[str, str]] = dict()
 
 
     def get_path(self) -> str:
@@ -882,12 +883,10 @@ class _Directory(_ABC):
         Returns the name of the directory, \
         or ``None`` if it's the root directory.
         '''
-        sep = self.__separator
-        name = self.__path.rstrip(sep).split(sep)[-1]
-        return name if name != "" else None
+        return self.__name
     
 
-    def get_metadata(self, file_path: str) -> _typ.Optional[dict[str, str]]:
+    def get_metadata(self, file_path: str) -> dict[str, str]:
         '''
         Returns a dictionary containing any metadata \
             associated with the file in question.
@@ -899,9 +898,7 @@ class _Directory(_ABC):
         :raises InvalidFileError: The provided path does \
             not point to a file within the directory.
         '''
-        if not self._is_file(path=file_path):
-            raise _IFE(path=file_path)
-        return self.__metadata.get(self._relativize(path=file_path), None)
+        return dict(self._get_metadata_ref(file_path=file_path))
 
 
     def set_metadata(self, file_path: str, metadata: dict[str, str]) -> None:
@@ -931,77 +928,48 @@ class _Directory(_ABC):
             if not isinstance(val, str):
                 raise _NSMVE(val=val)
 
-        if not self._is_file(path=file_path):
+        if not (self.path_exists(file_path) and self.is_file(file_path)):
             raise _IFE(path=file_path)
 
-        self.__metadata[self._relativize(path=file_path)] = metadata
+        # Upsert metadata into the dictionary.
+        self._upsert_metadata(file_path, metadata)
 
 
-    def count(self, recursively: bool = False) -> int:
+    def path_exists(self, path: str) -> bool:
         '''
-        Returns the total number of files within \
-        within the directory.
+        Returns ``True`` if the provided path exists \
+        within the directory, else returns ``False``.
 
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-
-        :note: The resulting number may vary depending on the value \
-            of parameter ``recursively``.
+        :param str path: Either an absolute path or a \
+            path relative to the directory.
         '''
-        count = 0
-        
-        for _ in self._get_contents_iterable(
-            recursively=recursively,
-            include_dirs=True,
-            show_abs_path=True
-        ):
-            count += 1
+        path = self._to_absolute(path, replace_sep=False)
+        return self._get_handler().path_exists(path)
+    
 
-        return count
-
-
-    def ls(self, recursively: bool = False, show_abs_path: bool = False) -> None:
+    def is_file(self, path: str) -> bool:
         '''
-        Lists the contents of the directory.
+        Returns ``True`` if the provided path points \
+        to a file, else returns ``False``.
 
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Determines whether to include the \
-            contents' absolute path or their path relative to this directory. \
-            Defaults to ``False``.
-
-        :note: The resulting output may vary depending on the value \
-            of parameter ``recursively``.
+        :param str path: Either an absolute path or a \
+            path relative to the directory.
         '''
-        for file in self._get_contents_iterable(
-            recursively=recursively,
-            include_dirs=True,
-            show_abs_path=show_abs_path
-        ):
-            print(file)
+        path = self._to_absolute(path, replace_sep=False)
+        return self._get_handler().is_file(path)
 
 
-    def iterate_contents(
+    def traverse(
         self,
         recursively: bool = False,
         show_abs_path: bool = False
     ) -> _typ.Iterator[str]:
         '''
-        Returns an iterator capable of going through the paths \
-        ofthe dictionary's contents as strings.
+        Returns an iterator capable of traversing the dictionary's \
+        contents as strings representing their paths.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1014,7 +982,8 @@ class _Directory(_ABC):
         :note: The resulting iterator may vary depending on the \
             value of parameter ``recursively``.
         '''
-        return self._get_contents_iterable(
+        return self._get_handler().traverse_dir(
+            dir_path=self.get_path(),
             recursively=recursively,
             include_dirs=True,
             show_abs_path=show_abs_path)
@@ -1026,10 +995,11 @@ class _Directory(_ABC):
         show_abs_path: bool = False
     ) -> list[str]:
         '''
-        Returns a list containing the paths of the directory's contents.
+        Returns an iterator capable of traversing the dictionary's \
+        contents as strings representing their paths.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1042,126 +1012,70 @@ class _Directory(_ABC):
         :note: The resulting list may vary depending on the value \
             of parameter ``recursively``.
         '''
-        return list(self._get_contents_iterable(
+        return list(self.traverse(
             recursively=recursively,
-            include_dirs=True,
             show_abs_path=show_abs_path))
     
 
-    def _get_separator(self) -> str:
+    def ls(self, recursively: bool = False, show_abs_path: bool = False) -> None:
         '''
-        Returns the path's separator.
-        '''
-        return self.__separator
-    
-
-    def _get_contents_iterable(
-        self,
-        recursively: bool,
-        include_dirs: bool,
-        show_abs_path: bool
-    ) -> _typ.Iterator[str]:
-        '''
-        Returns an iterator over the dictionary's contents.
+        Lists the contents of the directory.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
             reside directly within the directory or within any of \
-            its subdirectories.
-        :param bool include_dirs: Indicates whether to include any \
-            directories in the results in case ``recursively`` is \
-            set to ``False``.
+            its subdirectories. Defaults to ``False``.
         :param bool show_abs_path: Determines whether to include the \
-            contents' absolute path or their path relative to this directory.
+            contents' absolute path or their path relative to this directory. \
+            Defaults to ``False``.
+
+        :note: The resulting output may vary depending on the value \
+            of parameter ``recursively``.
         '''
-        if recursively:
-            return self._iterate_contents_impl(
-                recursively=True,
-                show_abs_path=show_abs_path)
+        for entity in self.traverse(
+            recursively=recursively,
+            show_abs_path=show_abs_path
+        ):
+            print(entity)
 
-        iterable = self._iterate_contents_impl(
-            recursively=False,
-            show_abs_path=show_abs_path)
-                 
-        if not include_dirs:
-            iterable = filter(
-                lambda path: self._is_file(path=path),
-                self._iterate_contents_impl(
-                    recursively=False,
-                    show_abs_path=show_abs_path))
 
-        return iterable
+    def count(self, recursively: bool = False) -> int:
+        '''
+        Returns the total number of files within \
+        within the directory.
+
+        :param bool recursively: Indicates whether the directory \
+            is to be traversed recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+
+        :note: The resulting number may vary depending on the value \
+            of parameter ``recursively``.
+        '''
+        count = 0
+
+        for _ in self.traverse(
+            recursively=recursively,
+            show_abs_path=True
+        ):
+            count += 1
+
+        return count
     
 
-    def _relativize(self, path: str) -> str:
-        '''
-        Transforms the provided path so that it is \
-        relative to the directory.
-
-        :param str path: The provided path.
-        '''
-        return path.removeprefix(self.__path).lstrip(self._get_separator())
-
-
-    def _get_ingester(self) -> _Ingester:
-        '''
-        Returns the class's ``Ingester`` instance.
-        '''
-        return self.__ingester
-    
-
-    def _add_file_to_metadata_dict(
-        self,
-        file_path: str,
-        metadata: _typ.Optional[dict[str, str]]
-    ) -> None:
-        '''
-        Adds the provided path entry to the directory's \
-        metadata store.
-
-        :param str file_path: The relative path of the  \
-            file in question.
-        :param dict[str, str] | None metadata: A dictionary \
-            containing the metadata that are to be \
-            associated with the file.
-        '''
-        self.__metadata.update({ file_path: None })
-
-        if metadata is not None:
-            self.set_metadata(file_path=file_path, metadata=metadata)
-    
-
-    @_absmethod
-    def get_uri(self) -> str:
-        '''
-        Returns the directory's URI.
-        '''
-        pass
-
-
-    @_absmethod
-    def path_exists(self, path: str) -> bool:
-        '''
-        Returns ``True`` if the provided path exists \
-        within the directory, else returns ``False``.
-
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
-        '''
-        pass
-
-
-    @_absmethod
     def get_size(self, recursively: bool = False) -> int:
         '''
         Returns the total sum of the sizes of all files \
         within the directory, in bytes.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1171,10 +1085,20 @@ class _Directory(_ABC):
         :note: The resulting size may vary depending on the value \
             of parameter ``recursively``.
         '''
-        pass
+        handler = self._get_handler()
+        size = 0
 
+        for file_path in handler.traverse_dir(
+            dir_path=self.get_path(),
+            recursively=recursively,
+            include_dirs=False,
+            show_abs_path=True
+        ):
+            size += handler.get_file_size(file_path)
 
-    @_absmethod
+        return size
+    
+
     def transfer_to(
         self,
         dst: '_Directory',
@@ -1190,7 +1114,7 @@ class _Directory(_ABC):
         :param _Directory dst: A ``_Directory`` class instance, \
             which represents the transfer operation's destination.
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -1205,105 +1129,259 @@ class _Directory(_ABC):
             a loading bar on the progress of the operations. \
             Defaults to ``True``.
         '''
-        pass
+        destination = dst.get_uri() \
+            if isinstance(dst, _NonLocalDir) \
+            else dst.get_path()
 
+        print_msg = f'\nCopying files from "{self.get_path()}" '
+        print_msg += f'into "{destination}".'
+        print(print_msg)
 
-    @_absmethod
-    def _iterate_contents_impl(
+        # Store the directory's files in a list.
+        file_paths = [fp for fp in self.__handler.traverse_dir(
+            dir_path = self.get_path(),
+            recursively=recursively,
+            include_dirs=False,
+            show_abs_path=True)]
+
+        errors: list[_Error] = list()
+        total_num_files = len(file_paths)
+
+        # Iterate through all files that are to be transfered.
+        for fp in _tqdm(
+            iterable=file_paths,
+            disable=not show_progress,
+            desc="Progress",
+            unit='files',
+            total=total_num_files
+        ):
+            rel_fp = self._to_relative(fp, replace_sep=False)
+            if not overwrite and dst.path_exists(rel_fp):
+                errors.append(_Error(
+                    uri=_join_paths(dst._get_separator(), destination, rel_fp),
+                    is_src=False,
+                    msg='File already exists. Try setting "overwrite" to "True".'))
+                continue
+
+            with _io.BytesIO() as buffer:
+                try:
+                    # Read file contents (and metadata optionally).
+                    metadata = self.__handler.read(fp, buffer, include_metadata)
+                    # Update metadata dictionary if necessary.
+                    if include_metadata and (custom_metadata := self.get_metadata(fp)):
+                        metadata = custom_metadata
+                    # Rewind buffer.
+                    buffer.seek(0)
+                    # Write file contents.
+                    dst_fp = dst._to_absolute(rel_fp, replace_sep=True)
+                    dst._get_handler().write(
+                        file_path=dst_fp,
+                        buffer=buffer,
+                        metadata=metadata)
+                    # Upsert the destination's metadata dictionary.
+                    if metadata is not None:
+                        dst._upsert_metadata(file_path=dst_fp, metadata=metadata)
+                except Exception as e:
+                    errors.append(_Error(uri=self.get_uri(), is_src=True, msg=str(e)))
+
+        if len(errors) == 0:
+            print(f'Operation successful: Copied all {total_num_files} files!')
+        else:
+            msg = "Operation unsuccessful: Failed to copy "
+            msg += f"{len(errors)} out of {total_num_files} files."
+            msg += f"\n\nDisplaying {len(errors)} errors:\n"
+            for err in errors:
+                msg += str(err)
+            print(msg)
+    
+
+    def traverse_files(
         self,
-        recursively: bool = False,
-        show_abs_path: bool = False
-    ) -> _typ.Iterator[str]:
+        recursively: bool = False
+    ) -> _typ.Iterator[_File]:
         '''
-        Returns an iterator capable of going through the paths \
-        ofthe dictionary's contents as strings.
+        Returns an iterator capable of going through the \
+        dictionaries files as ``File`` instances.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
             reside directly within the directory or within any of \
             its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Indicates whether it \
-            should be displayed the absolute or the relative \
-            path of the contents. Defaults to ``False``.
 
         :note: The resulting iterator may vary depending on the \
             value of parameter ``recursively``.
         '''
-        pass
+        for file_path in self.__handler.traverse_dir(
+            dir_path=self.get_path(),
+            recursively=recursively,
+            include_dirs=False,
+            show_abs_path=True
+        ):
+            yield self.get_file(file_path)
 
 
-    @_absmethod
-    def _load_from_source(
+    def get_files(
         self,
-        file_name: str,
-        src: _typ.Union[_io.BufferedReader, _io.BytesIO],
-        metadata: _typ.Optional[dict[str, str]]
-    ) -> _typ.Optional[_Error]:
+        recursively: bool = False,
+        show_abs_path: bool = False
+    ) -> dict[str, _File]:
         '''
-        Loads a file directly from the given source \
-        and into this directory. Returns ``None`` if \
-        the operation was successful, else returns an \
-        ``Error`` instance.
+        Returns a dictionary mapping file paths to ``File`` instances \
+        regarding the files contained within the directory.
 
-        :param str file_name: The name of the file that is to be \
-            loaded.
-        :param Union[io.BufferedReader, io.BytesIO] src: A buffer \
-            containing the file in bytes.
-        :param dict[str, str] | None metadata: A dictionary \
-            containing any metadata associated with the file.
+        :param bool recursively: Indicates whether the directory \
+            is to be traversed recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+        :param bool show_abs_path: Determines whether to include the \
+            files' absolute path or their path relative to this directory. \
+            Defaults to ``False``.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
+        '''
+        file_dict = dict()
+        for file_path in self.__handler.traverse_dir(
+            dir_path=self.get_path(),
+            recursively=recursively,
+            include_dirs=False,
+            show_abs_path=show_abs_path
+        ):
+            file_dict.update({ file_path: self.get_file(file_path)})
+        return file_dict
+
+
+    def _get_separator(self) -> str:
+        '''
+        Returns the path's separator.
+        '''
+        return self.__separator
+    
+
+    def _get_handler(self) -> _ClientHandler:
+        '''
+        Returns this instance's ``ClientHandler``.
+        '''
+        return self.__handler
+    
+
+    def _to_relative(self, path: str, replace_sep: bool) -> str:
+        '''
+        Transforms the provided path so that it is \
+        relative to the directory.
+
+        :param str path: The provided path.
+        :param bool replace_sep: Indicates whether \
+            to replace the provided path's separator \
+            with the separator used by this directory.
+        '''
+        if replace_sep:
+            sep = _infer_sep(path)
+            path = path.replace(sep, self._get_separator())
+        return path.removeprefix(self.__path).lstrip(self._get_separator())
+    
+
+    def _to_absolute(self, path: str, replace_sep: bool) -> str:
+        '''
+        Transforms the provided path so that it is \
+        absolute.
+
+        :param str path: The provided path.
+        :param bool replace_sep: Indicates whether \
+            to replace the provided path's separator \
+            with the separator used by this directory.
+        '''
+        path = self._to_relative(path, replace_sep)
+        return _join_paths(self._get_separator(), self.__path, path)
+    
+
+    def _get_metadata_ref(self, file_path: str) -> dict[str, str]:
+        '''
+        Returns the reference to the metadata dictionary \
+        that corresponds to the specified path. If said \
+        dictionary doesn't exist, then this method creates it \
+        and returns it.
+
+        :param str file_path: Either the absolute path \
+            or the path relative to the directory of the \
+            file in question.
+
+        :raises InvalidFileError: The provided path does \
+            not point to a file within the directory.
+        '''
+        if not (self.path_exists(file_path) and self.is_file(file_path)):
+            raise _IFE(path=file_path)
+        
+        rel_path = self._to_relative(path=file_path, replace_sep=False)
+        
+        if rel_path not in self.__metadata:
+            self.__metadata.update({rel_path: dict()})
+
+        return self.__metadata.get(rel_path)
+    
+
+    def _upsert_metadata(self, file_path: str, metadata: dict[str, str]) -> None:
+        '''
+        Updates the metadata dictionary by \
+        upserting the provided metadata.
+
+        :param str file_path: Either the absolute path \
+            or the path relative to the directory of the \
+            file in question.
+        :param dict[str, str] metadata: A dictionary \
+            containing the metadata that are to be \
+            associated with the file.
+        '''
+        # NOTE: Update the metadata dictionary without
+        #       creating a new reference.
+        rel_path = self._to_relative(path=file_path, replace_sep=False)
+
+        if rel_path not in self.__metadata:
+            self.__metadata.update({rel_path: dict()})
+
+        self.__metadata[rel_path].clear()
+
+        for (key, val) in metadata.items():
+            self.__metadata[rel_path].update({ key: val })
+    
+
+    def __new__(cls, *args, **kwargs) -> '_Directory':
+        '''
+        Creates an instance of this class.
+
+        :note: This method defines field ``__handler`` \
+            so that throwing an exception before invoking \
+            the parent constructor does not result in a \
+            second exception being thrown due to ``__del__``.
+        '''
+        instance = super().__new__(cls)
+        instance.__handler = None
+        return instance
+    
+
+    @_absmethod
+    def get_uri(self) -> str:
+        '''
+        Returns the directory's URI.
         '''
         pass
 
 
     @_absmethod
-    def _load_from_ingester(
-        self,
-        file_name: str,
-        ingester: _Ingester,
-        fetch_metadata: bool
-    ) -> _typ.Optional[_Error]:
+    def get_file(self, file_path: str) -> '_File':
         '''
-        Loads a file into this directory by using \
-        the provided ingester. Returns ``None`` if \
-        the operation was successful, else returns \
-        an ``Error`` instance.
+        Returns the file residing in the specified \
+        path as a ``_File`` instance.
 
-        :param str file_name: The name of the file that is to be \
-            loaded.
-        :param Ingester ingester: An ingester method used in \
-            ingesting the file.
-        :param bool overwrite: Indicates whether to overwrite \
-            the file if it already exists. Defaults to ``False``.
-        :param bool fetch_metadata: Indicates whether to \
-            fetch any metadata associated with the file or not.
-        '''
-        pass
-
-
-    @_absmethod
-    def _is_file(self, path: str) -> bool:
-        '''
-        Returns ``True`` if the provided path \
-        points to a file, else returns ``False``.
-
-        :param str path: Either the absolute path or the \
-            path relative to the directory of the file in \
-            question.
-        '''
-        pass
-
-
-    @_absmethod
-    def _get_file_size(path: str) -> int:
-        '''
-        Returns the size of the file that corresponds \
-        to the provided path in bytes.
-
-        :param str path: The absolute path pointing to \
-            the file in question.
+        :param str file_path: Either the absolute path \
+            or the path relative to the directory of the \
+            file in question.
         '''
         pass
 
@@ -1357,7 +1435,7 @@ class LocalDir(_Directory):
 
         super().__init__(
             path=f"{_os.path.abspath(path).replace(_os.sep, sep).rstrip(sep)}{sep}",
-            ingester=_LocalIngester())
+            handler=_FileSystemHandler())
 
 
     def get_uri(self) -> str:
@@ -1368,284 +1446,69 @@ class LocalDir(_Directory):
         return f"file:///{self.get_path().lstrip(sep)}"
 
 
-    def path_exists(self, path: str) -> bool:
+    def get_file(self, file_path: str) -> LocalFile:
         '''
-        Returns ``True`` if the provided path exists \
-        within the directory, else returns ``False``.
+        Returns the file residing in the specified \
+        path as a ``LocalFile`` instance.
 
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
+        :param str file_path: Either the absolute path \
+            or the path relative to the directory of the \
+            file in question.
         '''
-        return _os.path.exists(_join_paths(
-            self._get_separator(),
-            self.get_path(),
-            self._relativize(path=path)))
-
-
-    def get_size(self, recursively: bool = False) -> int:
-        '''
-        Returns the total sum of the sizes of all files \
-        within the directory, in bytes.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-
-        :note: The resulting size may vary depending on the value \
-            of parameter ``recursively``.
-        '''
-        size = 0
-
-        for file_path in self._get_contents_iterable(
-            recursively=recursively,
-            include_dirs=False,
-            show_abs_path=True
-        ):
-            size += self._get_file_size(file_path)
-        
-        return size
-
+        file_path = self._to_absolute(path=file_path, replace_sep=False)
+        return LocalFile._create_file(
+            path=file_path,
+            handler=self._get_handler(),
+            metadata=self._get_metadata_ref(file_path))
     
-    def transfer_to(
-        self,
-        dst: '_Directory',
-        recursively: bool = False,
-        overwrite: bool = False,
-        include_metadata: bool = False,
-        show_progress: bool = True
-    ) -> None:
-        '''
-        Copies all files within this directory into \
-        the destination directory.
 
-        :param _Directory dst: A ``_Directory`` class instance, \
-            which represents the transfer operation's destination.
+    def traverse_files(
+        self,
+        recursively: bool = False
+    ) -> _typ.Iterator[LocalFile]:
+        '''
+        Returns an iterator capable of going through the \
+        dictionaries files as ``File`` instances.
+
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
             reside directly within the directory or within any of \
             its subdirectories. Defaults to ``False``.
-        :param bool overwrite: Indicates whether to overwrite \
-            any files if they already exist. Defaults to ``False``.
-        :param bool include_metadata: Indicates whether any \
-            existing metadata are to be assigned to the resulting \
-            files. Defaults to ``False``.
-        :param bool show_progress: Indicates whether to display \
-            a loading bar on the progress of the operations. \
-            Defaults to ``True``.
-        '''
-        destination = dst.get_uri() \
-            if isinstance(dst, _NonLocalDir) \
-            else dst.get_path()
-
-        print_msg = f'\nCopying files from "{self.get_path()}" '
-        print_msg += f'into "{destination}".'
-        print(print_msg)
-
-        if recursively:
-            total_num_files = self.count(recursively=True)
-        else:
-            total_num_files = 0
-            for _ in self._get_contents_iterable(
-                recursively=False,
-                include_dirs=False,
-                show_abs_path=True
-            ):
-                total_num_files += 1
-
-        errors: list[_Error] = list()
-
-        for file_path in _tqdm(
-            iterable=self._get_contents_iterable(
-                recursively=recursively,
-                include_dirs=False,
-                show_abs_path=True
-            ),
-            disable=not show_progress,
-            desc="Progress",
-            unit='files',
-            total=total_num_files
-        ):
-            relative_path = self._relativize(file_path)
-            if not overwrite and dst.path_exists(relative_path):
-                error = _Error(
-                    uri=_join_paths(dst._get_separator(), destination, relative_path),
-                    is_src=False,
-                    msg='File already exists. Try setting "overwrite" to "True".')
-            else:
-                with open(file_path, "rb") as file:
-                    error = dst._load_from_source(
-                        file_name=relative_path,
-                        src=file,
-                        metadata=self.get_metadata(
-                            file_path=relative_path)
-                            if include_metadata else None)
-
-            if error is not None:
-                errors.append(error)
-
-        if len(errors) == 0:
-            print(f'Operation successful: Copied all {total_num_files} files!')
-        else:
-            msg = "Operation unsuccessful: Failed to copy "
-            msg += f"{len(errors)} out of {total_num_files} files."
-            msg += f"\n\nDisplaying {len(errors)} errors:\n"
-            for err in errors:
-               msg += str(err)
-            print(msg)
-
-
-    def _iterate_contents_impl(
-        self,
-        recursively: bool = False,
-        show_abs_path: bool = False
-    ) -> _typ.Iterator[str]:
-        '''
-        Returns an iterator capable of going through the paths \
-        ofthe dictionary's contents as strings.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Indicates whether it \
-            should be displayed the absolute or the relative \
-            path of the contents. Defaults to ``False``.
 
         :note: The resulting iterator may vary depending on the \
             value of parameter ``recursively``.
         '''
-
-        sep = self._get_separator()
-
-        if recursively:
-            for dp, _, fn in _os.walk(self.get_path()):
-                for file in fn:
-                    if not show_abs_path:
-                        dp = self._relativize(dp.replace(_os.sep, sep))
-                    yield _join_paths(sep, dp, file)
-        else:
-            for obj in _os.listdir(self.get_path()):
-                if not self._is_file(obj):
-                    obj += sep
-                yield _join_paths(sep, self.get_path(), obj) \
-                    if show_abs_path else obj
+        yield from super().traverse_files(recursively=recursively)
 
 
-    def _load_from_source(
+    def get_files(
         self,
-        file_name: str,
-        src: _typ.Union[_io.BufferedReader, _io.BytesIO],
-        metadata: _typ.Optional[dict[str, str]]
-    ) -> _typ.Optional[_Error]:
+        recursively: bool = False,
+        show_abs_path: bool = False
+    ) -> dict[str, LocalFile]:
         '''
-        Loads a file directly from the given source \
-        and into this directory. Returns ``None`` if \
-        the operation was successful, else returns an \
-        ``Error`` instance.
+        Returns a dictionary mapping file paths to ``File`` instances \
+        regarding the files contained within the directory.
 
-        :param str file_name: The name of the file that is to be \
-            loaded.
-        :param Union[io.BufferedReader, io.BytesIO] src: A buffer \
-            containing the file in bytes.
-        :param dict[str, str] | None metadata: A dictionary \
-            containing any metadata associated with the file.
+        :param bool recursively: Indicates whether the directory \
+            is to be traversed recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+        :param bool show_abs_path: Determines whether to include the \
+            files' absolute path or their path relative to this directory. \
+            Defaults to ``False``.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
         '''
-
-        file_path = _join_paths(self._get_separator(), self.get_path(), file_name)
-
-        _os.makedirs(_os.path.dirname(file_path), exist_ok=True)
-
-        ingester = self._get_ingester()
-
-        with open(file_path, 'wb') as file:
-
-            ingester.set_sink(snk=file)
-
-            error_msg = ingester.load(src=src, metadata=metadata)
-
-            if error_msg is None:
-                self._add_file_to_metadata_dict(
-                    file_path=file_name,
-                    metadata=metadata)
-            else:
-                return _Error(
-                    uri=file_path,
-                    is_src=False,
-                    msg=error_msg)
-
-
-    def _load_from_ingester(
-        self,
-        file_name: str,
-        ingester: _Ingester,
-        fetch_metadata: bool
-    ) -> _typ.Optional[_Error]:
-        '''
-        Loads a file into this directory by using \
-        the provided ingester. Returns ``None`` if \
-        the operation was successful, else returns \
-        an ``Error`` instance.
-
-        :param str file_name: The name of the file that is to be \
-            loaded.
-        :param Ingester ingester: An ingester method used in \
-            ingesting the file.
-        :param bool fetch_metadata: Indicates whether to \
-            fetch any metadata associated with the file or not.
-        '''
-
-        file_path = _join_paths(self._get_separator(), self.get_path(), file_name)
-
-        _os.makedirs(_os.path.dirname(file_path), exist_ok=True)
-
-        with open(file_path, 'wb') as file:
-
-            error_msg = ingester.extract(snk=file, include_metadata=fetch_metadata)
-
-            if error_msg is None:
-                self._add_file_to_metadata_dict(
-                    file_path=file_name,
-                    metadata=ingester.get_metadata())
-            else:
-                return _Error(
-                    uri=ingester.get_source(),
-                    is_src=True,
-                    msg=error_msg)
-
-
-    def _get_file_size(self, path: str) -> int:
-        '''
-        Returns the size of the file that corresponds \
-        to the provided path in bytes.
-
-        :param str path: The absolute path pointing to \
-            the file in question.
-        '''
-        return _os.path.getsize(path) 
-
-
-    def _is_file(self, path: str) -> bool:
-        '''
-        Returns ``True`` if the provided path \
-        points to a file, else returns ``False``.
-
-        :param str path: Either the absolute path or the \
-            path relative to the directory of the file in \
-            question.
-        '''
-        if not path.startswith(self.get_path()):
-            path = _join_paths(self._get_separator(), self.get_path(), path)
-        return _os.path.isfile(path)
+        return super().get_files(
+            recursively=recursively, show_abs_path=show_abs_path)
 
 
 class _NonLocalDir(_Directory, _ABC):
@@ -1655,20 +1518,13 @@ class _NonLocalDir(_Directory, _ABC):
     directories or directories in the cloud.
 
     :param str path: The path pointing to the directory.
-    :param bool cache: Indicates whether it is allowed for \
-        any fetched data to be cached for faster subsequent \
-        access.
-    :param ClientHandler handler: A ``ClientHandler`` class instance used \
-        in handling connections.
-    :param Ingester ingester: An ``Ingester`` class instance used \
-        for ingesting data.
+    :param ClientHandler handler: A ``ClientHandler`` class \
+        instance used for interacting with the underlying handler.
     '''
     def __init__(
         self,
         path: str,
-        cache: bool,
-        handler: _ClientHandler,
-        ingester: _Ingester
+        handler: _ClientHandler
     ):
         '''
         An abstract class which serves as the base class for \
@@ -1676,17 +1532,10 @@ class _NonLocalDir(_Directory, _ABC):
         directories or directories in the cloud.
 
         :param str path: The path pointing to the directory.
-        :param bool cache: Indicates whether it is allowed for \
-            any fetched data to be cached for faster subsequent \
-            access.
-        :param ClientHandler handler: A ``ClientHandler`` class instance used \
-            in handling connections.
-        :param Ingester ingester: An ``Ingester`` class instance used \
-            for ingesting data.
+        :param ClientHandler handler: A ``ClientHandler`` class \
+            instance used for interacting with the underlying handler.
         '''
-        super().__init__(path=path, ingester=ingester)
-        self.__cache_manager = _CacheManager() if cache else None
-        self.__handler = handler
+        super().__init__(path=path, handler=handler)
         self.open()
 
 
@@ -1695,7 +1544,7 @@ class _NonLocalDir(_Directory, _ABC):
         Returns ``True`` if directory has been \
         defined as cacheable, else returns ``False``.
         '''
-        return self.__cache_manager is not None
+        return self._get_handler().is_cacheable()
 
 
     def purge(self) -> None:
@@ -1703,318 +1552,42 @@ class _NonLocalDir(_Directory, _ABC):
         If cacheable, then purges the directory's cache, \
         else does nothing.
         '''
-        if self.is_cacheable():
-            self.__cache_manager.purge()
+        self._get_handler().purge()
 
 
     def open(self) -> None:
         '''
         Opens all necessary connections.
         '''
-        self.__handler.open_connections()
+        self._get_handler().open_connections()
 
 
     def close(self) -> None:
         '''
         Closes all open connections.
         '''
-        self.__handler.close_connections()
+        self._get_handler().close_connections()
 
 
-    def get_size(self, recursively: bool = False) -> int:
+    def __del__(self) -> None:
         '''
-        Returns the total sum of the sizes of all files \
-        within the directory, in bytes.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-
-        :note: The resulting size may vary depending on the value \
-            of parameter ``recursively``.
+        The class destructor method.
         '''
-        total_size = 0
-
-        for file_path in self._get_contents_iterable(
-            recursively=recursively,
-            include_dirs=False,
-            show_abs_path=True
-        ):
-            if self.is_cacheable():
-                if (size := self.__cache_manager.get_size(file_path=file_path)) is not None:
-                    total_size += size
-                else:
-                    size = self._get_file_size(file_path)
-                    self.__cache_manager.cache_size(file_path, size)
-                    total_size += size
-            else:
-                total_size += self._get_file_size(file_path)
-
-        return total_size
-
-
-    def transfer_to(
-        self,
-        dst: '_Directory',
-        recursively: bool = False,
-        overwrite: bool = False,
-        include_metadata: bool = False,
-        show_progress: bool = True
-    ) -> None:
-        '''
-        Copies all files within this directory into \
-        the destination directory.
-
-        :param _Directory dst: A ``_Directory`` class instance, \
-            which represents the transfer operation's destination.
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-        :param bool overwrite: Indicates whether to overwrite \
-            any files if they already exist. Defaults to ``False``.
-        :param bool include_metadata: Indicates whether any \
-            existing metadata are to be assigned to the resulting \
-            files. Defaults to ``False``.
-        :param bool show_progress: Indicates whether to display \
-            a loading bar on the progress of the operations. \
-            Defaults to ``True``.
-        '''
-        destination = dst.get_uri() \
-            if isinstance(dst, _NonLocalDir) \
-            else dst.get_path()
-
-        print_msg = f'\nCopying files from "{self.get_path()}" '
-        print_msg += f'into "{destination}".'
-        print(print_msg)
-
-        if recursively:
-            total_num_files = self.count(recursively=True)
-        else:
-            total_num_files = 0
-            for _ in self._get_contents_iterable(
-                recursively=recursively,
-                include_dirs=False,
-                show_abs_path=True
-            ):
-                total_num_files += 1
-
-        errors: list[_Error] = list()
-
-        ingester = self._get_ingester()
-
-        for file_path in _tqdm(
-            iterable=self._get_contents_iterable(
-                recursively=recursively,
-                include_dirs=False,
-                show_abs_path=True
-            ),
-            disable=not show_progress,
-            desc="Progress",
-            unit='files',
-            total=total_num_files
-        ):
-            relative_path = self._relativize(file_path)
-            if not overwrite and dst.path_exists(relative_path):
-                error = _Error(
-                    uri=_join_paths(dst._get_separator(), destination, relative_path),
-                    is_src=False,
-                    msg='File already exists. Try setting "overwrite" to "True".')
-            else:
-                ingester.set_source(src=file_path)
-
-                fetch_metadata = include_metadata
-
-                if include_metadata and (
-                    (custom_metadata := self.get_metadata(file_path))
-                    is not None
-                ):
-                    ingester.set_metadata(metadata=custom_metadata)
-                    fetch_metadata = False
-
-                error = dst._load_from_ingester(
-                    file_name = relative_path,
-                    ingester=ingester,
-                    fetch_metadata=fetch_metadata)
-
-            if error is not None:
-                errors.append(error)
-        
-        if len(errors) == 0:
-            print(f'Operation successful: Copied all {total_num_files} files!')
-        else:
-            msg = "Operation unsuccessful: Failed to copy "
-            msg += f"{len(errors)} out of {total_num_files} files."
-            msg += f"\n\nDisplaying {len(errors)} errors:\n"
-            for err in errors:
-               msg += str(err)
-            print(msg)
-
-
-    def _load_from_source(
-        self,
-        file_name: str,
-        src: _typ.Union[_io.BufferedReader, _io.BytesIO],
-        metadata: _typ.Optional[dict[str, str]]
-    ) -> _typ.Optional[_Error]:
-        '''
-        Loads a file directly from the given source \
-        and into this directory. Returns ``None`` if \
-        the operation was successful, else returns an \
-        ``Error`` instance.
-
-        :param str file_name: The name of the file that is to be \
-            loaded.
-        :param Union[io.BufferedReader, io.BytesIO] src: A buffer \
-            containing the file in bytes.
-        :param dict[str, str] | None metadata: A dictionary \
-            containing any metadata associated with the file.
-        '''
-
-        ingester = self._get_ingester()
-        ingester.set_sink(_join_paths(self._get_separator(), self.get_path(), file_name))
-
-        error_msg = ingester.load(src=src, metadata=metadata)
-
-        if error_msg is None:
-            self._add_file_to_metadata_dict(
-                file_path=file_name,
-                metadata=metadata)
-        else:
-            return _Error(
-                uri=_join_paths(self._get_separator(), self.get_uri(), file_name),
-                is_src=False,
-                msg=error_msg)
-
-
-    def _load_from_ingester(
-        self,
-        file_name: str,
-        ingester: _Ingester,
-        fetch_metadata: bool
-    ) -> _typ.Optional[_Error]:
-        '''
-        Loads a file into this directory by using \
-        the provided ingester. Returns ``None`` if \
-        the operation was successful, else returns \
-        an ``Error`` instance.
-
-        :param str file_name: The name of the file that is to be \
-            loaded.
-        :param Ingester ingester: An ingester method used in \
-            ingesting the file.
-        :param bool fetch_metadata: Indicates whether to \
-            fetch any metadata associated with the file or not.
-        '''
-        # Load data into buffer via the ingester.
-        buffer = _io.BytesIO()
-
-        error_msg = ingester.extract(
-            snk=buffer,
-            include_metadata=fetch_metadata)
-
-        # If successful, then load data directly from buffer.
-        if error_msg is None:
-
-            buffer.seek(0)
-            error: _Error = self._load_from_source(
-                file_name=file_name,
-                src=buffer,
-                metadata=ingester.get_metadata())
-
-            if error is None:
-                self._add_file_to_metadata_dict(
-                    file_path=file_name,
-                    metadata=ingester.get_metadata())
-            else:
-                return error
-        else:
-            return _Error(
-                uri=ingester.get_source(),
-                is_src=True,
-                msg=error_msg)
-        
-
-    def _get_contents_iterable(
-        self,
-        recursively: bool,
-        include_dirs: bool,
-        show_abs_path: bool
-    ) -> _typ.Iterator[str]:
-        '''
-        Returns an iterator over the dictionary's contents.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories.
-        :param bool include_dirs: Indicates whether to include any \
-            directories in the results in case ``recursively`` is \
-            set to ``False``.
-        :param bool show_abs_path: Determines whether to include the \
-            contents' absolute path or their path relative to this directory.
-        '''
-        iterable = super()._get_contents_iterable(
-            recursively=recursively,
-            include_dirs=include_dirs,
-            show_abs_path=show_abs_path)
-
-        if not self.is_cacheable():
-            return iterable
-        
-        if recursively and self.__cache_manager.is_recursive_cache_empty():
-            for path in self._iterate_contents_impl(
-                recursively=True,
-                show_abs_path=True
-            ):
-                self.__cache_manager.add_to_cache(path=path)
-        elif not recursively and self.__cache_manager.is_top_level_empty():
-            for path in self._iterate_contents_impl(
-                recursively=False,
-                show_abs_path=True
-            ):
-                self.__cache_manager.add_to_top_level(
-                    path=path,
-                    is_file=self._is_file(path=path))
-        
-        iterable = self.__cache_manager.iterate_contents(
-            recursively=recursively,
-            include_dirs=include_dirs)
-        
-        if not show_abs_path:
-            iterable = map(lambda p: self._relativize(p), iterable)
-
-        return iterable
-
-    
-    def _get_client(self) -> _typ.Any:
-        '''
-        Returns the underlying client of this \
-        instance's ``ClientHandler`` instance.
-        '''
-        return self.__handler.get_client() \
-            if self.__handler is not None \
-            else None
+        handler = self._get_handler()
+        if handler is not None and handler.is_open():
+            # Purge cache (if it exists).
+            self.purge()
+            # Close any open connections.
+            self.close()
+            # Display warning.
+            msg = f'You might want to consider instantiating class "{self.__class__.__name__}"'
+            msg += " through the use of a context manager by utilizing Python's"
+            msg += ' "with" statement, or by simply invoking an instance\'s'
+            msg += ' "close" method after being done using it.'
+            _warn.warn(msg, ResourceWarning)
     
 
-    def _get_cache_manager(self) -> _typ.Optional[_CacheManager]:
-        '''
-        Returns the directory's cache manager.
-        '''
-        return self.__cache_manager
-    
-
-    def __enter__(self) -> '_NonLocalFile':
+    def __enter__(self) -> '_NonLocalDir':
         '''
         Enter the runtime context related to this instance.
         '''
@@ -2078,42 +1651,25 @@ class RemoteDir(_NonLocalDir):
         :raises InvalidDirectoryError: The provided path \
             does not point to a directory.
         '''
-        ssh_handler = _SSHClientHandler(auth=auth)
+        # Validate path.
+        if path == '':
+            raise _IPE(path=path)
+        
+        ssh_handler = _SSHClientHandler(auth=auth, cache=cache)
 
         super().__init__(
             path=path,
-            cache=cache,
-            handler=ssh_handler,
-            ingester=_RemoteIngester(handler=ssh_handler))
-        
-        # Validate path.
-        if path == '':
-            self.close()
-            raise _IPE(path=path)
+            handler=ssh_handler)
 
         self.__host = auth.get_credentials()['hostname']
 
-        from stat import S_ISDIR as _is_dir
-
-        sftp = ssh_handler.get_client()
-
-        stats = None
-
-        try:
-            stats = sftp.stat(path=path)
-        except FileNotFoundError:
+        if not ssh_handler.path_exists(path=path):
             if create_if_missing:
-                sftp.mkdir(path=path)
-                stats = sftp.stat(path=path)
+                ssh_handler.mkdir(path=path)
             else:
                 self.close()
                 raise _IPE(path)
-        except:
-            self.close()
-            raise ConnectionError()
-
-        if not _is_dir(stats.st_mode):
-            self.close()
+        if ssh_handler.is_file(file_path=path):
             raise _IDE(path)
 
 
@@ -2130,135 +1686,79 @@ class RemoteDir(_NonLocalDir):
         Returns the directory's URI.
         '''
         return f"sftp://{self.__host}/{self.get_path().lstrip(self._get_separator())}"
+    
 
-
-    def path_exists(self, path: str) -> bool:
+    def get_file(self, file_path: str) -> RemoteFile:
         '''
-        Returns ``True`` if the provided path exists \
-        within the directory, else returns ``False``.
+        Returns the file residing in the specified \
+        path as a ``RemoteFile`` instance.
 
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
+        :param str file_path: Either the absolute path \
+            or the path relative to the directory of the \
+            file in question.
         '''
-        sftp: _prmk.SFTPClient = self._get_client()
-        try:
-            path = _join_paths(
-                self._get_separator(),
-                self.get_path(),
-                self._relativize(path=path))
-            sftp.stat(path=path)
-        except FileNotFoundError:
-            return False
-        return True
+        file_path = self._to_absolute(file_path, replace_sep=False)
+        return RemoteFile._create_file(
+            path=file_path,
+            host=self.get_hostname(),
+            handler=self._get_handler(),
+            metadata=self._get_metadata_ref(file_path))
+    
 
-
-    def _iterate_contents_impl(
+    def traverse_files(
         self,
-        recursively: bool = False,
-        show_abs_path: bool = False
-    ) -> _typ.Iterator[str]:
+        recursively: bool = False
+    ) -> _typ.Iterator[RemoteFile]:
         '''
-        Returns an iterator capable of going through the paths \
-        ofthe dictionary's contents as strings.
+        Returns an iterator capable of going through the \
+        dictionaries files as ``File`` instances.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
             reside directly within the directory or within any of \
             its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Indicates whether it \
-            should be displayed the absolute or the relative \
-            path of the contents. Defaults to ``False``.
 
         :note: The resulting iterator may vary depending on the \
             value of parameter ``recursively``.
         '''
-
-        from stat import S_ISDIR as _is_dir
-
-        sftp: _prmk.SFTPClient = self._get_client()
-
-        sep = self._get_separator()
-
-        if recursively:
-
-            def filter_obj(
-                sftp: _prmk.SFTPClient,
-                attr: _prmk.SFTPAttributes,
-                parent_dir: str
-            ):
-                abs_path = _join_paths(
-                    sep,
-                    parent_dir,
-                    attr.filename)
-
-                if _is_dir(attr.st_mode):
-                    try:
-                        for sub_attr in sftp.listdir_attr(path=abs_path):
-                            yield from filter_obj(
-                                sftp=sftp,
-                                attr=sub_attr,
-                                parent_dir=abs_path)
-                    except:
-                        pass
-                else:
-                    yield abs_path
-
-            for attr in sftp.listdir_attr(path=self.get_path()):
-                for file_path in filter_obj(
-                    sftp=sftp,
-                    attr=attr,
-                    parent_dir=self.get_path()
-                ):
-                    yield (file_path if show_abs_path \
-                        else self._relativize(path=file_path))
-        else:
-            for attr in sftp.listdir_attr(path=self.get_path()):
-                path = attr.filename
-                if _is_dir(attr.st_mode):
-                    path += sep
-                yield _join_paths(sep, self.get_path(), path) \
-                    if show_abs_path else path
+        yield from super().traverse_files(recursively=recursively)
 
 
-    def _get_file_size(self, file_path: str) -> int:
+    def get_files(
+        self,
+        recursively: bool = False,
+        show_abs_path: bool = False
+    ) -> dict[str, RemoteFile]:
         '''
-        Returns the size of the file that corresponds \
-        to the provided path in bytes.
+        Returns a dictionary mapping file paths to ``File`` instances \
+        regarding the files contained within the directory.
 
-        :param str file_path: The absolute path pointing \
-            to the file in question.
+        :param bool recursively: Indicates whether the directory \
+            is to be traversed recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+        :param bool show_abs_path: Determines whether to include the \
+            files' absolute path or their path relative to this directory. \
+            Defaults to ``False``.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
         '''
-        return self._get_client().stat(path=file_path).st_size
+        return super().get_files(
+            recursively=recursively, show_abs_path=show_abs_path)
+    
 
-
-    def _is_file(self, path: str) -> bool:
+    def __enter__(self) -> 'RemoteDir':
         '''
-        Returns ``True`` if the provided path \
-        points to a file, else returns ``False``.
-
-        :param str path: Either the absolute path or the \
-            path relative to the directory of the file in \
-            question.
+        Enter the runtime context related to this instance.
         '''
-        from stat import S_ISDIR as _is_dir
-        if not path.startswith(self.get_path()):
-            path = _join_paths(self._get_separator(), self.get_path(), path)
-        try:
-            return not _is_dir(self._get_client().stat(path=path).st_mode)
-        except FileNotFoundError:
-            return False
-
-
-    def __del__(self) -> None:
-        if self._get_client() is not None:
-            msg = "You might want to consider instantiating class ``RemoteDir``"
-            msg += " through the use of a context manager by utilizing Python's"
-            msg += " ``with`` statement, or by simply invoking an instance's"
-            msg += " ``close`` method after being done using it."
-            _warn.warn(msg, ResourceWarning)
+        return super().__enter__()
 
 
 class _CloudDir(_NonLocalDir, _ABC):
@@ -2275,7 +1775,7 @@ class _CloudDir(_NonLocalDir, _ABC):
         via the instance's ``get_metadata`` method.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
@@ -2289,64 +1789,16 @@ class _CloudDir(_NonLocalDir, _ABC):
               method will be overriden after invoking this \
               method.
         '''
+        handler = self._get_handler()
 
-        cache_manager = self._get_cache_manager()
-
-        for file_path in self._get_contents_iterable(
+        for file_path in handler.traverse_dir(
+            dir_path=self.get_path(),
             recursively=recursively,
             include_dirs=False,
             show_abs_path=True
         ):
-            if self.is_cacheable():
-                if (metadata := cache_manager.get_metadata(file_path=file_path)) is not None:
-                    self.set_metadata(file_path, metadata)
-                else:
-                    metadata = self._load_metadata_impl(file_path)
-                    cache_manager.cache_metadata(file_path, metadata)
-                    self.set_metadata(file_path, metadata)
-            else:
-                self.set_metadata(file_path,
-                    self._load_metadata_impl(file_path))
-                
-
-    def get_metadata(self, file_path: str) -> _typ.Optional[dict[str, str]]:
-        '''
-        Returns a dictionary containing any metadata \
-            associated with the file in question.
-
-        :param str file_path: Either the absolute path \
-            or the path relative to the directory of the \
-            file in question.
-
-        :raises InvalidFileError: The provided path does \
-            not point to a file within the directory.
-        '''
-        metadata = super().get_metadata(file_path=file_path)
-   
-        if metadata is not None:
-            return metadata
-        
-        if self.is_cacheable():
-            abs_path = _join_paths(
-                self._get_separator(),
-                self.get_path(),
-                self._relativize(file_path))
-            return self._get_cache_manager().get_metadata(file_path=abs_path)
-        
-        return None
-
-
-    @_absmethod
-    def _load_metadata_impl(self, file_path: str) -> dict[str, str]:
-        '''
-        Loads any metadata associated with the file, \
-        which can then be accessed via the instance's \
-        ``get_metadata`` method.
-
-        :param str file_path: The absolute path pointing \
-            to the file in question.
-        '''
-        pass
+            metadata = handler.get_file_metadata(file_path)
+            self.set_metadata(file_path, metadata)
 
 
 class AWSS3Dir(_CloudDir):
@@ -2358,7 +1810,9 @@ class AWSS3Dir(_CloudDir):
         for authenticating with AWS.
     :param str bucket: The name of the bucket in which \
         the directory resides.
-    :param str path: The path pointing to the directory.
+    :param str | None path: The path pointing to the directory. \
+        If ``None``, then the whole bucket is considered. \
+        Defaults to ``None``.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
         access. Defaults to ``False``.
@@ -2369,12 +1823,16 @@ class AWSS3Dir(_CloudDir):
 
     :raises InvalidPathError: The provided path \
         does not exist.
+
+    :note: The provided path must not begin with a separator.
+        - Wrong: ``/path/to/dir/``
+        - Right: ``path/to/dir/``
     '''
     def __init__(
         self,
         auth: _AWSAuth,
         bucket: str,
-        path: str,
+        path: _typ.Optional[str] = None,
         cache: bool = False,
         create_if_missing: bool = False
     ):
@@ -2386,7 +1844,9 @@ class AWSS3Dir(_CloudDir):
             for authenticating with AWS.
         :param str bucket: The name of the bucket in which \
             the directory resides.
-        :param str path: The path pointing to the directory.
+        :param str | None path: The path pointing to the directory. \
+            If ``None``, then the whole bucket is considered. \
+            Defaults to ``None``.
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
             access. Defaults to ``True``.
@@ -2397,34 +1857,32 @@ class AWSS3Dir(_CloudDir):
 
         :raises InvalidPathError: The provided path \
             does not exist.
+
+        :note: The provided path must not begin with a separator.
+            - Wrong: ``/path/to/dir/``
+            - Right: ``path/to/dir/``
         '''
-        # Connect to S3 resource.
+        # Validate path.
+        if path is None:
+            path = ''
+        else:
+            sep = _infer_sep(path=path)
+            if path.startswith(sep):
+                raise _IPE(path=path)
+            
+        # Instantiate a connection handler.
         aws_handler = _AWSClientHandler(
             auth=auth,
-            bucket=bucket)
+            bucket=bucket,
+            cache=cache)
 
         super().__init__(
             path=path,
-            cache=cache,
-            handler=aws_handler,
-            ingester=_AWSS3Ingester(handler=aws_handler))
+            handler=aws_handler)
 
-        s3_bucket = aws_handler.get_client()
-
-        # Check if directory exists.
-        dir_exists: bool = False
-
-        for _ in s3_bucket.objects.filter(Prefix=path):
-            dir_exists = True
-            break
-
-        # If it doesn't, either create it
-        # or throw an exception.
-        if not dir_exists:
+        if not aws_handler.dir_exists(path=path):
             if create_if_missing:
-                s3_bucket.put_object(
-                    Key=path,
-                    ContentType='application/x-directory; charset=UTF-8')
+                aws_handler.mkdir(path=path)
             else:
                 self.close()
                 raise _IPE(path)
@@ -2435,7 +1893,7 @@ class AWSS3Dir(_CloudDir):
         Returns the name of the bucket in which \
         the directory resides.
         '''
-        return self._get_client().name
+        return self._get_handler().get_bucket_name()
 
 
     def get_uri(self) -> str:
@@ -2443,146 +1901,78 @@ class AWSS3Dir(_CloudDir):
         Returns the directory's URI.
         '''
         return f"s3://{self.get_bucket_name()}/{self.get_path()}"
+    
 
-
-    def path_exists(self, path: str) -> bool:
+    def get_file(self, file_path: str) -> AWSS3File:
         '''
-        Returns ``True`` if the provided path exists \
-        within the directory, else returns ``False``.
+        Returns the file residing in the specified \
+        path as a ``AWSS3File`` instance.
 
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
+        :param str file_path: Either the absolute path \
+            or the path relative to the directory of the \
+            file in question.
         '''
-        path = _join_paths(
-            self._get_separator(),
-            self.get_path(),
-            self._relativize(path=path))
-        try:
-            self._get_client().Object(path).load()
-        except:
-            return False
-        return True
+        file_path = self._to_absolute(file_path, replace_sep=False)
+        return AWSS3File._create_file(
+            path=file_path,
+            handler=self._get_handler(),
+            metadata=self._get_metadata_ref(file_path))
 
 
-    def _iterate_contents_impl(
+    def traverse_files(
         self,
-        recursively: bool = False,
-        show_abs_path: bool = False
-    ) -> _typ.Iterator[str]:
+        recursively: bool = False
+    ) -> _typ.Iterator[AWSS3File]:
         '''
-        Returns an iterator capable of going through the paths \
-        ofthe dictionary's contents as strings.
+        Returns an iterator capable of going through the \
+        dictionaries files as ``File`` instances.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
             reside directly within the directory or within any of \
             its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Indicates whether it \
-            should be displayed the absolute or the relative \
-            path of the contents. Defaults to ``False``.
 
         :note: The resulting iterator may vary depending on the \
             value of parameter ``recursively``.
         '''
-
-        paginator = self._get_client().meta.client.get_paginator('list_objects')
-
-        delimiter = '' if recursively else '/'
-
-        def page_iterator():
-            yield from paginator.paginate(
-                Bucket=self.get_bucket_name(),
-                Prefix=self.get_path(),
-                Delimiter=delimiter
-            )
-
-        def object_iterator(response):
-            for obj in response.get('Contents', []):
-                file_path = obj['Key']
-                yield file_path if show_abs_path else \
-                    self._relativize(file_path)
-                
-        if recursively:
-            for response in page_iterator():
-                yield from object_iterator(response)
-        else:
-
-            def dir_iterator(response):
-                for dir in response.get('CommonPrefixes', []):
-                    dir_path = dir['Prefix']
-                    yield dir_path if show_abs_path else \
-                        self._relativize(dir_path)
-                    
-            for response in page_iterator():
-                        
-                obj_iter = object_iterator(response)
-                dir_iter = dir_iterator(response)
-
-                obj = next(obj_iter, None)
-                dir = next(dir_iter, None)
-
-                while True:
-                    if obj is None and dir is None:
-                        break
-                    elif obj is None and dir is not None:
-                        yield dir
-                        dir = next(dir_iter, None)
-                    elif obj is not None and dir is None:
-                        yield obj
-                        obj = next(obj_iter, None)
-                    elif obj > dir:
-                        yield dir
-                        dir = next(dir_iter, None)
-                    else:
-                        yield obj
-                        obj = next(obj_iter, None)
+        yield from super().traverse_files(recursively=recursively)
 
 
-    def _get_file_size(self, file_path: str) -> int:
+    def get_files(
+        self,
+        recursively: bool = False,
+        show_abs_path: bool = False
+    ) -> dict[str, AWSS3File]:
         '''
-        Returns the size of the file that corresponds \
-        to the provided path in bytes.
+        Returns a dictionary mapping file paths to ``File`` instances \
+        regarding the files contained within the directory.
 
-        :param str file_path: The absolute path pointing \
-            to the file in question.
+        :param bool recursively: Indicates whether the directory \
+            is to be traversed recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+        :param bool show_abs_path: Determines whether to include the \
+            files' absolute path or their path relative to this directory. \
+            Defaults to ``False``.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
         '''
-        return self._get_client().Object(file_path).content_length
+        return super().get_files(
+            recursively=recursively, show_abs_path=show_abs_path)
+    
 
-
-    def _load_metadata_impl(self, file_path: str) -> dict[str, str]:
+    def __enter__(self) -> 'AWSS3Dir':
         '''
-        Loads any metadata associated with the file, \
-        which can then be accessed via the instance's \
-        ``get_metadata`` method.
-
-        :param str file_path: The absolute path pointing \
-            to the file in question.
+        Enter the runtime context related to this instance.
         '''
-        return self._get_client().Object(key=file_path).metadata
-
-
-    def _is_file(self, path: str) -> bool:
-        '''
-        Returns ``True`` if the provided path \
-        points to a file, else returns ``False``.
-
-        :param str path: Either the absolute path or the \
-            path relative to the directory of the file in \
-            question.
-        '''
-        return not path.endswith('/') and self.path_exists(path)
-
-
-    def __del__(self) -> None:
-        if self._get_client() is not None:
-            msg = "You might want to consider instantiating class `AWSS3Dir``"
-            msg += " through the use of a context manager by utilizing Python's"
-            msg += " ``with`` statement, or by simply invoking an instance's"
-            msg += " ``close`` method after being done using it."
-            _warn.warn(msg, ResourceWarning)
+        return super().__enter__()
 
 
 class AzureBlobDir(_CloudDir):
@@ -2594,7 +1984,9 @@ class AzureBlobDir(_CloudDir):
         for authenticating with Microsoft Azure.
     :param str container: The name of the container in which \
         the directory resides.
-    :param str path: The path pointing to the directory.
+    :param str | None path: The path pointing to the directory. \
+        If ``None``, then the whole container is considered. \
+        Defaults to ``None``.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
         access. Defaults to ``False``.
@@ -2607,12 +1999,16 @@ class AzureBlobDir(_CloudDir):
         does not exist.
     :raises InvalidDirectoryError: The provided path \
         does not point to a directory.
+
+    :note: The provided path must not begin with a separator.
+        - Wrong: ``/path/to/dir/``
+        - Right: ``path/to/dir/``
     '''
     def __init__(
         self,
         auth: _AzureAuth,
         container: str,
-        path: str,
+        path: _typ.Optional[str] = None,
         cache: bool = False,
         create_if_missing: bool = False
     ):
@@ -2624,7 +2020,9 @@ class AzureBlobDir(_CloudDir):
             for authenticating with Microsoft Azure.
         :param str container: The name of the container in which \
             the directory resides.
-        :param str path: The path pointing to the directory.
+        :param str | None path: The path pointing to the directory. \
+            If ``None``, then the whole container is considered. \
+            Defaults to ``None``.
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
             access. Defaults to ``True``.
@@ -2637,44 +2035,45 @@ class AzureBlobDir(_CloudDir):
             does not exist.
         :raises InvalidDirectoryError: The provided path \
             does not point to a directory.
-        '''
-        # Connect to Azure blob container.
+
+        :note: The provided path must not begin with a separator.
+            - Wrong: ``/path/to/dir/``
+            - Right: ``path/to/dir/``
+        '''        
+        # Validate path.
+        if path is None:
+            path = '/'
+        else:
+            sep = _infer_sep(path=path)
+            if path.startswith(sep):
+                raise _IPE(path=path)
+            
+        # Instantiate a connection handler.
         azr_handler = _AzureClientHandler(
             auth=auth,
+            cache=cache,
             container=container)
         
+        # Infer storage account.
         self.__storage_account = auth._get_storage_account()
-
-        # Re-format path.
-        if path == '':
-            path = '/'
 
         super().__init__(
             path=path,
-            cache=cache,
-            handler=azr_handler,
-            ingester=_AzureIngester(handler=azr_handler))
-
-        # Fetch container client.
-        azr_container: _ContainerClient = azr_handler.get_client()
+            handler=azr_handler)
 
         # Throw an exception if container does not exist.
-        if not azr_container.exists():
+        if not azr_handler.container_exists():
             self.close()
             raise _ABCNFE(container)
 
         # Create directory or throw an exception
         # depending on the value of "create_if_missing".
-        with azr_container.get_blob_client(blob=path) as blob:
-            if not blob.exists():
-                if create_if_missing:
-                    dummy_blob = azr_container.get_blob_client(blob=f"{path}DUMMY")
-                    dummy_blob.create_append_blob()
-                    dummy_blob.delete_blob()
-                    dummy_blob.close()
-                else:
-                    self.close()
-                    raise _IPE(path)
+        if not azr_handler.path_exists(path=path):
+            if create_if_missing:
+                azr_handler.mkdir(path=path)
+            else:
+                self.close()
+                raise _IPE(path)
 
 
     def get_container_name(self) -> str:
@@ -2682,7 +2081,7 @@ class AzureBlobDir(_CloudDir):
         Returns the name of the bucket in which \
         the directory resides.
         '''
-        return self._get_client().container_name
+        return self._get_handler().get_container_name()
 
 
     def get_uri(self) -> str:
@@ -2692,117 +2091,75 @@ class AzureBlobDir(_CloudDir):
         uri = f"abfss://{self.get_container_name()}@{self.__storage_account}"
         uri += f".dfs.core.windows.net/{self.get_path()}"
         return uri
+    
 
-
-    def path_exists(self, path: str) -> bool:
+    def get_file(self, file_path: str) -> AzureBlobFile:
         '''
-        Returns ``True`` if the provided path exists \
-        within the directory, else returns ``False``.
+        Returns the file residing in the specified \
+        path as a ``AzureBlobFile`` instance.
 
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
+        :param str file_path: Either the absolute path \
+            or the path relative to the directory of the \
+            file in question.
         '''
-        path = _join_paths(
-            self._get_separator(),
-            self.get_path(),
-            self._relativize(path=path))
-        container: _ContainerClient = self._get_client()
-        with container.get_blob_client(blob=path) as blob:
-            return blob.exists()
-        
+        file_path = self._to_absolute(file_path, replace_sep=False)
+        return AzureBlobFile._create_file(
+            path=file_path,
+            handler=self._get_handler(),
+            metadata=self._get_metadata_ref(file_path))
+    
 
-    def _iterate_contents_impl(
+    def traverse_files(
         self,
-        recursively: bool = False,
-        show_abs_path: bool = False
-    ) -> _typ.Iterator[str]:
+        recursively: bool = False
+    ) -> _typ.Iterator[AzureBlobFile]:
         '''
-        Returns an iterator capable of going through the paths \
-        ofthe dictionary's contents as strings.
+        Returns an iterator capable of going through the \
+        dictionaries files as ``File`` instances.
 
         :param bool recursively: Indicates whether the directory \
-            is to be scanned recursively or not. If set to  ``False``, \
+            is to be traversed recursively or not. If set to  ``False``, \
             then only those files that reside directly within the \
             directory are to be considered. If set to ``True``, \
             then all files are considered, no matter whether they \
             reside directly within the directory or within any of \
             its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Indicates whether it \
-            should be displayed the absolute or the relative \
-            path of the contents. Defaults to ``False``.
 
         :note: The resulting iterator may vary depending on the \
             value of parameter ``recursively``.
         '''
-        client: _ContainerClient = self._get_client()
-
-        if recursively:
-            '''
-            NOTE:
-                Due to certain storage accounts having the
-                hierarchical namespace feature enabled,
-                virtual folders may appear as ordinary
-                blobs. For this reason, consider that any
-                blob whose size is equal to zero is a virtual folder.
-
-                Issue: https://github.com/Azure/azure-sdk-for-python/issues/29026
-            '''
-            iterable = filter(
-                lambda p: p['size'] > 0,
-                client.list_blobs(
-                    name_starts_with=self.get_path()))
-        else:
-            iterable = client.walk_blobs(
-                name_starts_with=self.get_path(),
-                delimiter=self._get_separator())
-                    
-        for properties in iterable:
-            if show_abs_path:
-                yield properties['name']
-            else:
-                yield self._relativize(path=properties['name'])
+        yield from super().traverse_files(recursively=recursively)
 
 
-    def _get_file_size(self, file_path: str) -> int:
+    def get_files(
+        self,
+        recursively: bool = False,
+        show_abs_path: bool = False
+    ) -> dict[str, AzureBlobFile]:
         '''
-        Returns the size of the file that corresponds \
-        to the provided path in bytes.
+        Returns a dictionary mapping file paths to ``File`` instances \
+        regarding the files contained within the directory.
 
-        :param str file_path: The absolute path pointing \
-            to the file in question.
+        :param bool recursively: Indicates whether the directory \
+            is to be traversed recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories. Defaults to ``False``.
+        :param bool show_abs_path: Determines whether to include the \
+            files' absolute path or their path relative to this directory. \
+            Defaults to ``False``.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
         '''
-        return self._get_client().download_blob(blob=file_path).size
-
-
-    def _load_metadata_impl(self, file_path: str) -> dict[str, str]:
+        return super().get_files(
+            recursively=recursively, show_abs_path=show_abs_path)
+    
+    
+    def __enter__(self) -> 'AzureBlobDir':
         '''
-        Loads any metadata associated with the file, \
-        which can then be accessed via the instance's \
-        ``get_metadata`` method.
-
-        :param str file_path: The absolute path pointing \
-            to the file in question.
+        Enter the runtime context related to this instance.
         '''
-        return self._get_client().download_blob(
-            blob=file_path).properties.metadata
-
-
-    def _is_file(self, path: str) -> bool:
-        '''
-        Returns ``True`` if the provided path \
-        points to a file, else returns ``False``.
-
-        :param str path: Either the absolute path or the \
-            path relative to the directory of the file in \
-            question.
-        '''
-        return not path.endswith('/') and self.path_exists(path)
-
-
-    def __del__(self) -> None:
-        if self._get_client() is not None:
-            msg = "You might want to consider instantiating class ``AzureBlobDir``"
-            msg += " through the use of a context manager by utilizing Python's"
-            msg += " ``with`` statement, or by simply invoking an instance's"
-            msg += " ``close`` method after being done using it."
-            _warn.warn(msg, ResourceWarning)
+        return super().__enter__()

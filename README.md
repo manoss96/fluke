@@ -72,6 +72,6 @@ You can learn more about Fluke by visiting the [Fluke Documentation Page][docs-u
 [python-url]: https://www.python.org/downloads/release/python-390/
 [license-shield]: https://img.shields.io/badge/license-MIT-red
 [license-url]: https://github.com/manoss96/fluke/blob/main/LICENSE
-[coverage-shield]: https://coveralls.io/repos/github/manoss96/fluke/badge.svg?branch=develop&service=github
+[coverage-shield]: https://coveralls.io/repos/github/manoss96/fluke/badge.svg?branch=main&service=github
 [coverage-url]: https://coveralls.io/github/manoss96/fluke?branch=main
 [docs-url]: https://fluke.readthedocs.io/en/latest/

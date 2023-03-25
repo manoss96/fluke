@@ -6,7 +6,7 @@ on:
       - main
       - develop
   pull_request:
-    braches:
+    branches:
       - '**'
 
 jobs:
@@ -25,27 +25,21 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Set PYTHONPATH
-        run: |
-          echo "PYTHONPATH=${GITHUB_WORKSPACE}" >> $GITHUB_ENV
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install .
           python -m pip install .[tests]
 
       - name: Run tests
         run: |
-          cd tests
-          python -m coverage run -m unittest
+          python -m coverage run --rcfile=tests/.coveragerc -m unittest discover tests
           python -m coverage lcov
 
       - name: Python ${{ matrix.python-version }} Coveralls
         uses: coverallsapp/github-action@master
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          path-to-lcov: tests/coverage.lcov
+          path-to-lcov: coverage.lcov
           flag-name: python-${{ matrix.python-version }}-run
           parallel: true
 

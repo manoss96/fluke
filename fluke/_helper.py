@@ -22,6 +22,18 @@ def join_paths(sep: str, *paths: str) -> str:
     return path
 
 
+def relativize_path(parent: str, child: str, sep: str) -> str:
+    '''
+    Modifies the child path so that it is \
+    relative to the parent path.
+
+    :param str parent: The parent path.
+    :param str child: The child path.
+    :param str sep: The path separator used.
+    '''
+    return child.removeprefix(parent).lstrip(sep)
+
+
 def infer_separator(path: str) -> str:
     '''
     Infers the separator from the provided path \
