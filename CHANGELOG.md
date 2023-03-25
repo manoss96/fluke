@@ -7,15 +7,11 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - *File* API now provides a *read* method
-  in order to read a file's bytes. Added
-  corresponding tests. (https://github.com/manoss96/fluke/issues/11)
+  in order to read a file's bytes. (https://github.com/manoss96/fluke/issues/11)
 
 - *Dir* API now provides an *is_file* method
   used for determining whether the specified
   path points to a file or not. (https://github.com/manoss96/fluke/issues/16)
-
-- *fluke.storage.AWSS3File* now has a *get_bucket_name* method.
-  (https://github.com/manoss96/fluke/issues/16)
 
 - *Dir* API now provides a set of methods in order to gain
   access to the directory's files via the *File* API. These
@@ -27,6 +23,9 @@ All notable changes to this project will be documented in this file.
   All files spawned by a dictionary share the same metadata dictionaries
   with the directory that spawned them. In the case of remote files, they
   also share the same client and cache. (https://github.com/manoss96/fluke/issues/16)
+
+- *fluke.storage.AWSS3File* now has a *get_bucket_name* method.
+  (https://github.com/manoss96/fluke/issues/16)
    
 ### Changed
 
@@ -50,7 +49,7 @@ All notable changes to this project will be documented in this file.
 - Bug in *test_storage.MockSFTPClient.getfo*. (https://github.com/manoss96/fluke/issues/11)
 
 - Explicitly sort the results of ``os.listdir`` and ``os.walk``
-  due to inconsistent order.
+  due to inconsistent order. (https://github.com/manoss96/fluke/issues/12)
 
 - Bug where the recursive cache was considered empty if the directory
   contained no sub-directories (https://github.com/manoss96/fluke/issues/16)
