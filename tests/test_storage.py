@@ -325,7 +325,11 @@ class MockContainerClient():
             self.metadata = metadata
 
         @simulate_latency    
-        def download_blob(self, offset: int, length: int):
+        def download_blob(
+            self,
+            offset: Optional[int] = None,
+            length: Optional[int] = None
+        ):
             file_path = to_abs(self.blob_name)
             return MockContainerClient.MockStreamStorageDownloader(
                 name=file_path,
@@ -518,6 +522,13 @@ class TestLocalFile(unittest.TestCase):
         file = self.build_file()
         self.assertEqual(file.read(), b"TEXT")
 
+    def test_read_in_chunks(self):
+        file = self.build_file()
+        data, chunk_size = b"TEXT", 1
+        with io.BytesIO(data) as buffer:
+            for chunk in file.read_in_chunks(chunk_size):
+                self.assertEqual(chunk, buffer.read(chunk_size))
+
     def test_transfer_to(self):
         file = self.build_file()
         dir = TestLocalDir.build_dir(path=ABS_DIR_PATH)
@@ -565,7 +576,7 @@ class TestLocalFile(unittest.TestCase):
         file.transfer_to(dst=dir)
         # Ensure OverwriteError is raised when trying
         # to copy file a second time.
-        self.assertRaises(OverwriteError, file.transfer_to, dst=dir)
+        self.assertFalse(file.transfer_to(dst=dir))
         
         # Remove copy of the file.
         copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
@@ -639,6 +650,15 @@ class TestRemoteFile(unittest.TestCase):
         with self.build_file() as file:
             self.assertEqual(file.read(), b"TEXT")
 
+    def test_read_in_chunks(self):
+        data, chunk_size = b"TEXT", 1
+        with (
+            self.build_file() as file,
+            io.BytesIO(data) as buffer
+        ):
+            for chunk in file.read_in_chunks(chunk_size):
+                self.assertEqual(chunk, buffer.read(chunk_size))
+
     def test_transfer_to(self):
         with self.build_file() as file:
             # Copy file into dir.
@@ -677,7 +697,7 @@ class TestRemoteFile(unittest.TestCase):
             file.transfer_to(dst=dir)
             # Ensure OverwriteError is raised when trying
             # to copy file a second time.
-            self.assertRaises(OverwriteError, file.transfer_to, dst=dir)
+            self.assertFalse(file.transfer_to(dst=dir))
             # Remove copy of the file.
             copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
             os.remove(copy_path)
@@ -910,6 +930,15 @@ class TestAWSS3File(unittest.TestCase):
         with self.build_file() as file:
             self.assertEqual(file.read(), b"TEXT")
 
+    def test_read_in_chunks(self):
+        data, chunk_size = b"TEXT", 1
+        with (
+            self.build_file() as file,
+            io.BytesIO(data) as buffer
+        ):
+            for chunk in file.read_in_chunks(chunk_size):
+                self.assertEqual(chunk, buffer.read(chunk_size))
+
     def test_transfer_to(self):
         with self.build_file() as file:
             # Copy file into dir.
@@ -947,7 +976,7 @@ class TestAWSS3File(unittest.TestCase):
             file.transfer_to(dst=dir)
             # Ensure OverwriteError is raised when trying
             # to copy file a second time.
-            self.assertRaises(OverwriteError, file.transfer_to, dst=dir)
+            self.assertFalse(file.transfer_to(dst=dir))
             # Remove copy of the file.
             copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
             os.remove(copy_path)
@@ -1164,10 +1193,18 @@ class TestAzureBlobFile(unittest.TestCase):
         with self.build_file() as file:
             self.assertEqual(file.get_size(), 4)
 
-
     def test_read(self):
         with self.build_file() as file:
             self.assertEqual(file.read(), b"TEXT")
+
+    def test_read_in_chunks(self):
+        data, chunk_size = b"TEXT", 1
+        with (
+            self.build_file() as file,
+            io.BytesIO(data) as buffer
+        ):
+            for chunk in file.read_in_chunks(chunk_size):
+                self.assertEqual(chunk, buffer.read(chunk_size))
 
     def test_transfer_to(self):
         with self.build_file() as file:
@@ -1206,7 +1243,7 @@ class TestAzureBlobFile(unittest.TestCase):
             file.transfer_to(dst=dir)
             # Ensure OverwriteError is raised when trying
             # to copy file a second time.
-            self.assertRaises(OverwriteError, file.transfer_to, dst=dir)
+            self.assertFalse(file.transfer_to(dst=dir))
             # Remove copy of the file.
             copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
             os.remove(copy_path)

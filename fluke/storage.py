@@ -148,12 +148,8 @@ class _File(_ABC):
         '''
         Reads and returns the file's contents in bytes.
         '''
-        with _io.BytesIO() as buffer:
-            self._get_handler().read(
-                file_path=self.get_path(),
-                buffer=buffer,
-                include_metadata=False)
-            return buffer.getvalue()
+        with self.__handler.get_reader(self.get_path()) as reader:
+            return reader.read()
         
 
     def read_in_chunks(self, chunk_size: int = 8192) -> _typ.Iterator[bytes]:
@@ -165,7 +161,7 @@ class _File(_ABC):
             Defaults to ``8192``.
         '''
         with self.__handler.get_reader(file_path=self.get_path()) as reader:
-            while chunk := reader.read_chunk(chunk_size):
+            while chunk := reader.read(chunk_size):
                 yield chunk
 
 
@@ -1223,11 +1219,15 @@ class _Directory(_ABC):
                 print(f"Total Progress: {i+1}/{total_num_files} files.")
 
         if failures == 0:
-            print(f'\nOperation successful: Copied all {total_num_files} files!')
+            if not suppress_output:
+                print(f'\nOperation successful: Copied all {total_num_files} files!')
+            return True
         else:
-            msg = "\nOperation unsuccessful: Failed to copy "
-            msg += f"{failures} out of {total_num_files} files."
-            print(msg)
+            if not suppress_output:
+                msg = "\nOperation unsuccessful: Failed to copy "
+                msg += f"{failures} out of {total_num_files} files."
+                print(msg)
+            return False
     
 
     def traverse_files(

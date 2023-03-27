@@ -116,7 +116,6 @@ class _FileReader(_IOHandler, _ABC):
             equal to this value. Defaults to ``None``.
         '''
         chunk = self._read_impl(chunk_size)
-        print(self.get_offset())
         self.update_offset(len(chunk))
         return chunk
 
@@ -592,10 +591,9 @@ class AzureBlobReader(_FileReader):
         '''
         if chunk_size is None:
             return self.__file.download_blob().read()
-        offset = self.get_offset()
         return self.__file.download_blob(
-            offset=offset,
-            length=offset + chunk_size).read()
+            offset=self.get_offset(),
+            length=chunk_size).read()
         
 
 class AzureBlobWriter(_FileWriter):
