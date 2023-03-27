@@ -192,6 +192,29 @@ Helper Mock Classes
 '''
 class MockSFTPClient():
 
+    class MockSFTPFile():
+
+        def __init__(self, filename: str, mode: str) -> None:
+            self.__file = open(file=filename, mode=mode)
+
+        def seek(self, offset: int) -> None:
+            self.__file.seek(offset)
+
+        def read(self, size: Optional[int] = None) -> None:
+            if size is None:
+                return self.__file.read()
+            return self.__file.read(size)
+        
+        def write(self, chunk: bytes) -> None:
+            self.__file.write(chunk)
+        
+        def flush(self) -> None:
+            self.__file.flush()
+
+        def close(self):
+            self.__file.close()
+            
+
     @staticmethod
     def get_mock_methods() -> dict[str, Mock]:
         '''
@@ -228,15 +251,8 @@ class MockSFTPClient():
         return [self.stat(join_paths(path, f)) for f in sorted(os.listdir(path=path))]
     
     @simulate_latency
-    def getfo(self, remotepath, fl, callback=None, prefetch=True):
-        with open(remotepath, "rb") as fr:
-            fl.write(fr.read())
-            return fr.tell()
-        
-    @simulate_latency
-    def putfo(self, fl, remotepath, file_size=0, callback=None, confirm=True):
-        with open(remotepath, "wb") as fr:
-            fr.write(fl.read())
+    def open(self, filename: str, mode: str) -> MockSFTPFile:
+        return MockSFTPClient.MockSFTPFile(filename, mode)
 
     @simulate_latency
     def close(self):
@@ -261,23 +277,36 @@ class MockContainerClient():
 
     class MockStreamStorageDownloader():
 
-        def __init__(self, name: str, metadata: dict[str, str], size: int):
+        def __init__(
+            self, name: str,
+            metadata: dict[str, str],
+            size: int,
+            offset: Optional[int] = None,
+            length: Optional[int] = None
+        ):
             self.name = name
             self.size = size
             self.properties = MockContainerClient.MockBlobProperties(
                 name=name,
                 metadata=metadata,
                 size=size)
+            self.offset = offset
+            self.length = length
 
         @simulate_latency
-        def readinto(self, stream: io.BytesIO):
+        def read(self):
             with open(file=self.name, mode="rb") as file:
-                stream.write(file.read())
+                if self.offset is not None:
+                    file.seek(self.offset)
+                if self.length is None:
+                    return file.read()
+                return file.read(self.length)
 
     class MockBlobClient():
 
         def __init__(self, blob_name: str):
             self.blob_name: str = blob_name
+            self.metadata = {}
 
         @simulate_latency
         def exists(self) -> bool:
@@ -291,6 +320,35 @@ class MockContainerClient():
                 io.BytesIO() as empty_buffer
             ):
                 file.write(empty_buffer.read())
+
+        def set_blob_metadata(self, metadata: dict[str, str]) -> None:
+            self.metadata = metadata
+
+        @simulate_latency    
+        def download_blob(self, offset: int, length: int):
+            file_path = to_abs(self.blob_name)
+            return MockContainerClient.MockStreamStorageDownloader(
+                name=file_path,
+                metadata=self.metadata,
+                size=os.stat(file_path).st_size,
+                offset=offset,
+                length=length)
+        
+        @simulate_latency   
+        def upload_blob(
+            self,
+            data: bytes,
+            length: int,
+            overwrite: bool
+        ):
+            name = self.blob_name
+            # Raise error if file exists and overwrite
+            # has not been set to True.
+            if os.path.exists(name) and not overwrite:
+                raise OverwriteError(file_path=name)
+            # Write contents to file.
+            with open(file=name, mode="wb") as file:
+                file.write(data)
 
         @simulate_latency
         def delete_blob(self):
@@ -391,7 +449,6 @@ class MockContainerClient():
         else:
             raise ValueError()
                 
-
     @simulate_latency    
     def download_blob(self, blob: str):
         file_path = to_abs(blob)
@@ -399,24 +456,6 @@ class MockContainerClient():
             name=blob,
             metadata=self.metadata[blob],
             size=os.stat(file_path).st_size)
-    
-    @simulate_latency   
-    def upload_blob(
-        self,
-        name: str,
-        data: io.BytesIO,
-        metadata: Optional[dict[str, str]],
-        overwrite: bool
-    ):
-        # Raise error if file exists and overwrite
-        # has not been set to True.
-        if os.path.exists(name) and not overwrite:
-            raise OverwriteError(file_path=name)
-        # Update metadata.
-        self.metadata.update({name: metadata})
-        # Write contents to file.
-        with open(file=name, mode="wb") as file:
-            file.write(data.read())
 
     @simulate_latency
     def close(self):
@@ -488,7 +527,32 @@ class TestLocalFile(unittest.TestCase):
         
         # Confirm that file was indeed copied.
         copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
-        self.assertTrue(os.path.exists(copy_path))
+
+        with (
+            open(ABS_FILE_PATH, mode='rb') as file,
+            open(copy_path, mode='rb') as copy
+        ):
+            self.assertEqual(file.read(), copy.read())
+
+        # Remove copy of the file.
+        os.remove(copy_path)
+
+
+    def test_transfer_to_on_chunk_size(self):
+        file = self.build_file()
+        dir = TestLocalDir.build_dir(path=ABS_DIR_PATH)
+
+        # Copy file into dir.
+        file.transfer_to(dst=dir, chunk_size=1)
+        
+        # Confirm that file was indeed copied.
+        copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
+
+        with (
+            open(ABS_FILE_PATH, mode='rb') as file,
+            open(copy_path, mode='rb') as copy
+        ):
+            self.assertEqual(file.read(), copy.read())
 
         # Remove copy of the file.
         os.remove(copy_path)
@@ -581,9 +645,30 @@ class TestRemoteFile(unittest.TestCase):
             file.transfer_to(dst=TestLocalDir.build_dir(path=ABS_DIR_PATH))
             # Confirm that file was indeed copied.
             copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
-            self.assertTrue(os.path.exists(copy_path))
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
             # Remove copy of the file.
             os.remove(copy_path)
+
+    def test_transfer_to_on_chunk_size(self):
+        with self.build_file() as file:
+            # Copy file into dir.
+            file.transfer_to(
+                dst=TestLocalDir.build_dir(path=ABS_DIR_PATH),
+                chunk_size=1)
+            # Confirm that file was indeed copied.
+            copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
+            # Remove copy of the file.
+            os.remove(copy_path)
+
 
     def test_transfer_to_on_overwrite_error(self):
         with self.build_file() as file:
@@ -831,7 +916,27 @@ class TestAWSS3File(unittest.TestCase):
             file.transfer_to(dst=TestLocalDir.build_dir(path=ABS_DIR_PATH))
             # Confirm that file was indeed copied.
             copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
-            self.assertTrue(os.path.exists(copy_path))
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
+            # Remove copy of the file.
+            os.remove(copy_path)
+
+    def test_transfer_to_on_chunk_size(self):
+        with self.build_file() as file:
+            # Copy file into dir.
+            file.transfer_to(
+                dst=TestLocalDir.build_dir(path=ABS_DIR_PATH),
+                chunk_size=1)
+            # Confirm that file was indeed copied.
+            copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
             # Remove copy of the file.
             os.remove(copy_path)
 
@@ -1070,7 +1175,27 @@ class TestAzureBlobFile(unittest.TestCase):
             file.transfer_to(dst=TestLocalDir.build_dir(path=ABS_DIR_PATH))
             # Confirm that file was indeed copied.
             copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
-            self.assertTrue(os.path.exists(copy_path))
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
+            # Remove copy of the file.
+            os.remove(copy_path)
+
+    def test_transfer_to_on_chunk_size(self):
+        with self.build_file() as file:
+            # Copy file into dir.
+            file.transfer_to(
+                dst=TestLocalDir.build_dir(path=ABS_DIR_PATH),
+                chunk_size=1)
+            # Confirm that file was indeed copied.
+            copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
             # Remove copy of the file.
             os.remove(copy_path)
 
@@ -1540,7 +1665,7 @@ class TestLocalDir(unittest.TestCase):
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_cloud_dir_include_metadata_set_to_true(self):
+    def test_transfer_to_on_aws_cloud_dir_include_metadata_set_to_true(self):
         # Set metadata for a directory's file.
         with mock_s3() as mocks3:
             # Create AWSS3 bucket.
@@ -1954,7 +2079,7 @@ class TestRemoteDir(unittest.TestCase):
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_cloud_dir_include_metadata_set_to_true(self):
+    def test_transfer_to_on_aws_cloud_dir_include_metadata_set_to_true(self):
         # Set metadata for a directory's file.
         with mock_s3() as mocks3:
             # Create AWSS3 bucket.

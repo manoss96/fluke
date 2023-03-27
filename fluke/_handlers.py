@@ -2,10 +2,7 @@ import os as _os
 import io as _io
 from abc import ABC as _ABC
 from abc import abstractmethod as _absmethod
-from shutil import copyfileobj as _copyfileobj
 from typing import Any as _Any
-from typing import Union as _Union
-from typing import Optional as _Optional
 from typing import Iterator as _Iterator
 
 
@@ -19,6 +16,16 @@ from .auth import AWSAuth as _AWSAuth
 from .auth import AzureAuth as _AzureAuth
 from .auth import RemoteAuth as _RemoteAuth
 from ._cache import CacheManager as _CacheManager
+from ._iohandlers import _FileReader
+from ._iohandlers import _FileWriter
+from ._iohandlers import LocalFileReader as _LocalFileReader
+from ._iohandlers import LocalFileWriter as _LocalFileWriter
+from ._iohandlers import RemoteFileReader as _RemoteFileReader
+from ._iohandlers import RemoteFileWriter as _RemoteFileWriter
+from ._iohandlers import AWSS3FileReader as _AWSS3FileReader
+from ._iohandlers import AWSS3FileWriter as _AWSS3FileWriter
+from ._iohandlers import AzureBlobReader as _AzureBlobReader
+from ._iohandlers import AzureBlobWriter as _AzureBlobWriter
 from ._exceptions import UnknownKeyTypeError as _UKTE
 from ._helper import join_paths as _join_paths
 from ._helper import infer_separator as _infer_sep
@@ -34,97 +41,6 @@ class ClientHandler(_ABC):
         any fetched data to be cached for faster subsequent \
         access. Defaults to ``False``.
     '''
-
-
-    class _IOHandler(_ABC):
-        '''
-        An abstract class which serves as the \
-        base class for all Reader/Writer classes.
-        '''
-        
-        @_absmethod
-        def get_mode(self) -> str:
-            '''
-            Returns the file handler's mode.
-            '''
-            pass
-
-
-        @_absmethod
-        def close(self) -> None:
-            '''
-            Closes the handler's underlying file.
-            '''
-            pass
-
-
-        def __exit__(self, exc_type, exc_value, traceback) -> None:
-            '''
-            Exit the runtime context related to this object. 
-            '''
-            self.close()
-
-
-    class _FileReader(_IOHandler, _ABC):
-        '''
-        An abstract class which serves as the \
-        base class for all Reader classes.
-        '''
-
-        def get_mode(self) -> str:
-            '''
-            Returns the file handler's mode.
-            '''
-            return 'rb'
-        
-
-        def __enter__(self) -> 'ClientHandler._FileReader':
-            '''
-            Enter the runtime context related to this instance.
-            '''
-            return self
-
-
-        @_absmethod
-        def read_chunk(self, chunk_size: int) -> bytes:
-            '''
-            Reads a chunk from the opened file and returns it.
-
-            :param int chunk_size: The chunk's size in bytes.
-            '''
-            pass
-
-
-    class _FileWriter(_IOHandler, _ABC):
-        '''
-        An abstract class which serves as the \
-        base class for all Writer classes.
-        '''
-
-        def get_mode(self) -> str:
-            '''
-            Returns the file handler's mode.
-            '''
-            return 'wb'
-        
-
-        def __enter__(self) -> 'ClientHandler._FileWriter':
-            '''
-            Enter the runtime context related to this instance.
-            '''
-            return self
-
-
-        @_absmethod
-        def write_chunk(self, chunk: bytes) -> int:
-            '''
-            Writes the provided chunk to the opened file,
-            and returns the number of bytes written.
-
-            :param bytes chunk: The chunk of bytes that is \
-                to be written to the file.
-            '''
-            pass
 
 
     def __init__(self, cache: bool):
@@ -360,8 +276,8 @@ class ClientHandler(_ABC):
     @_absmethod
     def get_reader(self, file_path: str) -> '_FileReader':
         '''
-        Returns a ``_FileReader`` instance used for \
-        reading from a file.
+        Returns a ``_FileReader`` class instance \
+        used for reading from a file.
 
         :param str file_path: The absolute path of \
             the file in question.
@@ -372,8 +288,8 @@ class ClientHandler(_ABC):
     @_absmethod
     def get_writer(self, file_path: str) -> '_FileWriter':
         '''
-        Returns an ``_FileWriter`` instance used for \
-        writing to a file.
+        Returns an ``_FileWriter`` class instance \
+        used for writing to a file.
 
         :param str file_path: The absolute path of \
             the file in question.
@@ -382,52 +298,7 @@ class ClientHandler(_ABC):
 
 
     @_absmethod
-    def read(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        include_metadata: bool
-    ) -> _Optional[dict[str, str]]:
-        '''
-        Reads the bytes of a file into the provided buffer. \
-        Returns either ``None`` or a dictionary containing \
-        file metadata, depending on the value of parameter \
-        ``include_metadata``.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer to download the \
-            file into.
-        :param bool include_metadata: Indicates whether \
-            to download any existing file metadata as well.
-        '''
-        pass
-
-
-    @_absmethod
-    def write(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        metadata: _Optional[dict[str, str]]
-    ) -> None:
-        '''
-        Writes the bytes contained within the provided \
-        buffer into the specified path.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer containing the \
-            file's bytes.
-        :param dict[str, str] | None: If not ``None``, \
-            then assigns the provided metadata to the file \
-            during the upload.
-        '''
-        pass
-
-
-    @_absmethod
-    def assign_metadata(
+    def set_file_metadata(
         self,
         file_path: str,
         metadata: dict[str, str]
@@ -504,101 +375,6 @@ class FileSystemHandler(ClientHandler):
         the file in question.
     '''
 
-    class LocalFileReader(ClientHandler._FileReader):
-        '''
-        A class used in reading from files which \
-        reside within the local file system.
-
-        :param str file_path: The absolute path of \
-            the file in question.
-        '''
-
-        def __init__(self, file_path: str) -> None:
-            '''
-            A class used in reading from files which \
-            reside within the local file system.
-
-            :param str file_path: The absolute path of \
-                the file in question.
-            '''
-            self.__file = open(file=file_path, mode=self.get_mode())
-
-
-        def close(self) -> None:
-            '''
-            Closes the handler's underlying file.
-            '''
-            self.__file.close()
-
-
-        def read(self) -> bytes:
-            '''
-            Reads the opened file and returns it.
-            '''
-            return self.__file.read()
-
-
-        def read_chunk(self, chunk_size: int) -> bytes:
-            '''
-            Reads a chunk from the opened file and returns it.
-
-            :param int chunk_size: The chunk's size in bytes.
-            '''
-            return self.__file.read(chunk_size)
-
-
-    class LocalFileWriter(ClientHandler._FileWriter):
-        '''
-        A class used in writing to files which \
-        reside within the local file system.
-
-        :param str file_path: The absolute path of \
-            the file in question.
-        '''
-
-        def __init__(self, file_path: str) -> None:
-            '''
-            A class used in writing to files which \
-            reside within the local file system.
-
-            :param str file_path: The absolute path of \
-                the file in question.
-            '''
-            # Create necessary directories if they do not exist.
-            _os.makedirs(name=_os.path.dirname(file_path), exist_ok=True)
-            # Open file for writing.
-            self.__file = open(file=file_path, mode=self.get_mode())
-
-
-        def close(self) -> None:
-            '''
-            Closes the handler's underlying file.
-            '''
-            self.__file.close()
-
-
-        def write(self, buffer: _io.BytesIO) -> int:
-            '''
-            Writes to the opened file and returns \
-            the number of bytes written.
-
-            :param bytes chunk: The chunk of bytes that \
-                is to be written to the file.
-            '''
-            return self.__file.write(buffer)
-
-
-        def write_chunk(self, chunk: bytes) -> int:
-            '''
-            Writes the provided chunk to the opened file,
-            and returns the number of bytes written.
-
-            :param bytes chunk: The chunk of bytes that \
-                is to be written to the file.
-            '''
-            return self.__file.write(chunk)
-    
-
     def __init__(self):
         '''
         A class used in handling all local file \
@@ -662,77 +438,31 @@ class FileSystemHandler(ClientHandler):
         _os.makedirs(path, exist_ok=True)
 
 
-    def get_reader(self, file_path: str) -> 'LocalFileReader':
+    def get_reader(self, file_path: str) -> _LocalFileReader:
         '''
-        Returns a ``LocalFileReader`` instance used for \
-        reading from a local file.
+        Returns a ``LocalFileReader`` class instance \
+        used for reading from a file which resides \
+        within the local file system.
 
         :param str file_path: The absolute path of \
             the file in question.
         '''
-        return __class__.LocalFileReader(file_path=file_path)
+        return _LocalFileReader(file_path=file_path)
 
 
-    def get_writer(self, file_path: str) -> 'LocalFileWriter':
+    def get_writer(self, file_path: str) -> _LocalFileWriter:
         '''
-        Returns an ``LocalFileWriter`` instance used for \
-        writing to a local file.
+        Returns an ``LocalFileWriter`` class instance \
+        used for writing to a file which resides within \
+        the local file system.
 
         :param str file_path: The absolute path of \
             the file in question.
         '''
-        return __class__.LocalFileWriter(file_path=file_path)
+        return _LocalFileWriter(file_path=file_path)
     
 
-    def read(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        include_metadata: bool
-    ) -> _Optional[dict[str, str]]:
-        '''
-        Reads the bytes of a file into the provided buffer. \
-        Returns either ``None`` or a dictionary containing \
-        file metadata, depending on the value of parameter \
-        ``include_metadata``.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer to download the \
-            file into.
-        :param bool include_metadata: Indicates whether \
-            to download any existing file metadata as well.
-        '''
-        with open(file=file_path, mode='rb') as file:
-            _copyfileobj(fsrc=file, fdst=buffer)
-
-
-    def write(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        metadata: _Optional[dict[str, str]]
-    ) -> None:
-        '''
-        Writes the bytes contained within the provided \
-        buffer into the specified path.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer containing the \
-            file's bytes.
-        :param dict[str, str] | None: If not ``None``, \
-            then assigns the provided metadata to the file \
-            during the upload.
-        '''
-        # Create any necessary directories.
-        self.mkdir(_os.path.dirname(file_path))
-        # Write file.
-        with open(file=file_path, mode='wb') as file:
-            _copyfileobj(fsrc=buffer, fdst=file)
-
-
-    def assign_metadata(
+    def set_file_metadata(
         self,
         file_path: str,
         metadata: dict[str, str]
@@ -820,138 +550,7 @@ class SSHClientHandler(ClientHandler):
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
         access. Defaults to ``False``.
-    '''
-
-    class RemoteFileReader(ClientHandler._FileReader):
-        '''
-        A class used in reading from files which \
-        reside within a remote file system.
-
-        :param str file_path: The absolute path of \
-            the file in question.
-        :param SFTPClient sftp: An ``SFTPClient`` \
-            class instance.
-        '''
-
-        def __init__(self, file_path: str, sftp: _prmk.SFTPClient) -> None:
-            '''
-            A class used in reading from files which \
-            reside within a remote file system.
-
-            :param str file_path: The absolute path of \
-                the file in question.
-            :param SFTPClient sftp: An ``SFTPClient`` \
-                class instance.
-            '''
-            self.__file: _prmk.SFTPFile = sftp.open(
-                filename=file_path, mode=self.get_mode())
-
-
-        def close(self) -> None:
-            '''
-            Closes the handler's underlying file.
-            '''
-            self.__file.close()
-
-
-        def read(self) -> bytes:
-            '''
-            Reads the opened file and returns it.
-            '''
-            return self.__file.read()
-
-
-        def read_chunk(self, chunk_size: int) -> bytes:
-            '''
-            Reads a chunk from the opened file and returns it.
-
-            :param int chunk_size: The chunk's size in bytes.
-            '''
-            return self.__file.read(chunk_size)
-
-
-    class RemoteFileWriter(ClientHandler._FileWriter):
-        '''
-        A class used in writing to files which \
-        reside within a remote file system.
-
-        :param str file_path: The absolute path of \
-            the file in question.
-        :param SFTPClient sftp: An ``SFTPClient`` \
-            class instance.
-        '''
-
-        def __init__(self, file_path: str, sftp: _prmk.SFTPClient) -> None:
-            '''
-            A class used in writing to files which \
-            reside within a remote file system.
-
-            :param str file_path: The absolute path of \
-                the file in question.
-            :param SFTPClient sftp: An ``SFTPClient`` \
-                class instance.
-            '''
-            sep = _infer_sep(file_path)
-
-            def get_parent_dir(file_path: str) -> _Optional[str]:
-                '''
-                Returns the path to the parent directory \
-                of the provided file path. Returns ``None`` \
-                if said directory is the root directory.
-
-                :param str file_path: The path of the file \
-                    in question.
-                '''
-                file_path = file_path.rstrip(sep)
-                if sep in file_path:
-                    return f"{sep.join(file_path.split(sep)[:-1])}{sep}"
-                return None
-
-            # Create any directories necessary.
-            parent_dir, non_existing_dirs = file_path, []
-            while (parent_dir := get_parent_dir(parent_dir)) is not None:
-                try:
-                    self.__sftp.stat(path=parent_dir)
-                except FileNotFoundError:
-                    non_existing_dirs.append(parent_dir)
-            for dir in reversed(non_existing_dirs):
-                sftp.mkdir(path=dir)
-
-            
-            self.__file: _prmk.SFTPFile = sftp.open(
-                filename=file_path, mode=self.get_mode())
-            
-
-        def close(self) -> None:
-            '''
-            Closes the handler's underlying file.
-            '''
-            self.__file.close()
-
-
-        def write(self, buffer: _io.BytesIO) -> int:
-            '''
-            Writes to the opened file and returns \
-            the number of bytes written.
-
-            :param bytes chunk: The chunk of bytes that \
-                is to be written to the file.
-            '''
-            return self.__file.write(buffer)
-
-
-        def write_chunk(self, chunk: bytes) -> int:
-            '''
-            Writes the provided chunk to the opened file,
-            and returns the number of bytes written.
-
-            :param bytes chunk: The chunk of bytes that \
-                is to be written to the file.
-            '''
-            self.__file.write(chunk)
-            self.__file.flush()
-            return len(chunk)
-        
+    '''        
 
     def __init__(self, auth: _RemoteAuth, cache: bool):
         '''
@@ -1093,77 +692,31 @@ class SSHClientHandler(ClientHandler):
         self.__sftp.mkdir(path=path)
 
 
-    def get_reader(self, file_path: str) -> 'RemoteFileReader':
+    def get_reader(self, file_path: str) -> _RemoteFileReader:
         '''
-        Returns a ``RemoteFileReader`` instance used for \
-        reading from a remote file.
+        Returns a ``RemoteFileReader`` class instance \
+        used for reading from a file which resides \
+        within a remote file system.
 
         :param str file_path: The absolute path of \
             the file in question.
         '''
-        return SSHClientHandler.RemoteFileReader(
-            file_path=file_path, sftp=self.__sftp)
+        return _RemoteFileReader(file_path=file_path, sftp=self.__sftp)
 
 
-    def get_writer(self, file_path: str) -> 'RemoteFileWriter':
+    def get_writer(self, file_path: str) -> _RemoteFileWriter:
         '''
-        Returns a ``RemoteFileWriter`` instance used for \
-        writing to a remote file.
+        Returns a ``RemoteFileWriter`` class instance \
+        used for writing to a file which resides within \
+        a remote file system.
 
         :param str file_path: The absolute path of \
             the file in question.
         '''
-        return SSHClientHandler.RemoteFileWriter(
-            file_path=file_path, sftp=self.__sftp)
-    
-
-    def read(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        include_metadata: bool
-    ) -> _Optional[dict[str, str]]:
-        '''
-        Reads the bytes of a file into the provided buffer. \
-        Returns either ``None`` or a dictionary containing \
-        file metadata, depending on the value of parameter \
-        ``include_metadata``.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer to download the \
-            file into.
-        :param bool include_metadata: Indicates whether \
-            to download any existing file metadata as well.
-        '''
-        self.__sftp.getfo(remotepath=file_path, fl=buffer)
+        return _RemoteFileWriter(file_path=file_path, sftp=self.__sftp)
 
 
-    def write(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        metadata: _Optional[dict[str, str]]
-    ) -> None:
-        '''
-        Writes the bytes contained within the provided \
-        buffer into the specified path.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer containing the \
-            file's bytes.
-        :param dict[str, str] | None: If not ``None``, \
-            then assigns the provided metadata to the file \
-            during the upload.
-        '''
-        # Create all required parent dirs.
-        self._mkdirs(file_path=file_path)
-        # Write file from buffer.
-        self.__sftp.putfo(fl=buffer, remotepath=file_path)
-
-
-    def assign_metadata(
+    def set_file_metadata(
         self,
         file_path: str,
         metadata: dict[str, str]
@@ -1270,41 +823,6 @@ class SSHClientHandler(ClientHandler):
                     path += sep
                 yield _join_paths(sep, dir_path, path) \
                     if show_abs_path else path
-                
-
-    def _mkdirs(self, file_path: str):
-        '''
-        This method is to be called before writing \
-        to a remote file, as it ensures that all \
-        required parent directories are created.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        '''
-
-        sep = _infer_sep(file_path)
-
-        def get_parent_dir(file_path: str) -> _Optional[str]:
-            '''
-            Returns the path to the parent directory \
-            of the provided file path. Returns ``None`` \
-            if said directory is the root directory.
-
-            :param str file_path: The path of the file \
-                in question.
-            '''
-            file_path = file_path.rstrip(sep)
-            if sep in file_path:
-                return f"{sep.join(file_path.split(sep)[:-1])}{sep}"
-            return None
-
-        # Create any directories necessary.
-        parent_dir, non_existing_dirs = file_path, []
-        while (parent_dir := get_parent_dir(parent_dir)) is not None:
-            if not self.path_exists(path=parent_dir):
-                non_existing_dirs.append(parent_dir)
-        for dir in reversed(non_existing_dirs):
-            self.mkdir(path=dir)
 
 
 class AWSClientHandler(ClientHandler):
@@ -1433,79 +951,31 @@ class AWSClientHandler(ClientHandler):
             ContentType='application/x-directory; charset=UTF-8')
         
 
-    def get_reader(self, file_path: str) -> 'LocalIOHandler':
+    def get_reader(self, file_path: str) -> _AWSS3FileReader:
         '''
-        Returns an "IOHandler" instance used for \
-        reading from a file.
+        Returns an ``AWSS3FileReader`` class instance \
+        used for reading from a file which resides within \
+        an Amazon S3 bucket.
 
         :param str file_path: The absolute path of \
             the file in question.
         '''
-        raise NotImplementedError()
+        return _AWSS3FileReader(file_path=file_path, bucket=self.__bucket)
 
 
-    def get_writer(self, file_path: str) -> 'LocalIOHandler':
+    def get_writer(self, file_path: str) -> _AWSS3FileWriter:
         '''
-        Returns an "IOHandler" instance used for \
-        writing to a file.
+        Returns an ``AWSS3FileWriter`` class instance \
+        used for writing to a file which resides within \
+        an Amazon S3 bucket.
 
         :param str file_path: The absolute path of \
             the file in question.
         '''
-        raise NotImplementedError()
-    
-
-    def read(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        include_metadata: bool
-    ) -> _Optional[dict[str, str]]:
-        '''
-        Reads the bytes of a file into the provided buffer. \
-        Returns either ``None`` or a dictionary containing \
-        file metadata, depending on the value of parameter \
-        ``include_metadata``.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer to download the \
-            file into.
-        :param bool include_metadata: Indicates whether \
-            to download any existing file metadata as well.
-        '''
-        obj = self.__bucket.Object(key=file_path)
-        obj.download_fileobj(Fileobj=buffer)
-        if include_metadata:
-            return obj.metadata
+        return _AWSS3FileWriter(file_path=file_path, bucket=self.__bucket)
         
 
-    def write(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        metadata: _Optional[dict[str, str]]
-    ) -> None:
-        '''
-        Writes the bytes contained within the provided \
-        buffer into the specified path.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer containing the \
-            file's bytes.
-        :param dict[str, str] | None: If not ``None``, \
-            then assigns the provided metadata to the file \
-            during the upload.
-        '''
-        self.__bucket.upload_fileobj(
-            Key=file_path,
-            Fileobj=buffer,
-            ExtraArgs={ "Metadata": metadata }
-                if metadata is not None else None)
-        
-
-    def assign_metadata(
+    def set_file_metadata(
         self,
         file_path: str,
         metadata: dict[str, str]
@@ -1517,7 +987,7 @@ class AWSClientHandler(ClientHandler):
         :param dict[str, str] metadata: The metadata that are \
             to be assigned to the file.
         '''
-        raise NotImplementedError()
+        self.__bucket.Object(key=file_path).put(Metadata=metadata)
     
 
     def _get_file_size_impl(self, file_path) -> int:
@@ -1742,79 +1212,31 @@ class AzureClientHandler(ClientHandler):
             blob.delete_blob()
 
 
-    def get_reader(self, file_path: str) -> 'LocalIOHandler':
+    def get_reader(self, file_path: str) -> _AzureBlobReader:
         '''
-        Returns an "IOHandler" instance used for \
-        reading from a file.
+        Returns an ``AzureBlobReader`` class instance \
+        used for reading from a file which resides within \
+        an Azure blob container.
 
         :param str file_path: The absolute path of \
             the file in question.
         '''
-        raise NotImplementedError()
+        return _AzureBlobReader(file_path=file_path, container=self.__container)
 
 
-    def get_writer(self, file_path: str) -> 'LocalIOHandler':
+    def get_writer(self, file_path: str) -> _AzureBlobWriter:
         '''
-        Returns an "IOHandler" instance used for \
-        writing to a file.
+        Returns an ``AzureBlobWriter`` class instance \
+        used for writing to a file which resides within \
+        an Azure blob container.
 
         :param str file_path: The absolute path of \
             the file in question.
         '''
-        raise NotImplementedError()
-    
-
-    def read(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        include_metadata: bool
-    ) -> _Optional[dict[str, str]]:
-        '''
-        Reads the bytes of a file into the provided buffer. \
-        Returns either ``None`` or a dictionary containing \
-        file metadata, depending on the value of parameter \
-        ``include_metadata``.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer to download the \
-            file into.
-        :param bool include_metadata: Indicates whether \
-            to download any existing file metadata as well.
-        '''
-        blob = self.__container.download_blob(blob=file_path)
-        blob.readinto(stream=buffer)
-        if include_metadata:
-            return blob.properties.metadata
+        return _AzureBlobWriter(file_path=file_path, container=self.__container)
         
 
-    def write(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        metadata: _Optional[dict[str, str]]
-    ) -> None:
-        '''
-        Writes the bytes contained within the provided \
-        buffer into the specified path.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer containing the \
-            file's bytes.
-        :param dict[str, str] | None: If not ``None``, \
-            then assigns the provided metadata to the file \
-            during the upload.
-        '''
-        self.__container.upload_blob(
-            name=file_path,
-            data=buffer,
-            metadata=metadata if metadata is not None else None,
-            overwrite=True)
-        
-
-    def assign_metadata(
+    def set_file_metadata(
         self,
         file_path: str,
         metadata: dict[str, str]
@@ -1826,7 +1248,8 @@ class AzureClientHandler(ClientHandler):
         :param dict[str, str] metadata: The metadata that are \
             to be assigned to the file.
         '''
-        raise NotImplementedError()
+        with self.__container.get_blob_client(blob=file_path) as blob:
+            blob.set_blob_metadata(metadata=metadata)
              
 
     def _get_file_size_impl(self, file_path) -> int:

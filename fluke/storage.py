@@ -194,12 +194,16 @@ class _File(_ABC):
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
         '''
+        source = self.get_uri() \
+            if isinstance(self, _NonLocalFile) \
+            else self.get_path()
+        
         destination = dst.get_uri() \
             if isinstance(dst, _NonLocalDir) \
             else dst.get_path()
         
         if not suppress_output:
-            print(f'\nCopying file "{self.get_path()}" into "{destination}".')
+            print(f'\nCopying file "{source}" into "{destination}".')
 
         dst_fp = dst._to_absolute(self.get_name(), replace_sep=True)
 
@@ -217,8 +221,8 @@ class _File(_ABC):
                 self.__handler.get_reader(file_path=self.get_path()) as reader,
                 dst._get_handler().get_writer(file_path=dst_fp) as writer
             ):
-                while chunk := reader.read_chunk(chunk_size=chunk_size):
-                    progress.update(n=writer.write_chunk(chunk))
+                while chunk := reader.read(chunk_size=chunk_size):
+                    progress.update(n=writer.write(chunk))
             # Conditionally assign metadata to file.
             if include_metadata:
                 if custom_metadata := self.get_metadata():
@@ -226,13 +230,13 @@ class _File(_ABC):
                 else:
                     metadata = self.__handler.get_file_metadata(file_path=self.get_path())
                 # Assign metadata to file (works only for the cloud)
-                dst._get_handler().assign_metadata(file_path=dst_fp, metadata=metadata)
+                dst._get_handler().set_file_metadata(
+                    file_path=dst_fp, metadata=metadata)
                 # Upsert metadata into destination dir.
                 dst._upsert_metadata(file_path=dst_fp, metadata=metadata)
         except Exception as e:
-            error = _Error(uri=self.get_uri(), is_src=True, msg=str(e))
             if not suppress_output:
-                print(f"Operation unsuccessful: {error.get_message()}")
+                print(f"Operation unsuccessful: {e}")
             return False
         
         if not suppress_output:
@@ -1152,14 +1156,13 @@ class _Directory(_ABC):
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
         '''
+        source = self.get_uri() \
+            if isinstance(self, _NonLocalDir) \
+            else self.get_path()
+        
         destination = dst.get_uri() \
             if isinstance(dst, _NonLocalDir) \
             else dst.get_path()
-
-        if not suppress_output:
-            print_msg = f'\nCopying files from "{self.get_path()}" '
-            print_msg += f'into "{destination}".'
-            print(print_msg)
 
         # Store the directory's files in a list.
         file_paths = [fp for fp in self.__handler.traverse_dir(
@@ -1177,8 +1180,11 @@ class _Directory(_ABC):
             rel_fp = self._to_relative(path=fp, replace_sep=False)
             dst_fp = dst._to_absolute(path=rel_fp, replace_sep=True)
 
+            src_uri = f"{source}{rel_fp}"
+            dst_uri = f"{destination}{dst._get_separator().join(rel_fp.split(dst._get_separator())[:-1])}"
+
             if not suppress_output:
-                print(f'\nCopying file "{fp}" into "{destination}".')
+                print(f'\nCopying file "{src_uri}" into "{dst_uri}"...')
 
             try:
                 if not overwrite and dst.path_exists(dst_fp):
@@ -1194,25 +1200,25 @@ class _Directory(_ABC):
                     self.__handler.get_reader(file_path=fp) as reader,
                     dst._get_handler().get_writer(file_path=dst_fp) as writer
                 ):
-                    while chunk := reader.read_chunk(chunk_size=chunk_size):
-                        progress.update(n=writer.write_chunk(chunk))
+                    while chunk := reader.read(chunk_size=chunk_size):
+                        progress.update(n=writer.write(chunk))
                 # Conditionally assign metadata to file.
                 if include_metadata:
-                    if custom_metadata := self.get_metadata():
+                    if custom_metadata := self.get_metadata(fp):
                         metadata = custom_metadata
                     else:
-                        metadata = self.__handler.get_file_metadata(file_path=fp)
+                        metadata = self.__handler.get_file_metadata(fp)
                     # Assign metadata to file (works only for the cloud)
-                    dst._get_handler().assign_metadata(file_path=dst_fp, metadata=metadata)
+                    dst._get_handler().set_file_metadata(
+                        file_path=dst_fp, metadata=metadata)
                     # Upsert metadata into destination dir.
                     dst._upsert_metadata(file_path=dst_fp, metadata=metadata)
                     if not suppress_output:
                         print("Operation successful!")
             except Exception as e:
                 failures += 1
-                error = _Error(uri=self.get_uri(), is_src=True, msg=str(e))
                 if not suppress_output:
-                    print(f"Operation unsuccessful: {error.get_message()}")
+                    print(f"Failure: {e}")
             if not suppress_output:
                 print(f"Total Progress: {i+1}/{total_num_files} files.")
 
@@ -1326,8 +1332,12 @@ class _Directory(_ABC):
             to replace the provided path's separator \
             with the separator used by this directory.
         '''
-        path = self._to_relative(path, replace_sep)
-        return _join_paths(self._get_separator(), self.__path, path)
+        path = self._to_relative(path, replace_sep=False)
+        path = _join_paths(self._get_separator(), self.__path, path)
+        if replace_sep:
+            sep = _infer_sep(path)
+            path = path.replace(sep, self._get_separator())
+        return path
     
 
     def _get_dir_metadata_ref(self, dir_path: str) -> dict[str, dict[str, str]]:
