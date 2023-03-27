@@ -3,6 +3,8 @@ import io as _io
 from abc import ABC as _ABC
 from abc import abstractmethod as _absmethod
 from shutil import copyfileobj as _copyfileobj
+from typing import Any as _Any
+from typing import Union as _Union
 from typing import Optional as _Optional
 from typing import Iterator as _Iterator
 
@@ -26,17 +28,109 @@ from ._helper import relativize_path as _relativize
 class ClientHandler(_ABC):
     '''
     An abstract class which serves as the \
-    base class for all client-like classes.
+    base class for all client-handler-like classes.
 
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
         access. Defaults to ``False``.
     '''
 
+
+    class _IOHandler(_ABC):
+        '''
+        An abstract class which serves as the \
+        base class for all Reader/Writer classes.
+        '''
+        
+        @_absmethod
+        def get_mode(self) -> str:
+            '''
+            Returns the file handler's mode.
+            '''
+            pass
+
+
+        @_absmethod
+        def close(self) -> None:
+            '''
+            Closes the handler's underlying file.
+            '''
+            pass
+
+
+        def __exit__(self, exc_type, exc_value, traceback) -> None:
+            '''
+            Exit the runtime context related to this object. 
+            '''
+            self.close()
+
+
+    class _FileReader(_IOHandler, _ABC):
+        '''
+        An abstract class which serves as the \
+        base class for all Reader classes.
+        '''
+
+        def get_mode(self) -> str:
+            '''
+            Returns the file handler's mode.
+            '''
+            return 'rb'
+        
+
+        def __enter__(self) -> 'ClientHandler._FileReader':
+            '''
+            Enter the runtime context related to this instance.
+            '''
+            return self
+
+
+        @_absmethod
+        def read_chunk(self, chunk_size: int) -> bytes:
+            '''
+            Reads a chunk from the opened file and returns it.
+
+            :param int chunk_size: The chunk's size in bytes.
+            '''
+            pass
+
+
+    class _FileWriter(_IOHandler, _ABC):
+        '''
+        An abstract class which serves as the \
+        base class for all Writer classes.
+        '''
+
+        def get_mode(self) -> str:
+            '''
+            Returns the file handler's mode.
+            '''
+            return 'wb'
+        
+
+        def __enter__(self) -> 'ClientHandler._FileWriter':
+            '''
+            Enter the runtime context related to this instance.
+            '''
+            return self
+
+
+        @_absmethod
+        def write_chunk(self, chunk: bytes) -> int:
+            '''
+            Writes the provided chunk to the opened file,
+            and returns the number of bytes written.
+
+            :param bytes chunk: The chunk of bytes that is \
+                to be written to the file.
+            '''
+            pass
+
+
     def __init__(self, cache: bool):
         '''
         An abstract class which serves as the \
-        base class for all client-like classes.
+        base class for all client-handler-like classes.
 
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
@@ -264,6 +358,30 @@ class ClientHandler(_ABC):
 
 
     @_absmethod
+    def get_reader(self, file_path: str) -> '_FileReader':
+        '''
+        Returns a ``_FileReader`` instance used for \
+        reading from a file.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        pass
+
+
+    @_absmethod
+    def get_writer(self, file_path: str) -> '_FileWriter':
+        '''
+        Returns an ``_FileWriter`` instance used for \
+        writing to a file.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        pass
+
+
+    @_absmethod
     def read(
         self,
         file_path: str,
@@ -304,6 +422,22 @@ class ClientHandler(_ABC):
         :param dict[str, str] | None: If not ``None``, \
             then assigns the provided metadata to the file \
             during the upload.
+        '''
+        pass
+
+
+    @_absmethod
+    def assign_metadata(
+        self,
+        file_path: str,
+        metadata: dict[str, str]
+    ) -> None:
+        '''
+        Assignes the provided metadata to the specified file.
+        
+        :param str file_path: The path of the file in question.
+        :param dict[str, str] metadata: The metadata that are \
+            to be assigned to the file.
         '''
         pass
 
@@ -365,7 +499,105 @@ class FileSystemHandler(ClientHandler):
     '''
     A class used in handling all local file \
     system operations.
+
+    :param str file_path: The absolute path of \
+        the file in question.
     '''
+
+    class LocalFileReader(ClientHandler._FileReader):
+        '''
+        A class used in reading from files which \
+        reside within the local file system.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+
+        def __init__(self, file_path: str) -> None:
+            '''
+            A class used in reading from files which \
+            reside within the local file system.
+
+            :param str file_path: The absolute path of \
+                the file in question.
+            '''
+            self.__file = open(file=file_path, mode=self.get_mode())
+
+
+        def close(self) -> None:
+            '''
+            Closes the handler's underlying file.
+            '''
+            self.__file.close()
+
+
+        def read(self) -> bytes:
+            '''
+            Reads the opened file and returns it.
+            '''
+            return self.__file.read()
+
+
+        def read_chunk(self, chunk_size: int) -> bytes:
+            '''
+            Reads a chunk from the opened file and returns it.
+
+            :param int chunk_size: The chunk's size in bytes.
+            '''
+            return self.__file.read(chunk_size)
+
+
+    class LocalFileWriter(ClientHandler._FileWriter):
+        '''
+        A class used in writing to files which \
+        reside within the local file system.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+
+        def __init__(self, file_path: str) -> None:
+            '''
+            A class used in writing to files which \
+            reside within the local file system.
+
+            :param str file_path: The absolute path of \
+                the file in question.
+            '''
+            # Create necessary directories if they do not exist.
+            _os.makedirs(name=_os.path.dirname(file_path), exist_ok=True)
+            # Open file for writing.
+            self.__file = open(file=file_path, mode=self.get_mode())
+
+
+        def close(self) -> None:
+            '''
+            Closes the handler's underlying file.
+            '''
+            self.__file.close()
+
+
+        def write(self, buffer: _io.BytesIO) -> int:
+            '''
+            Writes to the opened file and returns \
+            the number of bytes written.
+
+            :param bytes chunk: The chunk of bytes that \
+                is to be written to the file.
+            '''
+            return self.__file.write(buffer)
+
+
+        def write_chunk(self, chunk: bytes) -> int:
+            '''
+            Writes the provided chunk to the opened file,
+            and returns the number of bytes written.
+
+            :param bytes chunk: The chunk of bytes that \
+                is to be written to the file.
+            '''
+            return self.__file.write(chunk)
+    
 
     def __init__(self):
         '''
@@ -428,6 +660,28 @@ class FileSystemHandler(ClientHandler):
             that is to be created.
         '''
         _os.makedirs(path, exist_ok=True)
+
+
+    def get_reader(self, file_path: str) -> 'LocalFileReader':
+        '''
+        Returns a ``LocalFileReader`` instance used for \
+        reading from a local file.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        return __class__.LocalFileReader(file_path=file_path)
+
+
+    def get_writer(self, file_path: str) -> 'LocalFileWriter':
+        '''
+        Returns an ``LocalFileWriter`` instance used for \
+        writing to a local file.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        return __class__.LocalFileWriter(file_path=file_path)
     
 
     def read(
@@ -476,7 +730,18 @@ class FileSystemHandler(ClientHandler):
         # Write file.
         with open(file=file_path, mode='wb') as file:
             _copyfileobj(fsrc=buffer, fdst=file)
-    
+
+
+    def assign_metadata(
+        self,
+        file_path: str,
+        metadata: dict[str, str]
+    ) -> None:
+        '''
+        Does nothing.
+        '''
+        pass
+ 
 
     def _get_file_size_impl(self, file_path) -> int:
         '''
@@ -556,6 +821,137 @@ class SSHClientHandler(ClientHandler):
         any fetched data to be cached for faster subsequent \
         access. Defaults to ``False``.
     '''
+
+    class RemoteFileReader(ClientHandler._FileReader):
+        '''
+        A class used in reading from files which \
+        reside within a remote file system.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        :param SFTPClient sftp: An ``SFTPClient`` \
+            class instance.
+        '''
+
+        def __init__(self, file_path: str, sftp: _prmk.SFTPClient) -> None:
+            '''
+            A class used in reading from files which \
+            reside within a remote file system.
+
+            :param str file_path: The absolute path of \
+                the file in question.
+            :param SFTPClient sftp: An ``SFTPClient`` \
+                class instance.
+            '''
+            self.__file: _prmk.SFTPFile = sftp.open(
+                filename=file_path, mode=self.get_mode())
+
+
+        def close(self) -> None:
+            '''
+            Closes the handler's underlying file.
+            '''
+            self.__file.close()
+
+
+        def read(self) -> bytes:
+            '''
+            Reads the opened file and returns it.
+            '''
+            return self.__file.read()
+
+
+        def read_chunk(self, chunk_size: int) -> bytes:
+            '''
+            Reads a chunk from the opened file and returns it.
+
+            :param int chunk_size: The chunk's size in bytes.
+            '''
+            return self.__file.read(chunk_size)
+
+
+    class RemoteFileWriter(ClientHandler._FileWriter):
+        '''
+        A class used in writing to files which \
+        reside within a remote file system.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        :param SFTPClient sftp: An ``SFTPClient`` \
+            class instance.
+        '''
+
+        def __init__(self, file_path: str, sftp: _prmk.SFTPClient) -> None:
+            '''
+            A class used in writing to files which \
+            reside within a remote file system.
+
+            :param str file_path: The absolute path of \
+                the file in question.
+            :param SFTPClient sftp: An ``SFTPClient`` \
+                class instance.
+            '''
+            sep = _infer_sep(file_path)
+
+            def get_parent_dir(file_path: str) -> _Optional[str]:
+                '''
+                Returns the path to the parent directory \
+                of the provided file path. Returns ``None`` \
+                if said directory is the root directory.
+
+                :param str file_path: The path of the file \
+                    in question.
+                '''
+                file_path = file_path.rstrip(sep)
+                if sep in file_path:
+                    return f"{sep.join(file_path.split(sep)[:-1])}{sep}"
+                return None
+
+            # Create any directories necessary.
+            parent_dir, non_existing_dirs = file_path, []
+            while (parent_dir := get_parent_dir(parent_dir)) is not None:
+                try:
+                    self.__sftp.stat(path=parent_dir)
+                except FileNotFoundError:
+                    non_existing_dirs.append(parent_dir)
+            for dir in reversed(non_existing_dirs):
+                sftp.mkdir(path=dir)
+
+            
+            self.__file: _prmk.SFTPFile = sftp.open(
+                filename=file_path, mode=self.get_mode())
+            
+
+        def close(self) -> None:
+            '''
+            Closes the handler's underlying file.
+            '''
+            self.__file.close()
+
+
+        def write(self, buffer: _io.BytesIO) -> int:
+            '''
+            Writes to the opened file and returns \
+            the number of bytes written.
+
+            :param bytes chunk: The chunk of bytes that \
+                is to be written to the file.
+            '''
+            return self.__file.write(buffer)
+
+
+        def write_chunk(self, chunk: bytes) -> int:
+            '''
+            Writes the provided chunk to the opened file,
+            and returns the number of bytes written.
+
+            :param bytes chunk: The chunk of bytes that \
+                is to be written to the file.
+            '''
+            self.__file.write(chunk)
+            self.__file.flush()
+            return len(chunk)
+        
 
     def __init__(self, auth: _RemoteAuth, cache: bool):
         '''
@@ -686,7 +1082,7 @@ class SSHClientHandler(ClientHandler):
         from stat import S_ISDIR as _is_dir
         return not _is_dir(self.__sftp.stat(path=file_path).st_mode)
     
-
+    
     def mkdir(self, path: str) -> None:
         '''
         Creates a directory into the provided path.
@@ -695,6 +1091,30 @@ class SSHClientHandler(ClientHandler):
             that is to be created.
         '''
         self.__sftp.mkdir(path=path)
+
+
+    def get_reader(self, file_path: str) -> 'RemoteFileReader':
+        '''
+        Returns a ``RemoteFileReader`` instance used for \
+        reading from a remote file.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        return SSHClientHandler.RemoteFileReader(
+            file_path=file_path, sftp=self.__sftp)
+
+
+    def get_writer(self, file_path: str) -> 'RemoteFileWriter':
+        '''
+        Returns a ``RemoteFileWriter`` instance used for \
+        writing to a remote file.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        return SSHClientHandler.RemoteFileWriter(
+            file_path=file_path, sftp=self.__sftp)
     
 
     def read(
@@ -737,33 +1157,25 @@ class SSHClientHandler(ClientHandler):
             then assigns the provided metadata to the file \
             during the upload.
         '''
-
-        sep = _infer_sep(file_path)
-
-        def get_parent_dir(file_path: str) -> _Optional[str]:
-            '''
-            Returns the path to the parent directory \
-            of the provided file path. Returns ``None`` \
-            if said directory is the root directory.
-
-            :param str file_path: The path of the file \
-                in question.
-            '''
-            file_path = file_path.rstrip(sep)
-            if sep in file_path:
-                return f"{sep.join(file_path.split(sep)[:-1])}{sep}"
-            return None
-
-        # Create any directories necessary.
-        parent_dir, non_existing_dirs = file_path, []
-        while (parent_dir := get_parent_dir(parent_dir)) is not None:
-            if not self.path_exists(path=parent_dir):
-                non_existing_dirs.append(parent_dir)
-        for dir in reversed(non_existing_dirs):
-            self.mkdir(path=dir)
-
+        # Create all required parent dirs.
+        self._mkdirs(file_path=file_path)
         # Write file from buffer.
         self.__sftp.putfo(fl=buffer, remotepath=file_path)
+
+
+    def assign_metadata(
+        self,
+        file_path: str,
+        metadata: dict[str, str]
+    ) -> None:
+        '''
+        Does nothing.
+        
+        :param str file_path: The path of the file in question.
+        :param dict[str, str] metadata: The metadata that are \
+            to be assigned to the file.
+        '''
+        pass
 
 
     def _get_file_size_impl(self, file_path) -> int:
@@ -858,6 +1270,41 @@ class SSHClientHandler(ClientHandler):
                     path += sep
                 yield _join_paths(sep, dir_path, path) \
                     if show_abs_path else path
+                
+
+    def _mkdirs(self, file_path: str):
+        '''
+        This method is to be called before writing \
+        to a remote file, as it ensures that all \
+        required parent directories are created.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+
+        sep = _infer_sep(file_path)
+
+        def get_parent_dir(file_path: str) -> _Optional[str]:
+            '''
+            Returns the path to the parent directory \
+            of the provided file path. Returns ``None`` \
+            if said directory is the root directory.
+
+            :param str file_path: The path of the file \
+                in question.
+            '''
+            file_path = file_path.rstrip(sep)
+            if sep in file_path:
+                return f"{sep.join(file_path.split(sep)[:-1])}{sep}"
+            return None
+
+        # Create any directories necessary.
+        parent_dir, non_existing_dirs = file_path, []
+        while (parent_dir := get_parent_dir(parent_dir)) is not None:
+            if not self.path_exists(path=parent_dir):
+                non_existing_dirs.append(parent_dir)
+        for dir in reversed(non_existing_dirs):
+            self.mkdir(path=dir)
 
 
 class AWSClientHandler(ClientHandler):
@@ -984,6 +1431,28 @@ class AWSClientHandler(ClientHandler):
         self.__bucket.put_object(
             Key=path,
             ContentType='application/x-directory; charset=UTF-8')
+        
+
+    def get_reader(self, file_path: str) -> 'LocalIOHandler':
+        '''
+        Returns an "IOHandler" instance used for \
+        reading from a file.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        raise NotImplementedError()
+
+
+    def get_writer(self, file_path: str) -> 'LocalIOHandler':
+        '''
+        Returns an "IOHandler" instance used for \
+        writing to a file.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        raise NotImplementedError()
     
 
     def read(
@@ -1035,6 +1504,21 @@ class AWSClientHandler(ClientHandler):
             ExtraArgs={ "Metadata": metadata }
                 if metadata is not None else None)
         
+
+    def assign_metadata(
+        self,
+        file_path: str,
+        metadata: dict[str, str]
+    ) -> None:
+        '''
+        Assignes the provided metadata to the specified file.
+        
+        :param str file_path: The path of the file in question.
+        :param dict[str, str] metadata: The metadata that are \
+            to be assigned to the file.
+        '''
+        raise NotImplementedError()
+    
 
     def _get_file_size_impl(self, file_path) -> int:
         '''
@@ -1256,6 +1740,28 @@ class AzureClientHandler(ClientHandler):
         with self.__container.get_blob_client(blob=f"{path}DUMMY") as blob:
             blob.create_append_blob()
             blob.delete_blob()
+
+
+    def get_reader(self, file_path: str) -> 'LocalIOHandler':
+        '''
+        Returns an "IOHandler" instance used for \
+        reading from a file.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        raise NotImplementedError()
+
+
+    def get_writer(self, file_path: str) -> 'LocalIOHandler':
+        '''
+        Returns an "IOHandler" instance used for \
+        writing to a file.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        raise NotImplementedError()
     
 
     def read(
@@ -1307,6 +1813,21 @@ class AzureClientHandler(ClientHandler):
             metadata=metadata if metadata is not None else None,
             overwrite=True)
         
+
+    def assign_metadata(
+        self,
+        file_path: str,
+        metadata: dict[str, str]
+    ) -> None:
+        '''
+        Assignes the provided metadata to the specified file.
+        
+        :param str file_path: The path of the file in question.
+        :param dict[str, str] metadata: The metadata that are \
+            to be assigned to the file.
+        '''
+        raise NotImplementedError()
+             
 
     def _get_file_size_impl(self, file_path) -> int:
         '''
