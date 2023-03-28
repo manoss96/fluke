@@ -37,10 +37,10 @@ python3 -m unittest tests.test_storage
 ```
 Finally, you can get the test coverage by executing the following commands:
 ```
-python -m coverage run --rcfile=tests/.coveragerc -m unittest discover tests
+python -m coverage run -m unittest discover tests
 python -m coverage html
 ```
-This will produce a ``htmlcov/index.html`` file which will contain
+This will produce an ``htmlcov/index.html`` file which will contain
 various information regarding the test coverage.
 
 <!-- MARKDOWN LINKS & IMAGES -->

@@ -1,10 +1,9 @@
-from unittest import TestCase
-
+import unittest
 
 from fluke.auth import RemoteAuth, AWSAuth, AzureAuth
 
 
-class TestRemoteAuth(TestCase):
+class TestRemoteAuth(unittest.TestCase):
 
     HOST = "HOST"
     USERNAME = "USERNAME"
@@ -68,7 +67,7 @@ class TestRemoteAuth(TestCase):
             credentials)
         
 
-class TestAWSAuth(TestCase):
+class TestAWSAuth(unittest.TestCase):
 
     AWS_ACCESS_KEY_ID = "AWS_ACCESS_KEY_ID"
     AWS_SECRET_ACCESS_KEY = "AWS_SECRET_ACCESS_KEY"
@@ -89,7 +88,7 @@ class TestAWSAuth(TestCase):
             credentials)
         
 
-class TestAzureAuth(TestCase):
+class TestAzureAuth(unittest.TestCase):
 
     ACCOUNT_URL = "ACCOUNT_URL"
     TENANT_ID = "TENANT_ID"
@@ -113,3 +112,7 @@ class TestAzureAuth(TestCase):
         self.assertEqual(
             AzureAuth.from_conn_string(**credentials).get_credentials(),
             credentials)
+        
+
+if __name__=="__main__": 
+     unittest.main() 
