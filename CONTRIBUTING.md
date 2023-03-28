@@ -2,8 +2,8 @@
 Contributing to Fluke
 ============================
 
-No matter whether you wish to report a bug or propose a new feature,
-please raise a new issue by visiting the [Issues Page][issues-page].
+Whether you wish to report a bug or propose a new feature,
+please proceed by [raising an issue][raise-issue].
 
 Setting up a development environment
 -------------------------------------
@@ -44,4 +44,4 @@ This will produce an ``htmlcov/index.html`` file which will contain
 various information regarding the test coverage.
 
 <!-- MARKDOWN LINKS & IMAGES -->
-[issues-page]: https://github.com/manoss96/fluke/issues
+[raise-issue]: https://github.com/manoss96/fluke/issues/new

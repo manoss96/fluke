@@ -13,7 +13,6 @@ __all__ = [
 
 
 import os as _os
-import io as _io
 import typing as _typ
 import warnings as _warn
 from abc import ABC as _ABC
@@ -25,7 +24,6 @@ from tqdm import tqdm as _tqdm
 
 from ._helper import join_paths as _join_paths
 from ._helper import infer_separator as _infer_sep
-from ._errors import Error as _Error
 from .auth import AWSAuth as _AWSAuth
 from .auth import AzureAuth as _AzureAuth
 from .auth import RemoteAuth as _RemoteAuth
@@ -170,7 +168,7 @@ class _File(_ABC):
         dst: '_Directory',
         overwrite: bool = False,
         include_metadata: bool = False,
-        chunk_size: int = 8192,
+        chunk_size: _typ.Optional[int] = None,
         suppress_output: bool = False
     ) -> bool:
         '''
@@ -185,8 +183,9 @@ class _File(_ABC):
         :param bool include_metadata: Indicates whether any \
             existing metadata are to be assigned to the resulting \
             file. Defaults to ``False``.
-        :param int chunk_size: The size (in bytes) of the file chunks \
-            that are transfered at a time. Defaults to ``8192``.
+        :param int | None chunk_size: If not ``None``, then files are \
+            transfered in chunks, whose size are equal to this parameter \
+            value. Defaults to ``None``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
         '''
@@ -199,44 +198,62 @@ class _File(_ABC):
             else dst.get_path()
         
         if not suppress_output:
-            print(f'\nCopying file "{source}" into "{destination}".')
+            print(f'\nTransfering file "{source}" into "{destination}".')
 
         dst_fp = dst._to_absolute(self.get_name(), replace_sep=True)
 
         try:
+            # Raise an "OverwriteError" if file exists
+            # in destination and "overwrite" is "False".
             if not overwrite and dst.path_exists(dst_fp):
                 raise _OverwriteError(file_path=dst_fp)
-            # Write the file in distinct chunks.
-            with (
-                _tqdm(
-                    disable=suppress_output,
-                    desc="Progress",
-                    unit='bytes',
-                    total=self.get_size(),
-                ) as progress,
-                self.__handler.get_reader(file_path=self.get_path()) as reader,
-                dst._get_handler().get_writer(file_path=dst_fp) as writer
-            ):
-                while chunk := reader.read(chunk_size=chunk_size):
-                    progress.update(n=writer.write(chunk))
-            # Conditionally assign metadata to file.
+            # Define metadata dictionary.
             if include_metadata:
                 if custom_metadata := self.get_metadata():
                     metadata = custom_metadata
                 else:
-                    metadata = self.__handler.get_file_metadata(file_path=self.get_path())
-                # Assign metadata to file (works only for the cloud)
-                dst._get_handler().set_file_metadata(
-                    file_path=dst_fp, metadata=metadata)
-                # Upsert metadata into destination dir.
-                dst._upsert_metadata(file_path=dst_fp, metadata=metadata)
+                    metadata = self.__handler.get_file_metadata(
+                        file_path=self.get_path())
+            else:
+                metadata = None
+            # Perform the file transfer.
+            with (
+                _tqdm(
+                    disable=(
+                        suppress_output or
+                        chunk_size is None
+                    ),
+                    desc="Progress",
+                    unit='bytes',
+                    total=self.get_size()
+                ) as progress,
+                self.__handler.get_reader(
+                    file_path=self.get_path()
+                ) as reader,
+                dst._get_handler().get_writer(
+                    file_path=dst_fp,
+                    metadata=metadata,
+                    in_chunks=chunk_size is not None
+                ) as writer
+            ):
+                if chunk_size is None:
+                    writer.write(reader.read())
+                else:
+                    while chunk := reader.read(chunk_size=chunk_size):
+                        progress.update(n=writer.write(chunk))
+            # Upsert metadata to destination if not "None".
+            if metadata is not None:
+                dst._upsert_metadata(
+                    file_path=dst_fp,
+                    metadata=metadata)
         except Exception as e:
             if not suppress_output:
-                print(f"Operation unsuccessful: {e}")
+                print(f"Failure: {e}")
             return False
         
         if not suppress_output:
-            print("Operation successful!")                
+            print("Operation successful!")
+          
         return True
     
 
@@ -829,6 +846,7 @@ class AzureBlobFile(_CloudFile):
     def _create_file(
         cls,
         path: str,
+        storage_account: str,
         handler: _AzureClientHandler,
         metadata: dict[str, str]
     ) -> 'AzureBlobFile':
@@ -836,14 +854,15 @@ class AzureBlobFile(_CloudFile):
         Creates and returns an ``AzureBlobFile`` instance.
 
         :param str path: The path pointing to the file.
-        :param str host: The name of the host in which \
-            the file resides.
+        :param str storage_account: The name of the storage \
+            account to which the blob's container belongs.
         :param AWSClientHandler handler: An ``AzureClientHandler`` \
             class instance.
         :param dict[str, str] metadata: A dictionary containing \
             any metadata associated with the file.
         '''
         instance = cls.__new__(cls)
+        instance.__storage_account = storage_account
         _File.__init__(
             instance,
             path=path,
@@ -1128,9 +1147,9 @@ class _Directory(_ABC):
         recursively: bool = False,
         overwrite: bool = False,
         include_metadata: bool = False,
-        chunk_size: int = 8192,
+        chunk_size: _typ.Optional[int] = None,
         suppress_output: bool = False,
-    ) -> None:
+    ) -> bool:
         '''
         Copies all files within this directory into \
         the destination directory.
@@ -1149,6 +1168,9 @@ class _Directory(_ABC):
         :param bool include_metadata: Indicates whether any \
             existing metadata are to be assigned to the resulting \
             files. Defaults to ``False``.
+        :param int | None chunk_size: If not ``None``, then files are \
+            transfered in chunks, whose size are equal to this parameter \
+            value. Defaults to ``None``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
         '''
@@ -1180,37 +1202,49 @@ class _Directory(_ABC):
             dst_uri = f"{destination}{dst._get_separator().join(rel_fp.split(dst._get_separator())[:-1])}"
 
             if not suppress_output:
-                print(f'\nCopying file "{src_uri}" into "{dst_uri}"...')
+                print(f'\nTransfering file "{src_uri}" into "{dst_uri}"...')
 
             try:
+                # Raise an "OverwriteError" if file exists
+                # in destination and "overwrite" is "False".
                 if not overwrite and dst.path_exists(dst_fp):
                     raise _OverwriteError(file_path=dst_fp)
-                # Write the file in distinct chunks.
-                with (
-                    _tqdm(
-                        disable=suppress_output,
-                        desc="Progress",
-                        unit='bytes',
-                        total=self.get_file(fp).get_size(),
-                    ) as progress,
-                    self.__handler.get_reader(file_path=fp) as reader,
-                    dst._get_handler().get_writer(file_path=dst_fp) as writer
-                ):
-                    while chunk := reader.read(chunk_size=chunk_size):
-                        progress.update(n=writer.write(chunk))
-                # Conditionally assign metadata to file.
+                # Define metadata dictionary.
                 if include_metadata:
                     if custom_metadata := self.get_metadata(fp):
                         metadata = custom_metadata
                     else:
                         metadata = self.__handler.get_file_metadata(fp)
-                    # Assign metadata to file (works only for the cloud)
-                    dst._get_handler().set_file_metadata(
-                        file_path=dst_fp, metadata=metadata)
-                    # Upsert metadata into destination dir.
+                else:
+                    metadata = None
+                # Perform the file transfer.
+                with (
+                    _tqdm(
+                        disable=(
+                            suppress_output
+                            or chunk_size is None
+                        ),
+                        desc="Progress",
+                        unit='bytes',
+                        total=self.get_file(fp).get_size(),
+                    ) as progress,
+                    self.__handler.get_reader(
+                        file_path=fp
+                    ) as reader,
+                    dst._get_handler().get_writer(
+                        file_path=dst_fp,
+                        metadata=metadata,
+                        in_chunks=chunk_size is not None
+                    ) as writer
+                ):
+                    if chunk_size is None:
+                        writer.write(reader.read())
+                    else:
+                        while chunk := reader.read(chunk_size=chunk_size):
+                            progress.update(n=writer.write(chunk))
+                # Upsert metadata to destination if not "None".
+                if metadata is not None:
                     dst._upsert_metadata(file_path=dst_fp, metadata=metadata)
-                    if not suppress_output:
-                        print("Operation successful!")
             except Exception as e:
                 failures += 1
                 if not suppress_output:
@@ -2163,6 +2197,7 @@ class AzureBlobDir(_CloudDir):
         file_path = self._to_absolute(file_path, replace_sep=False)
         return AzureBlobFile._create_file(
             path=file_path,
+            storage_account=self.__storage_account,
             handler=self._get_handler(),
             metadata=self._get_file_metadata_ref(file_path))
     

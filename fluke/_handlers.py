@@ -1,9 +1,8 @@
 import os as _os
-import io as _io
 from abc import ABC as _ABC
 from abc import abstractmethod as _absmethod
-from typing import Any as _Any
 from typing import Iterator as _Iterator
+from typing import Optional as _Optional
 
 
 import boto3 as _boto3
@@ -286,29 +285,25 @@ class ClientHandler(_ABC):
 
 
     @_absmethod
-    def get_writer(self, file_path: str) -> '_FileWriter':
+    def get_writer(
+        self,
+        file_path: str,
+        metadata: _Optional[dict[str, str]],
+        in_chunks: bool
+    ) -> '_FileWriter':
         '''
         Returns an ``_FileWriter`` class instance \
         used for writing to a file.
 
         :param str file_path: The absolute path of \
             the file in question.
-        '''
-        pass
-
-
-    @_absmethod
-    def set_file_metadata(
-        self,
-        file_path: str,
-        metadata: dict[str, str]
-    ) -> None:
-        '''
-        Assignes the provided metadata to the specified file.
-        
-        :param str file_path: The path of the file in question.
-        :param dict[str, str] metadata: The metadata that are \
-            to be assigned to the file.
+        :param dict[str, str] | None metadata: A \
+            dictionary containing the metadata that \
+            are to be assigned to the file in question. \
+            If ``None``, then no metadata are assigned.
+        :param bool in_chunks: Indicates whether to \
+            write the file in distinct chunks or \
+            all at once.
         '''
         pass
 
@@ -450,7 +445,12 @@ class FileSystemHandler(ClientHandler):
         return _LocalFileReader(file_path=file_path)
 
 
-    def get_writer(self, file_path: str) -> _LocalFileWriter:
+    def get_writer(
+        self,
+        file_path: str,
+        metadata: _Optional[dict[str, str]],
+        in_chunks: bool
+    ) -> _LocalFileWriter:
         '''
         Returns an ``LocalFileWriter`` class instance \
         used for writing to a file which resides within \
@@ -458,20 +458,16 @@ class FileSystemHandler(ClientHandler):
 
         :param str file_path: The absolute path of \
             the file in question.
+        :param dict[str, str] | None metadata: A \
+            dictionary containing the metadata that \
+            are to be assigned to the file in question. \
+            If ``None``, then no metadata are assigned.
+        :param bool in_chunks: Indicates whether to \
+            write the file in distinct chunks or \
+            all at once.
         '''
         return _LocalFileWriter(file_path=file_path)
     
-
-    def set_file_metadata(
-        self,
-        file_path: str,
-        metadata: dict[str, str]
-    ) -> None:
-        '''
-        Does nothing.
-        '''
-        pass
- 
 
     def _get_file_size_impl(self, file_path) -> int:
         '''
@@ -704,7 +700,12 @@ class SSHClientHandler(ClientHandler):
         return _RemoteFileReader(file_path=file_path, sftp=self.__sftp)
 
 
-    def get_writer(self, file_path: str) -> _RemoteFileWriter:
+    def get_writer(
+        self,
+        file_path: str,
+        metadata: _Optional[dict[str, str]],
+        in_chunks: bool
+    ) -> _RemoteFileWriter:
         '''
         Returns a ``RemoteFileWriter`` class instance \
         used for writing to a file which resides within \
@@ -712,23 +713,15 @@ class SSHClientHandler(ClientHandler):
 
         :param str file_path: The absolute path of \
             the file in question.
+        :param dict[str, str] | None metadata: A \
+            dictionary containing the metadata that \
+            are to be assigned to the file in question. \
+            If ``None``, then no metadata are assigned.
+        :param bool in_chunks: Indicates whether to \
+            write the file in distinct chunks or \
+            all at once.
         '''
         return _RemoteFileWriter(file_path=file_path, sftp=self.__sftp)
-
-
-    def set_file_metadata(
-        self,
-        file_path: str,
-        metadata: dict[str, str]
-    ) -> None:
-        '''
-        Does nothing.
-        
-        :param str file_path: The path of the file in question.
-        :param dict[str, str] metadata: The metadata that are \
-            to be assigned to the file.
-        '''
-        pass
 
 
     def _get_file_size_impl(self, file_path) -> int:
@@ -960,10 +953,18 @@ class AWSClientHandler(ClientHandler):
         :param str file_path: The absolute path of \
             the file in question.
         '''
-        return _AWSS3FileReader(file_path=file_path, bucket=self.__bucket)
+        return _AWSS3FileReader(
+            file_path=file_path,
+            file_size=self.get_file_size(file_path),
+            bucket=self.__bucket)
 
 
-    def get_writer(self, file_path: str) -> _AWSS3FileWriter:
+    def get_writer(
+        self,
+        file_path: str,
+        metadata: _Optional[dict[str, str]],
+        in_chunks: bool
+    ) -> _AWSS3FileWriter:
         '''
         Returns an ``AWSS3FileWriter`` class instance \
         used for writing to a file which resides within \
@@ -971,23 +972,19 @@ class AWSClientHandler(ClientHandler):
 
         :param str file_path: The absolute path of \
             the file in question.
+        :param dict[str, str] | None metadata: A \
+            dictionary containing the metadata that \
+            are to be assigned to the file in question. \
+            If ``None``, then no metadata are assigned.
+        :param bool in_chunks: Indicates whether to \
+            write the file in distinct chunks or \
+            all at once.
         '''
-        return _AWSS3FileWriter(file_path=file_path, bucket=self.__bucket)
-        
-
-    def set_file_metadata(
-        self,
-        file_path: str,
-        metadata: dict[str, str]
-    ) -> None:
-        '''
-        Assignes the provided metadata to the specified file.
-        
-        :param str file_path: The path of the file in question.
-        :param dict[str, str] metadata: The metadata that are \
-            to be assigned to the file.
-        '''
-        self.__bucket.Object(key=file_path).put(Metadata=metadata)
+        return _AWSS3FileWriter(
+            file_path=file_path,
+            metadata=metadata,
+            in_chunks=in_chunks,
+            bucket=self.__bucket)
     
 
     def _get_file_size_impl(self, file_path) -> int:
@@ -1224,7 +1221,12 @@ class AzureClientHandler(ClientHandler):
         return _AzureBlobReader(file_path=file_path, container=self.__container)
 
 
-    def get_writer(self, file_path: str) -> _AzureBlobWriter:
+    def get_writer(
+        self,
+        file_path: str,
+        metadata: _Optional[dict[str, str]],
+        in_chunks: bool
+    ) -> _AzureBlobWriter:
         '''
         Returns an ``AzureBlobWriter`` class instance \
         used for writing to a file which resides within \
@@ -1232,25 +1234,20 @@ class AzureClientHandler(ClientHandler):
 
         :param str file_path: The absolute path of \
             the file in question.
+        :param dict[str, str] | None metadata: A \
+            dictionary containing the metadata that \
+            are to be assigned to the file in question. \
+            If ``None``, then no metadata are assigned.
+        :param bool in_chunks: Indicates whether to \
+            write the file in distinct chunks or \
+            all at once.
         '''
-        return _AzureBlobWriter(file_path=file_path, container=self.__container)
-        
-
-    def set_file_metadata(
-        self,
-        file_path: str,
-        metadata: dict[str, str]
-    ) -> None:
-        '''
-        Assignes the provided metadata to the specified file.
-        
-        :param str file_path: The path of the file in question.
-        :param dict[str, str] metadata: The metadata that are \
-            to be assigned to the file.
-        '''
-        with self.__container.get_blob_client(blob=file_path) as blob:
-            blob.set_blob_metadata(metadata=metadata)
-             
+        return _AzureBlobWriter(
+            file_path=file_path,
+            metadata=metadata,
+            in_chunks=in_chunks,
+            container=self.__container)
+     
 
     def _get_file_size_impl(self, file_path) -> int:
         '''
