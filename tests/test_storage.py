@@ -206,6 +206,9 @@ class MockSFTPClient():
         def seek(self, offset: int) -> None:
             self.__file.seek(offset)
 
+        def tell(self) -> int:
+            return self.__file.tell()
+
         def read(self, size: Optional[int] = None) -> None:
             if size is None:
                 return self.__file.read()
@@ -542,12 +545,32 @@ class TestLocalFile(unittest.TestCase):
         file = self.build_file()
         self.assertEqual(file.read(), b"TEXT")
 
-    def test_read_in_chunks(self):
+    def test_read_chunks(self):
         file = self.build_file()
         data, chunk_size = b"TEXT", 1
         with io.BytesIO(data) as buffer:
-            for chunk in file.read_in_chunks(chunk_size):
+            for chunk in file.read_chunks(chunk_size):
                 self.assertEqual(chunk, buffer.read(chunk_size))
+
+    def test_read_range(self):
+        file = self.build_file()
+        data, start, end = b"EX", 1, 3
+        self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_is_none(self):
+        file = self.build_file()
+        data, start, end = b"TE", None, 2
+        self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_end_is_none(self):
+        file = self.build_file()
+        data, start, end = b"XT", 2, None
+        self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_greater_than_end(self):
+        file = self.build_file()
+        data, start, end = b"", 100, 1
+        self.assertEqual(data, file.read_range(start, end))
 
     def test_transfer_to(self):
         file = self.build_file()
@@ -668,14 +691,34 @@ class TestRemoteFile(unittest.TestCase):
         with self.build_file() as file:
             self.assertEqual(file.read(), b"TEXT")
 
-    def test_read_in_chunks(self):
+    def test_read_chunks(self):
         data, chunk_size = b"TEXT", 1
         with (
             self.build_file() as file,
             io.BytesIO(data) as buffer
         ):
-            for chunk in file.read_in_chunks(chunk_size):
+            for chunk in file.read_chunks(chunk_size):
                 self.assertEqual(chunk, buffer.read(chunk_size))
+
+    def test_read_range(self):
+        data, start, end = b"EX", 1, 3
+        with self.build_file() as file:
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_is_none(self):
+        with self.build_file() as file:
+            data, start, end = b"TE", None, 2
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_end_is_none(self):
+        with self.build_file() as file:
+            data, start, end = b"XT", 2, None
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_greater_than_end(self):
+        with self.build_file() as file:
+            data, start, end = b"", 100, 1
+            self.assertEqual(data, file.read_range(start, end))
 
     def test_transfer_to(self):
         with self.build_file() as file:
@@ -948,14 +991,34 @@ class TestAWSS3File(unittest.TestCase):
         with self.build_file() as file:
             self.assertEqual(file.read(), b"TEXT")
 
-    def test_read_in_chunks(self):
+    def test_read_chunks(self):
         data, chunk_size = b"TEXT", 1
         with (
             self.build_file() as file,
             io.BytesIO(data) as buffer
         ):
-            for chunk in file.read_in_chunks(chunk_size):
+            for chunk in file.read_chunks(chunk_size):
                 self.assertEqual(chunk, buffer.read(chunk_size))
+
+    def test_read_range(self):
+        data, start, end = b"EX", 1, 3
+        with self.build_file() as file:
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_is_none(self):
+        with self.build_file() as file:
+            data, start, end = b"TE", None, 2
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_end_is_none(self):
+        with self.build_file() as file:
+            data, start, end = b"XT", 2, None
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_greater_than_end(self):
+        with self.build_file() as file:
+            data, start, end = b"", 100, 1
+            self.assertEqual(data, file.read_range(start, end))
 
     def test_transfer_to(self):
         with self.build_file() as file:
@@ -1215,14 +1278,34 @@ class TestAzureBlobFile(unittest.TestCase):
         with self.build_file() as file:
             self.assertEqual(file.read(), b"TEXT")
 
-    def test_read_in_chunks(self):
+    def test_read_chunks(self):
         data, chunk_size = b"TEXT", 1
         with (
             self.build_file() as file,
             io.BytesIO(data) as buffer
         ):
-            for chunk in file.read_in_chunks(chunk_size):
+            for chunk in file.read_chunks(chunk_size):
                 self.assertEqual(chunk, buffer.read(chunk_size))
+
+    def test_read_range(self):
+        data, start, end = b"EX", 1, 3
+        with self.build_file() as file:
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_is_none(self):
+        with self.build_file() as file:
+            data, start, end = b"TE", None, 2
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_end_is_none(self):
+        with self.build_file() as file:
+            data, start, end = b"XT", 2, None
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_greater_than_end(self):
+        with self.build_file() as file:
+            data, start, end = b"", 100, 1
+            self.assertEqual(data, file.read_range(start, end))
 
     def test_transfer_to(self):
         with self.build_file() as file:

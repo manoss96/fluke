@@ -442,7 +442,9 @@ class FileSystemHandler(ClientHandler):
         :param str file_path: The absolute path of \
             the file in question.
         '''
-        return _LocalFileReader(file_path=file_path)
+        return _LocalFileReader(
+            file_path=file_path,
+            file_size=self.get_file_size(file_path))
 
 
     def get_writer(
@@ -697,7 +699,10 @@ class SSHClientHandler(ClientHandler):
         :param str file_path: The absolute path of \
             the file in question.
         '''
-        return _RemoteFileReader(file_path=file_path, sftp=self.__sftp)
+        return _RemoteFileReader(
+            file_path=file_path,
+            file_size=self.get_file_size(file_path),
+            sftp=self.__sftp)
 
 
     def get_writer(
@@ -721,7 +726,8 @@ class SSHClientHandler(ClientHandler):
             write the file in distinct chunks or \
             all at once.
         '''
-        return _RemoteFileWriter(file_path=file_path, sftp=self.__sftp)
+        return _RemoteFileWriter(
+            file_path=file_path, sftp=self.__sftp)
 
 
     def _get_file_size_impl(self, file_path) -> int:
@@ -1218,7 +1224,10 @@ class AzureClientHandler(ClientHandler):
         :param str file_path: The absolute path of \
             the file in question.
         '''
-        return _AzureBlobReader(file_path=file_path, container=self.__container)
+        return _AzureBlobReader(
+            file_path=file_path,
+            file_size=self.get_file_size(file_path),
+            container=self.__container)
 
 
     def get_writer(

@@ -150,7 +150,7 @@ class _File(_ABC):
             return reader.read()
         
 
-    def read_in_chunks(self, chunk_size: int = 8192) -> _typ.Iterator[bytes]:
+    def read_chunks(self, chunk_size: int = 8192) -> _typ.Iterator[bytes]:
         '''
         Returns an iterator capable of going through the file's \
         contents as distinct chunks of bytes.
@@ -159,8 +159,27 @@ class _File(_ABC):
             Defaults to ``8192``.
         '''
         with self.__handler.get_reader(file_path=self.get_path()) as reader:
-            while chunk := reader.read(chunk_size):
-                yield chunk
+            yield from reader.read_chunks(chunk_size=chunk_size)
+
+
+    def read_range(
+        self,
+        start: _typ.Optional[int],
+        end: _typ.Optional[int]
+    ) -> bytes:
+        '''
+        Returns the file contents that correspond to the \
+        provided byte range.
+
+        :param int | None start: The point in file from which \
+            to begin reading bytes. If ``None``, then begin \
+            reading from the start of the file.
+        :param int | None end: The point in file at which \
+            to stop reading bytes. If ``None``, then stop \
+            reading at the end of the file.
+        '''
+        with self.__handler.get_reader(file_path=self.get_path()) as reader:
+            return reader.read_range(start, end)
 
 
     def transfer_to(
@@ -239,7 +258,7 @@ class _File(_ABC):
                 if chunk_size is None:
                     writer.write(reader.read())
                 else:
-                    while chunk := reader.read(chunk_size=chunk_size):
+                    for chunk in reader.read_chunks(chunk_size):
                         progress.update(n=writer.write(chunk))
             # Upsert metadata to destination if not "None".
             if metadata is not None:
@@ -1240,7 +1259,7 @@ class _Directory(_ABC):
                     if chunk_size is None:
                         writer.write(reader.read())
                     else:
-                        while chunk := reader.read(chunk_size=chunk_size):
+                        for chunk in reader.read_chunks(chunk_size):
                             progress.update(n=writer.write(chunk))
                 # Upsert metadata to destination if not "None".
                 if metadata is not None:
@@ -1372,25 +1391,7 @@ class _Directory(_ABC):
             sep = _infer_sep(path)
             path = path.replace(sep, self._get_separator())
         return path
-    
-
-    def _get_dir_metadata_ref(self, dir_path: str) -> dict[str, dict[str, str]]:
-        '''
-        Returns a dictionary containing all references to \
-        any metadata dictionaries that correspond to files \
-        that reside within the specified directory path.
-
-        :param str dir_path: Either the absolute path \
-            or the path relative to the directory of the \
-            subdirectory in question.
-
-        :raises InvalidDirectoryError: The provided path does \
-            not point to a file within the directory.
-        '''
-        if (not self.path_exists(dir_path)) and self.is_file(dir_path):
-            raise _IDE(path=dir_path)
-        raise NotImplementedError()
-    
+        
 
     def _get_file_metadata_ref(self, file_path: str) -> dict[str, str]:
         '''

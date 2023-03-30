@@ -3,11 +3,13 @@ import io as _io
 from abc import ABC as _ABC
 from abc import abstractmethod as _absmethod
 from typing import Optional as _Optional
+from typing import Iterator as _Iterator
 
 
 import paramiko as _prmk
 import boto3 as _boto3
 from azure.storage.blob import ContainerClient as _ContainerClient
+from azure.storage.blob import BlobType as _BlobType
 from botocore.exceptions import ClientError as _BotoClientError
 from azure.core.exceptions import HttpResponseError as _AzureResponseError
 
@@ -22,20 +24,18 @@ class _IOHandler(_ABC):
 
     :param str file_path: The path of the \
         handler's underlying file.
-    :param int offset: The byte offset.
     '''
 
-    def __init__(self, file_path: str, offset: int):
+    def __init__(self, file_path: str):
         '''
         An abstract class which serves as the \
         base class for all Reader/Writer classes.
 
         :param str file_path: The path of the \
             handler's underlying file.
-        :param int offset: The byte offset.
         '''
-        self.__offset = offset
         self.__file_path = file_path
+        self.__offset = None
 
 
     def get_file_path(self) -> str:
@@ -44,24 +44,26 @@ class _IOHandler(_ABC):
         underlying file.
         '''
         return self.__file_path
+    
 
-
-    def get_offset(self) -> int:
+    def get_offset(self) -> _Optional[int]:
         '''
-        Returns the current offset.
+        Returns the current offset value.
+
+        :note: This method will return ``None`` unless, \
+            it is invoked during the reading/writing of \
+            data in distinct chunks.
         '''
         return self.__offset
     
 
-    def update_offset(self, n: int) -> None:
+    def set_offset(self, offset: _Optional[int]) -> None:
         '''
-        Updates the current byte offset by adding \
-        the provided number to it.
+        Sets the offset.
 
-        :param int n: The number that is to be added \
-            to the offset.
+        :param int | None offset: The new offset.
         '''
-        self.__offset += n
+        self.__offset = offset
 
 
     @_absmethod
@@ -91,7 +93,32 @@ class _FileReader(_IOHandler, _ABC):
     '''
     An abstract class which serves as the \
     base class for all Reader classes.
+
+    :param str file_path: The path of the \
+        handler's underlying file.
     '''
+
+    def __init__(self, file_path: str, file_size: int):
+        '''
+        An abstract class which serves as the \
+        base class for all Reader classes.
+        
+        :param str file_path: The path of the \
+            handler's underlying file.
+        :param int file_size: The size in bytes of \
+            the file in question.
+        '''
+        super().__init__(file_path)
+        self.__file_size = file_size
+
+
+    def get_file_size(self) -> int:
+        '''
+        Returns the size in bytes of the \
+        handler's underlying file.
+        '''
+        return self.__file_size
+
 
     def get_mode(self) -> str:
         '''
@@ -107,29 +134,85 @@ class _FileReader(_IOHandler, _ABC):
         return self
     
 
-    def read(self, chunk_size: _Optional[int] = None) -> bytes:
+    def read(self) -> bytes:
         '''
-        Returns a chunk of bytes read from the opened file.
+        Reads the whole file and returns its bytes.
+        '''
+        return self.read_range(start=None, end=None)
+    
 
-        :param int | None chunk_size: If ``None`, then \
-            this method goes on to read the whole file, \
-            else reads a chunk of bytes whose size is \
-            equal to this value. Defaults to ``None``.
+    def read_chunks(
+        self,
+        chunk_size: int,
+        offset: int = 0
+    ) -> _Iterator[bytes]:
         '''
-        chunk = self._read_impl(chunk_size)
-        self.update_offset(len(chunk))
-        return chunk
+        Returns an iterator capable of going through \
+        the file's contents as distinct chunks of bytes.
+
+        :param int chunk_size: The size of each file chunk.
+        :param int offset: The point within the file to begin \
+            reading bytes chunks from.
+        '''
+        self.set_offset(offset=offset)
+        start = offset
+        end = start + chunk_size
+        file_size = self.get_file_size()
+        while start < file_size:
+            chunk = self._read_impl(start, end)
+            n = len(chunk)
+            start += n
+            end += n
+            self.set_offset(offset=start)
+            yield chunk
+        self.set_offset(offset=None)
+
+
+    def read_range(
+        self,
+        start: _Optional[int],
+        end: _Optional[int]
+    ) -> bytes:
+        '''
+        Reads and returns the specified byte range.
+
+        :param int | None start: The point in file from which \
+            to begin reading bytes. If ``None``, then begin \
+            reading from the start of the file.
+        :param int | None end: The point in file at which \
+            to stop reading bytes. If ``None``, then stop \
+            reading at the end of the file.
+        '''
+        if start is None:
+            start = 0
+        else:
+            start = max(0, start)
+
+        if end is None:
+            end = self.get_file_size()
+        else:
+            end = min(self.get_file_size(), end)
+
+        if start >= end:
+            return b""
+
+        return self._read_impl(start=start, end=end)
 
 
     @_absmethod
-    def _read_impl(self, chunk_size: _Optional[int]) -> bytes:
+    def _read_impl(
+        self,
+        start: _Optional[int],
+        end: _Optional[int]
+    ) -> bytes:
         '''
-        Returns a chunk of bytes read from the opened file.
+        Reads and returns the specified byte range.
 
-        :param int | None chunk_size: If not ``None``, \
-            then this method will go on to read a chunk \
-            of bytes whose size is equal to this value.
-            Defaults to ``None``.
+        :param int | None start: The point to start reading from. \
+            If ``None``, then starts reading from the beginning \
+            of the file.
+        :param int | None end: The point to stop reading from. \
+            If ``None``, then stops reading at the end of the file.
         '''
         pass
 
@@ -138,7 +221,24 @@ class _FileWriter(_IOHandler, _ABC):
     '''
     An abstract class which serves as the \
     base class for all Writer classes.
+    
+    :param str file_path: The path of the \
+        handler's underlying file.
     '''
+
+    def __init__(self, file_path: str):
+        '''
+        An abstract class which serves as the \
+        base class for all Writer classes.
+        
+        :param str file_path: The path of the \
+            handler's underlying file.
+        :param int file_size: The size in bytes of \
+            the file in question.
+        '''
+        super().__init__(file_path)
+        self.set_offset(offset=0)
+
 
     def get_mode(self) -> str:
         '''
@@ -163,7 +263,7 @@ class _FileWriter(_IOHandler, _ABC):
             to be written to the file.
         '''
         n = self._write_impl(chunk=chunk)
-        self.update_offset(n)
+        self.set_offset(self.get_offset() + n)
         return n
 
 
@@ -186,24 +286,22 @@ class LocalFileReader(_FileReader):
 
     :param str file_path: The absolute path of \
         the file in question.
-    :param int offset: The byte offset. Defaults \
-        to ``0``.
+    :param int file_size: The size in bytes of \
+        the file in question.
     '''
 
-    def __init__(self, file_path: str, offset: int = 0) -> None:
+    def __init__(self, file_path: str, file_size: int) -> None:
         '''
         A class used in reading from files which \
         reside within the local file system.
 
         :param str file_path: The absolute path of \
             the file in question.
-        :param int offset: The byte offset. Defaults \
-            to ``0``.
+        :param int file_size: The size in bytes of \
+            the file in question.
         '''
+        super().__init__(file_path=file_path, file_size=file_size)
         self.__file = open(file=file_path, mode=self.get_mode())
-        if offset > 0:
-            self.__file.seek(offset)
-        super().__init__(file_path=file_path, offset=offset)
 
 
     def close(self) -> None:
@@ -213,18 +311,22 @@ class LocalFileReader(_FileReader):
         self.__file.close()
 
 
-    def _read_impl(self, chunk_size: _Optional[int]) -> bytes:
+    def _read_impl(
+        self,
+        start: _Optional[int],
+        end: _Optional[int]
+    ) -> bytes:
         '''
-        Returns a chunk of bytes read from the opened file.
+        Reads and returns the specified byte range.
 
-        :param int | None chunk_size: If ``None`, then \
-            this method goes on to read the whole file, \
-            else reads a chunk of bytes whose size is \
-            equal to this value. Defaults to ``None``.
+        :param int | None start: The point to start reading from. \
+            If ``None``, then starts reading from the beginning \
+            of the file.
+        :param int | None end: The point to stop reading from. \
+            If ``None``, then stops reading at the end of the file.
         '''
-        if chunk_size is None:
-            return self.__file.read()
-        return self.__file.read(chunk_size)
+        self.__file.seek(start)
+        return self.__file.read(end - start)
 
 
 class LocalFileWriter(_FileWriter):
@@ -234,27 +336,21 @@ class LocalFileWriter(_FileWriter):
 
     :param str file_path: The absolute path of \
         the file in question.
-    :param int offset: The byte offset. Defaults \
-        to ``0``.
     '''
 
-    def __init__(self, file_path: str, offset: int = 0) -> None:
+    def __init__(self, file_path: str) -> None:
         '''
         A class used in writing to files which \
         reside within the local file system.
 
         :param str file_path: The absolute path of \
             the file in question.
-        :param int offset: The byte offset. Defaults \
-            to ``0``.
         '''
+        super().__init__(file_path=file_path)
         # Create necessary directories if they do not exist.
         _os.makedirs(name=_os.path.dirname(file_path), exist_ok=True)
         # Open file for writing.
         self.__file = open(file=file_path, mode=self.get_mode())
-        if offset > 0:
-            self.__file.seek(offset)
-        super().__init__(file_path=file_path, offset=offset)
 
 
     def close(self) -> None:
@@ -284,17 +380,17 @@ class RemoteFileReader(_FileReader):
 
     :param str file_path: The absolute path of \
         the file in question.
+    :param int file_size: The size in bytes of \
+        the file in question.
     :param SFTPClient sftp: An ``SFTPClient`` \
         class instance.
-    :param int offset: The byte offset. Defaults \
-        to ``0``.
     '''
 
     def __init__(
         self,
         file_path: str,
-        sftp: _prmk.SFTPClient,
-        offset: int = 0
+        file_size: int,
+        sftp: _prmk.SFTPClient
     ) -> None:
         '''
         A class used in reading from files which \
@@ -302,16 +398,14 @@ class RemoteFileReader(_FileReader):
 
         :param str file_path: The absolute path of \
             the file in question.
+        :param int file_size: The size in bytes of \
+            the file in question.
         :param SFTPClient sftp: An ``SFTPClient`` \
             class instance.
-        :param int offset: The byte offset. Defaults \
-            to ``0``.
         '''
+        super().__init__(file_path=file_path, file_size=file_size)
         self.__file: _prmk.SFTPFile = sftp.open(
             filename=file_path, mode=self.get_mode())
-        if offset > 0:
-            self.__file.seek(offset)
-        super().__init__(file_path=file_path, offset=offset)
 
 
     def close(self) -> None:
@@ -321,18 +415,22 @@ class RemoteFileReader(_FileReader):
         self.__file.close()
 
 
-    def _read_impl(self, chunk_size: _Optional[int]) -> bytes:
+    def _read_impl(
+        self,
+        start: _Optional[int],
+        end: _Optional[int]
+    ) -> bytes:
         '''
-        Returns a chunk of bytes read from the opened file.
+        Reads and returns the specified byte range.
 
-        :param int | None chunk_size: If ``None`, then \
-            this method goes on to read the whole file, \
-            else reads a chunk of bytes whose size is \
-            equal to this value. Defaults to ``None``.
+        :param int | None start: The point to start reading from. \
+            If ``None``, then starts reading from the beginning \
+            of the file.
+        :param int | None end: The point to stop reading from. \
+            If ``None``, then stops reading at the end of the file.
         '''
-        if chunk_size is None:
-            return self.__file.read()
-        return self.__file.read(chunk_size)
+        self.__file.seek(start)
+        return self.__file.read(end - start)
 
 
 class RemoteFileWriter(_FileWriter):
@@ -351,8 +449,7 @@ class RemoteFileWriter(_FileWriter):
     def __init__(
         self,
         file_path: str,
-        sftp: _prmk.SFTPClient,
-        offset: int = 0
+        sftp: _prmk.SFTPClient
     ) -> None:
         '''
         A class used in writing to files which \
@@ -362,9 +459,9 @@ class RemoteFileWriter(_FileWriter):
             the file in question.
         :param SFTPClient sftp: An ``SFTPClient`` \
             class instance.
-        :param int offset: The byte offset. Defaults \
-            to ``0``.
         '''
+        super().__init__(file_path=file_path)
+
         sep = _infer_sep(file_path)
 
         def get_parent_dir(file_path: str) -> _Optional[str]:
@@ -393,9 +490,6 @@ class RemoteFileWriter(_FileWriter):
 
         self.__file: _prmk.SFTPFile = sftp.open(
             filename=file_path, mode=self.get_mode())
-        if offset > 0:
-            self.__file.seek(offset)
-        super().__init__(file_path=file_path, offset=offset)
         
 
     def close(self) -> None:
@@ -428,16 +522,13 @@ class AWSS3FileReader(_FileReader):
     :param int file_size: The size in bytes of \
         the file in question.
     :param Bucket bucket: A ``Bucket`` class instance.
-    :param int offset: The byte offset. Defaults \
-        to ``0``.
     '''
 
     def __init__(
         self,
         file_path: str,
         file_size: int,
-        bucket: '_boto3.resources.factory.s3.Bucket',
-        offset: int = 0
+        bucket: '_boto3.resources.factory.s3.Bucket'
     ) -> None:
         '''
         A class used in reading from files which \
@@ -448,12 +539,9 @@ class AWSS3FileReader(_FileReader):
         :param int file_size: The size in bytes of \
             the file in question.
         :param Bucket bucket: A ``Bucket`` class instance.
-        :param int offset: The byte offset. Defaults \
-            to ``0``.
         '''
+        super().__init__(file_path=file_path, file_size=file_size)
         self.__file = bucket.Object(key=file_path)
-        self.__file_size = file_size
-        super().__init__(file_path=file_path, offset=offset)
 
 
     def close(self) -> None:
@@ -467,23 +555,21 @@ class AWSS3FileReader(_FileReader):
         pass
 
 
-    def _read_impl(self, chunk_size: _Optional[int]) -> bytes:
+    def _read_impl(
+        self,
+        start: _Optional[int],
+        end: _Optional[int]
+    ) -> bytes:
         '''
-        Returns a chunk of bytes read from the opened file.
+        Reads and returns the specified byte range.
 
-        :param int | None chunk_size: If ``None`, then \
-            this method goes on to read the whole file, \
-            else reads a chunk of bytes whose size is \
-            equal to this value. Defaults to ``None``.
-        '''
-        if chunk_size is None:
-            return self.__file.get()['Body'].read()
-        start = self.get_offset()
-        if start == self.__file_size:
-            return b""
-        if (end := start + chunk_size - 1) > self.__file_size:
-            end = self.__file_size
-        range = f"bytes={start}-{end}"
+        :param int | None start: The point to start reading from. \
+            If ``None``, then starts reading from the beginning \
+            of the file.
+        :param int | None end: The point to stop reading from. \
+            If ``None``, then stops reading at the end of the file.
+        '''    
+        range = f"bytes={start}-{end-1}"
         return self.__file.get(Range=range)['Body'].read()
 
             
@@ -503,8 +589,6 @@ class AWSS3FileWriter(_FileWriter):
         all at once.
     :param SFTPClient sftp: An ``SFTPClient`` \
         class instance.
-    :param int offset: The byte offset. Defaults \
-        to ``0``.
     '''
 
     def __init__(
@@ -512,8 +596,7 @@ class AWSS3FileWriter(_FileWriter):
         file_path: str,
         metadata: _Optional[dict[str, str]],
         in_chunks: bool,
-        bucket: '_boto3.resources.factory.s3.Bucket',
-        offset: int = 0
+        bucket: '_boto3.resources.factory.s3.Bucket'
     ) -> None:
         '''
         A class used in reading from files which \
@@ -529,9 +612,9 @@ class AWSS3FileWriter(_FileWriter):
             write the file in distinct chunks or \
             all at once.
         :param Bucket bucket: A ``Bucket`` class instance.
-        :param int offset: The byte offset. Defaults \
-            to ``0``.
         '''
+        super().__init__(file_path=file_path)
+
         self.__file = bucket.Object(key=file_path)
         # NOTE: If uploading file in chunks, then initiate
         # multipart-upload, including any metadata that 
@@ -547,7 +630,6 @@ class AWSS3FileWriter(_FileWriter):
         else:
             self.__mpu = None
             self.__metadata = metadata
-        super().__init__(file_path=file_path, offset=offset)
         
 
     def close(self) -> None:
@@ -594,17 +676,17 @@ class AzureBlobReader(_FileReader):
 
     :param str file_path: The absolute path of \
         the file in question.
+    :param int file_size: The size in bytes of \
+        the file in question.
     :param ContainerClient container: A \
         ``ContainerClient`` class instance.
-    :param int offset: The byte offset. Defaults \
-        to ``0``.
     '''
 
     def __init__(
         self,
         file_path: str,
-        container: _ContainerClient,
-        offset: int = 0
+        file_size: int,
+        container: _ContainerClient
     ) -> None:
         '''
         A class used in reading from files which \
@@ -612,13 +694,13 @@ class AzureBlobReader(_FileReader):
 
         :param str file_path: The absolute path of \
             the file in question.
+        :param int file_size: The size in bytes of \
+            the file in question.
         :param ContainerClient container: A \
             ``ContainerClient`` class instance.
-        :param int offset: The byte offset. Defaults \
-            to ``0``.
         '''
+        super().__init__(file_path=file_path, file_size=file_size)
         self.__file = container.get_blob_client(blob=file_path)
-        super().__init__(file_path=file_path, offset=offset)
 
 
     def close(self) -> None:
@@ -628,26 +710,24 @@ class AzureBlobReader(_FileReader):
         self.__file.close()
 
 
-    def _read_impl(self, chunk_size: _Optional[int]) -> bytes:
+    def _read_impl(
+        self,
+        start: _Optional[int],
+        end: _Optional[int]
+    ) -> bytes:
         '''
-        Returns a chunk of bytes read from the opened file.
+        Reads and returns the specified byte range.
 
-        :param int | None chunk_size: If ``None`, then \
-            this method goes on to read the whole file, \
-            else reads a chunk of bytes whose size is \
-            equal to this value. Defaults to ``None``.
-        '''
-        if chunk_size is None:
-            return self.__file.download_blob().read()
-        try:
-            return self.__file.download_blob(
-                offset=self.get_offset(),
-                length=chunk_size).read()
-        except _AzureResponseError as ex:
-            if "ErrorCode:InvalidRange" in str(ex):
-                return b""
-            raise ex
-        
+        :param int | None start: The point to start reading from. \
+            If ``None``, then starts reading from the beginning \
+            of the file.
+        :param int | None end: The point to stop reading from. \
+            If ``None``, then stops reading at the end of the file.
+        '''  
+        return self.__file.download_blob(
+            offset=start,
+            length=end-start).read()
+
 
 class AzureBlobWriter(_FileWriter):
     '''
@@ -675,7 +755,6 @@ class AzureBlobWriter(_FileWriter):
         metadata: _Optional[dict[str, str]],
         in_chunks: bool,
         container: _ContainerClient,
-        offset: int = 0
     ) -> None:
         '''
         A class used in writing to files which \
@@ -695,17 +774,27 @@ class AzureBlobWriter(_FileWriter):
         :param int offset: The byte offset. Defaults \
             to ``0``.
         '''
+        super().__init__(file_path=file_path)
         self.__file = container.get_blob_client(blob=file_path)
         self.__metadata = metadata
         self.__in_chunks = in_chunks
-        if in_chunks:
-            # NOTE: Delete blob if it already exists, and re-create
-            #       it as an "Append" blob in order to account for
-            #       uploading data in chunks.
-            if self.__file.exists():
+        # NOTE: If blob already exists, then it has to be deleted only
+        #       in the case that its type has to change. Furthermore,
+        #       in the case the blob is to be written in chunks, it must
+        #       be re-created beforehands as an "Append" blob.
+        if self.__file.exists():
+            blob_type = self.__file.get_blob_properties().blob_type
+            if blob_type == _BlobType.PAGEBLOB:
                 self.__file.delete_blob()
+                if in_chunks:
+                    self.__file.create_append_blob()
+            elif in_chunks and blob_type == _BlobType.BLOCKBLOB:
+                self.__file.delete_blob()
+                self.__file.create_append_blob()
+            elif not in_chunks and blob_type == _BlobType.APPENDBLOB:
+                self.__file.delete_blob()
+        elif in_chunks:
             self.__file.create_append_blob()
-        super().__init__(file_path=file_path, offset=offset)
 
 
     def close(self) -> None:
