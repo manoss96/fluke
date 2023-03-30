@@ -267,7 +267,7 @@ class _File(_ABC):
                     metadata=metadata)
         except Exception as e:
             if not suppress_output:
-                print(f"Failure: {e}")
+                print(f"Operation unsuccessful: {e}")
             return False
         
         if not suppress_output:
@@ -1269,7 +1269,7 @@ class _Directory(_ABC):
                 if not suppress_output:
                     print(f"Failure: {e}")
             if not suppress_output:
-                print(f"Total Progress: {i+1}/{total_num_files} files.")
+                print(f"Total progress: {i+1}/{total_num_files} files.")
 
         if failures == 0:
             if not suppress_output:
