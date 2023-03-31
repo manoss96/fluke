@@ -293,7 +293,8 @@ counting three separate entities within the context of our example, namely
 Note that whenever ``recursively`` is set to ``True``,
 subdirectories are not considered to be additional entities,
 and are only searched for any files that may reside within them.
-If, for example, ``subdir`` were empty, then ``dir.count(recursively=True)``
+If, for example, ``subdir`` were empty, then
+``local_dir.count(recursively=True)``
 would merely return the value ``1``.
 
 
