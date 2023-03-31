@@ -97,7 +97,7 @@ class's context manager:
     path='path/within/amazon/s3/bucket/dir'
   ) as aws_dir:
 
-    # Interact with aws_dir.
+    # Interact with "aws_dir".
     ...
 
 .. _accesing-files-through-a-directory:
@@ -193,7 +193,7 @@ fetch its size in bytes:
   file = LocalFile(path='/home/user/path/to/file.txt')
   size = file.get_size()
 
-or even read its entire contents:
+or even read its entire contents as raw bytes and store them in memory:
 
 .. code-block:: python
 
@@ -202,14 +202,55 @@ or even read its entire contents:
   file = LocalFile(path='/home/user/path/to/file.txt')
   file_bytes = file.read()
 
-Since all *File* API methods are pretty self-explanatory, in this section
-we will focus on the *Dir* API, and more specifically, on parameter
-``recursively``, as its value directly determines the result of most
-of its methods. In essence, this parameter dictates whether a directory
-is going to be traversed recursively or not, or in other words, whether
-we are going to take into consideration its top-level files only, or all
-its files, no matter whether they reside directly within the directory or
-within one of its subdirectories.
+There is even the possibility of reading files partially. This is especially
+useful in cases where a file is too large to hold in memory, though you already
+know the position of the information that we seek within the file. Partially
+reading a file is achieved through the *File* API's ``read_range`` method.
+
+.. code-block:: python
+
+  from fluke.storage import LocalFile
+
+  file = LocalFile(path='/home/user/path/to/file.txt')
+
+  # Read a chunk of bytes containing only 
+  # the first Kilobyte of data.
+  chunk = file.read_range(start=0, end=1024)
+
+  # Extract info from said chunk...
+  text = chunk.decode('utf-8')
+  ...
+
+Finally, even if you don't know the exact position of the information
+you are after, you can always read a large file in smaller chunks,
+which can be examined on the spot:
+
+.. code-block:: python
+
+  from fluke.storage import LocalFile
+
+  file = LocalFile(path='/home/user/path/to/file.txt')
+
+  # Go through the file in 1MB chunks...
+  for chunk in file.read_chunks(chunk_size=1024*1024)
+    # Decode bytes to text.
+    text = chunk.decode('utf-8')
+    # Stop if you found what you were looking for.
+    if valuable_info in text:
+        break
+
+  # Work on "text"...
+  ...
+
+
+Since all *File* API methods are pretty self-explanatory, for the rest
+of this section we will focus on the *Dir* API, and more specifically,
+on parameter ``recursively``, as its value directly determines the result
+of most of its methods. In essence, this parameter dictates whether a
+directory is going to be traversed recursively or not, or in other words,
+whether we are going to take into consideration its top-level files only,
+or all its files, no matter whether they reside directly within the directory
+or within one of its subdirectories.
 
 Consider for example the following directory:
 
@@ -252,7 +293,8 @@ counting three separate entities within the context of our example, namely
 Note that whenever ``recursively`` is set to ``True``,
 subdirectories are not considered to be additional entities,
 and are only searched for any files that may reside within them.
-If, for example, ``subdir`` were empty, then ``dir.count(recursively=True)``
+If, for example, ``subdir`` were empty, then
+``local_dir.count(recursively=True)``
 would merely return the value ``1``.
 
 
@@ -260,7 +302,7 @@ would merely return the value ``1``.
 Transfering data
 ========================================
 
-The ability to move data between various locations is arguably
+Being able to move data between various locations is arguably
 Fluke's predominant feature, and it is rendered possible
 through the use of the ``transfer_to`` method, which is part of
 both *File* and *Dir* APIs. Below is a complete example in which
@@ -285,19 +327,25 @@ all in just a few lines of code:
   ):
       aws_dir.transfer_to(dst=azr_dir, recursively=True)
 
-This is what you should be seeing during the method's execution, provided
-that you have not set parameter ``show_progress`` to ``False``:
+Unless you set parameter ``suppress_output`` to ``True``, Fluke will go
+on to print the progress of the transfer onto the console:
 
-.. image:: data_transfer_progress.jpg
-  :width: 700
-  :height: 35
-  :alt: Data transfer progress
+.. image:: transfer_files_without_chunk_size.jpg
+  :alt: Data transfer progress (without chunk_size)
+
+Furthermore, if you set parameter ``chunk_size``, the method will
+produce an even more verbose output, as files will be transfered
+in distinct chunks instead of all at once:
+
+.. image:: transfer_files_with_chunk_size.jpg
+  :alt: Data transfer progress (with chunk_size)
+
 
 Finally, it is important to note that if anything goes wrong during
 the transfer of one or more entities, then an appropriate message
 will be displayed after the method is done with being executed:
 
-.. image:: data_transfer_error.jpg
+.. image:: transfer_files_with_error.jpg
   :width: 700
   :alt: Data transfer error
 

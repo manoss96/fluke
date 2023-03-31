@@ -13,7 +13,6 @@ __all__ = [
 
 
 import os as _os
-import io as _io
 import typing as _typ
 import warnings as _warn
 from abc import ABC as _ABC
@@ -25,7 +24,6 @@ from tqdm import tqdm as _tqdm
 
 from ._helper import join_paths as _join_paths
 from ._helper import infer_separator as _infer_sep
-from ._errors import Error as _Error
 from .auth import AWSAuth as _AWSAuth
 from .auth import AzureAuth as _AzureAuth
 from .auth import RemoteAuth as _RemoteAuth
@@ -146,24 +144,56 @@ class _File(_ABC):
 
     def read(self) -> bytes:
         '''
-        Reads and returns the file's bytes.
+        Reads and returns the file's contents in bytes.
         '''
-        with _io.BytesIO() as buffer:
-            self._get_handler().read(
-                file_path=self.get_path(),
-                buffer=buffer,
-                include_metadata=False)
-            return buffer.getvalue()
+        with self.__handler.get_reader(self.get_path()) as reader:
+            return reader.read()
+        
+
+    def read_chunks(self, chunk_size: int = 8192) -> _typ.Iterator[bytes]:
+        '''
+        Returns an iterator capable of going through the file's \
+        contents as distinct chunks of bytes.
+
+        :param int chunk_size: The file chunk size in bytes. \
+            Defaults to ``8192``.
+        '''
+        with self.__handler.get_reader(file_path=self.get_path()) as reader:
+            yield from reader.read_chunks(chunk_size=chunk_size)
+
+
+    def read_range(
+        self,
+        start: _typ.Optional[int],
+        end: _typ.Optional[int]
+    ) -> bytes:
+        '''
+        Returns the file contents that correspond to the \
+        provided byte range.
+
+        :param int | None start: The point in file from which \
+            to begin reading bytes. If ``None``, then begin \
+            reading from the start of the file.
+        :param int | None end: The point in file at which \
+            to stop reading bytes. If ``None``, then stop \
+            reading at the end of the file.
+        '''
+        with self.__handler.get_reader(file_path=self.get_path()) as reader:
+            return reader.read_range(start, end)
 
 
     def transfer_to(
         self,
         dst: '_Directory',
         overwrite: bool = False,
-        include_metadata: bool = False
-    ) -> None:
+        include_metadata: bool = False,
+        chunk_size: _typ.Optional[int] = None,
+        suppress_output: bool = False
+    ) -> bool:
         '''
-        Copies the file into the provided directory.
+        Copies the file into the provided directory. \
+        Returns ``True`` if everything went as expected, \
+        else returns ``False``.
 
         :param _Directory dst: A ``_Directory`` class instance, \
             which represents the transfer operation's destination.
@@ -172,50 +202,78 @@ class _File(_ABC):
         :param bool include_metadata: Indicates whether any \
             existing metadata are to be assigned to the resulting \
             file. Defaults to ``False``.
-
-        :raises OverwriteError: File already exists while parameter \
-            ``overwrite`` has been set to ``False``.
+        :param int | None chunk_size: If not ``None``, then files are \
+            transfered in chunks, whose size are equal to this parameter \
+            value. Defaults to ``None``.
+        :param bool suppress_output: If set to ``True``, then \
+            suppresses all output. Defaults to ``False``.
         '''
+        source = self.get_uri() \
+            if isinstance(self, _NonLocalFile) \
+            else self.get_path()
+        
         destination = dst.get_uri() \
             if isinstance(dst, _NonLocalDir) \
             else dst.get_path()
-        print(f'\nCopying file "{self.get_path()}" into "{destination}".')
+        
+        if not suppress_output:
+            print(f'\nTransfering file "{source}" into "{destination}".')
 
-        file_name = self.get_name()
-        error = None
+        dst_fp = dst._to_absolute(self.get_name(), replace_sep=True)
 
-        if not overwrite and dst.path_exists(file_name):
-            raise _OverwriteError(
-                file_path=_join_paths(self._get_separator(), destination, file_name))
-        else:
-            with _io.BytesIO() as buffer:
-                # Read file contents (and metadata optionally)
-                try:
-                    metadata = self.__handler.read(self.get_path(), buffer, include_metadata)
-                    # Update metadata dictionary if necessary.
-                    if include_metadata and (custom_metadata := self.get_metadata()):
-                        metadata = custom_metadata
-                    # Rewind buffer.
-                    buffer.seek(0)
-                    # Write file contents.
-                    dst_file_path = _join_paths(dst._get_separator(), dst.get_path(), file_name)
-                    try:
-                        dst._get_handler().write(
-                            file_path=dst_file_path,
-                            buffer=buffer,
-                            metadata=metadata)
-                        # Upsert the destination's metadata dictionary.
-                        if metadata is not None:
-                            dst._upsert_metadata(file_path=dst_file_path, metadata=metadata)
-                    except Exception as e:
-                        error = _Error(uri=dst_file_path, is_src=False, msg=str(e))
-                except Exception as e:
-                    error = _Error(uri=self.get_uri(), is_src=True, msg=str(e))
-                
-        if error is None:
+        try:
+            # Raise an "OverwriteError" if file exists
+            # in destination and "overwrite" is "False".
+            if not overwrite and dst.path_exists(dst_fp):
+                raise _OverwriteError(file_path=dst_fp)
+            # Define metadata dictionary.
+            if include_metadata:
+                if custom_metadata := self.get_metadata():
+                    metadata = custom_metadata
+                else:
+                    metadata = self.__handler.get_file_metadata(
+                        file_path=self.get_path())
+            else:
+                metadata = None
+            # Perform the file transfer.
+            with (
+                _tqdm(
+                    disable=(
+                        suppress_output or
+                        chunk_size is None
+                    ),
+                    desc="Progress",
+                    unit='bytes',
+                    total=self.get_size()
+                ) as progress,
+                self.__handler.get_reader(
+                    file_path=self.get_path()
+                ) as reader,
+                dst._get_handler().get_writer(
+                    file_path=dst_fp,
+                    metadata=metadata,
+                    in_chunks=chunk_size is not None
+                ) as writer
+            ):
+                if chunk_size is None:
+                    writer.write(reader.read())
+                else:
+                    for chunk in reader.read_chunks(chunk_size):
+                        progress.update(n=writer.write(chunk))
+            # Upsert metadata to destination if not "None".
+            if metadata is not None:
+                dst._upsert_metadata(
+                    file_path=dst_fp,
+                    metadata=metadata)
+        except Exception as e:
+            if not suppress_output:
+                print(f"Operation unsuccessful: {e}")
+            return False
+        
+        if not suppress_output:
             print("Operation successful!")
-        else:
-            print(f"Operation unsuccessful: {error.get_message()}")
+          
+        return True
     
 
     def _get_close_after_use(self) -> bool:
@@ -334,7 +392,7 @@ class LocalFile(_File):
             handler=handler,
             close_after_use=False)
         return instance
-
+    
 
 class _NonLocalFile(_File, _ABC):
     '''
@@ -535,7 +593,7 @@ class RemoteFile(_NonLocalFile):
             handler=handler,
             close_after_use=False)
         return instance
-    
+
 
     def __enter__(self) -> 'RemoteFile':
         '''
@@ -807,6 +865,7 @@ class AzureBlobFile(_CloudFile):
     def _create_file(
         cls,
         path: str,
+        storage_account: str,
         handler: _AzureClientHandler,
         metadata: dict[str, str]
     ) -> 'AzureBlobFile':
@@ -814,14 +873,15 @@ class AzureBlobFile(_CloudFile):
         Creates and returns an ``AzureBlobFile`` instance.
 
         :param str path: The path pointing to the file.
-        :param str host: The name of the host in which \
-            the file resides.
+        :param str storage_account: The name of the storage \
+            account to which the blob's container belongs.
         :param AWSClientHandler handler: An ``AzureClientHandler`` \
             class instance.
         :param dict[str, str] metadata: A dictionary containing \
             any metadata associated with the file.
         '''
         instance = cls.__new__(cls)
+        instance.__storage_account = storage_account
         _File.__init__(
             instance,
             path=path,
@@ -851,6 +911,7 @@ class _Directory(_ABC):
     def __init__(
         self,
         path: str,
+        metadata: dict[str, dict[str, str]],
         handler: _ClientHandler,
     ):
         '''
@@ -868,7 +929,7 @@ class _Directory(_ABC):
             ) != '' else None
         self.__separator = sep
         self.__handler = handler
-        self.__metadata: dict[str, dict[str, str]] = dict()
+        self.__metadata = metadata
 
 
     def get_path(self) -> str:
@@ -898,7 +959,7 @@ class _Directory(_ABC):
         :raises InvalidFileError: The provided path does \
             not point to a file within the directory.
         '''
-        return dict(self._get_metadata_ref(file_path=file_path))
+        return dict(self._get_file_metadata_ref(file_path=file_path))
 
 
     def set_metadata(self, file_path: str, metadata: dict[str, str]) -> None:
@@ -1105,8 +1166,9 @@ class _Directory(_ABC):
         recursively: bool = False,
         overwrite: bool = False,
         include_metadata: bool = False,
-        show_progress: bool = True
-    ) -> None:
+        chunk_size: _typ.Optional[int] = None,
+        suppress_output: bool = False,
+    ) -> bool:
         '''
         Copies all files within this directory into \
         the destination directory.
@@ -1125,17 +1187,19 @@ class _Directory(_ABC):
         :param bool include_metadata: Indicates whether any \
             existing metadata are to be assigned to the resulting \
             files. Defaults to ``False``.
-        :param bool show_progress: Indicates whether to display \
-            a loading bar on the progress of the operations. \
-            Defaults to ``True``.
+        :param int | None chunk_size: If not ``None``, then files are \
+            transfered in chunks, whose size are equal to this parameter \
+            value. Defaults to ``None``.
+        :param bool suppress_output: If set to ``True``, then \
+            suppresses all output. Defaults to ``False``.
         '''
+        source = self.get_uri() \
+            if isinstance(self, _NonLocalDir) \
+            else self.get_path()
+        
         destination = dst.get_uri() \
             if isinstance(dst, _NonLocalDir) \
             else dst.get_path()
-
-        print_msg = f'\nCopying files from "{self.get_path()}" '
-        print_msg += f'into "{destination}".'
-        print(print_msg)
 
         # Store the directory's files in a list.
         file_paths = [fp for fp in self.__handler.traverse_dir(
@@ -1144,55 +1208,79 @@ class _Directory(_ABC):
             include_dirs=False,
             show_abs_path=True)]
 
-        errors: list[_Error] = list()
         total_num_files = len(file_paths)
+        failures = 0
 
         # Iterate through all files that are to be transfered.
-        for fp in _tqdm(
-            iterable=file_paths,
-            disable=not show_progress,
-            desc="Progress",
-            unit='files',
-            total=total_num_files
-        ):
-            rel_fp = self._to_relative(fp, replace_sep=False)
-            if not overwrite and dst.path_exists(rel_fp):
-                errors.append(_Error(
-                    uri=_join_paths(dst._get_separator(), destination, rel_fp),
-                    is_src=False,
-                    msg='File already exists. Try setting "overwrite" to "True".'))
-                continue
+        for i, fp in enumerate(file_paths):
 
-            with _io.BytesIO() as buffer:
-                try:
-                    # Read file contents (and metadata optionally).
-                    metadata = self.__handler.read(fp, buffer, include_metadata)
-                    # Update metadata dictionary if necessary.
-                    if include_metadata and (custom_metadata := self.get_metadata(fp)):
+            rel_fp = self._to_relative(path=fp, replace_sep=False)
+            dst_fp = dst._to_absolute(path=rel_fp, replace_sep=True)
+
+            src_uri = f"{source}{rel_fp}"
+            dst_uri = f"{destination}{dst._get_separator().join(rel_fp.split(dst._get_separator())[:-1])}"
+
+            if not suppress_output:
+                print(f'\nTransfering file "{src_uri}" into "{dst_uri}"...')
+
+            try:
+                # Raise an "OverwriteError" if file exists
+                # in destination and "overwrite" is "False".
+                if not overwrite and dst.path_exists(dst_fp):
+                    raise _OverwriteError(file_path=dst_fp)
+                # Define metadata dictionary.
+                if include_metadata:
+                    if custom_metadata := self.get_metadata(fp):
                         metadata = custom_metadata
-                    # Rewind buffer.
-                    buffer.seek(0)
-                    # Write file contents.
-                    dst_fp = dst._to_absolute(rel_fp, replace_sep=True)
-                    dst._get_handler().write(
+                    else:
+                        metadata = self.__handler.get_file_metadata(fp)
+                else:
+                    metadata = None
+                # Perform the file transfer.
+                with (
+                    _tqdm(
+                        disable=(
+                            suppress_output
+                            or chunk_size is None
+                        ),
+                        desc="Progress",
+                        unit='bytes',
+                        total=self.get_file(fp).get_size(),
+                    ) as progress,
+                    self.__handler.get_reader(
+                        file_path=fp
+                    ) as reader,
+                    dst._get_handler().get_writer(
                         file_path=dst_fp,
-                        buffer=buffer,
-                        metadata=metadata)
-                    # Upsert the destination's metadata dictionary.
-                    if metadata is not None:
-                        dst._upsert_metadata(file_path=dst_fp, metadata=metadata)
-                except Exception as e:
-                    errors.append(_Error(uri=self.get_uri(), is_src=True, msg=str(e)))
+                        metadata=metadata,
+                        in_chunks=chunk_size is not None
+                    ) as writer
+                ):
+                    if chunk_size is None:
+                        writer.write(reader.read())
+                    else:
+                        for chunk in reader.read_chunks(chunk_size):
+                            progress.update(n=writer.write(chunk))
+                # Upsert metadata to destination if not "None".
+                if metadata is not None:
+                    dst._upsert_metadata(file_path=dst_fp, metadata=metadata)
+            except Exception as e:
+                failures += 1
+                if not suppress_output:
+                    print(f"Failure: {e}")
+            if not suppress_output:
+                print(f"Total progress: {i+1}/{total_num_files} files.")
 
-        if len(errors) == 0:
-            print(f'Operation successful: Copied all {total_num_files} files!')
+        if failures == 0:
+            if not suppress_output:
+                print(f'\nOperation successful: Copied all {total_num_files} files!')
+            return True
         else:
-            msg = "Operation unsuccessful: Failed to copy "
-            msg += f"{len(errors)} out of {total_num_files} files."
-            msg += f"\n\nDisplaying {len(errors)} errors:\n"
-            for err in errors:
-                msg += str(err)
-            print(msg)
+            if not suppress_output:
+                msg = "\nOperation unsuccessful: Failed to copy "
+                msg += f"{failures} out of {total_num_files} files."
+                print(msg)
+            return False
     
 
     def traverse_files(
@@ -1255,7 +1343,7 @@ class _Directory(_ABC):
         ):
             file_dict.update({ file_path: self.get_file(file_path)})
         return file_dict
-
+    
 
     def _get_separator(self) -> str:
         '''
@@ -1297,14 +1385,18 @@ class _Directory(_ABC):
             to replace the provided path's separator \
             with the separator used by this directory.
         '''
-        path = self._to_relative(path, replace_sep)
-        return _join_paths(self._get_separator(), self.__path, path)
-    
+        path = self._to_relative(path, replace_sep=False)
+        path = _join_paths(self._get_separator(), self.__path, path)
+        if replace_sep:
+            sep = _infer_sep(path)
+            path = path.replace(sep, self._get_separator())
+        return path
+        
 
-    def _get_metadata_ref(self, file_path: str) -> dict[str, str]:
+    def _get_file_metadata_ref(self, file_path: str) -> dict[str, str]:
         '''
         Returns the reference to the metadata dictionary \
-        that corresponds to the specified path. If said \
+        that corresponds to the specified file. If said \
         dictionary doesn't exist, then this method creates it \
         and returns it.
 
@@ -1338,13 +1430,13 @@ class _Directory(_ABC):
             containing the metadata that are to be \
             associated with the file.
         '''
-        # NOTE: Update the metadata dictionary without
-        #       creating a new reference.
         rel_path = self._to_relative(path=file_path, replace_sep=False)
 
         if rel_path not in self.__metadata:
             self.__metadata.update({rel_path: dict()})
 
+        # NOTE: Update the metadata dictionary without
+        #       creating a new reference.
         self.__metadata[rel_path].clear()
 
         for (key, val) in metadata.items():
@@ -1360,7 +1452,7 @@ class _Directory(_ABC):
             the parent constructor does not result in a \
             second exception being thrown due to ``__del__``.
         '''
-        instance = super().__new__(cls)
+        instance = object.__new__(cls)
         instance.__handler = None
         return instance
     
@@ -1435,6 +1527,7 @@ class LocalDir(_Directory):
 
         super().__init__(
             path=f"{_os.path.abspath(path).replace(_os.sep, sep).rstrip(sep)}{sep}",
+            metadata=dict(),
             handler=_FileSystemHandler())
 
 
@@ -1459,7 +1552,7 @@ class LocalDir(_Directory):
         return LocalFile._create_file(
             path=file_path,
             handler=self._get_handler(),
-            metadata=self._get_metadata_ref(file_path))
+            metadata=self._get_file_metadata_ref(file_path))
     
 
     def traverse_files(
@@ -1535,7 +1628,7 @@ class _NonLocalDir(_Directory, _ABC):
         :param ClientHandler handler: A ``ClientHandler`` class \
             instance used for interacting with the underlying handler.
         '''
-        super().__init__(path=path, handler=handler)
+        super().__init__(path=path, metadata=dict(), handler=handler)
         self.open()
 
 
@@ -1702,7 +1795,7 @@ class RemoteDir(_NonLocalDir):
             path=file_path,
             host=self.get_hostname(),
             handler=self._get_handler(),
-            metadata=self._get_metadata_ref(file_path))
+            metadata=self._get_file_metadata_ref(file_path))
     
 
     def traverse_files(
@@ -1916,7 +2009,7 @@ class AWSS3Dir(_CloudDir):
         return AWSS3File._create_file(
             path=file_path,
             handler=self._get_handler(),
-            metadata=self._get_metadata_ref(file_path))
+            metadata=self._get_file_metadata_ref(file_path))
 
 
     def traverse_files(
@@ -2105,8 +2198,9 @@ class AzureBlobDir(_CloudDir):
         file_path = self._to_absolute(file_path, replace_sep=False)
         return AzureBlobFile._create_file(
             path=file_path,
+            storage_account=self.__storage_account,
             handler=self._get_handler(),
-            metadata=self._get_metadata_ref(file_path))
+            metadata=self._get_file_metadata_ref(file_path))
     
 
     def traverse_files(

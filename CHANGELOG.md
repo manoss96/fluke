@@ -2,6 +2,29 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - UNRELEASED
+
+### Added
+
+- *File/Dir* API *transfer_to* now receives a *chunk_size*
+  parameter in order to specify the size of the file chunk
+  that is transfered at a given time.
+
+- *File* API *transfer_to* now receives a *suppress_output*
+  parameter in order to suppress the method's output.
+   
+### Changed
+
+- *File* API method *transfer_to* now returns bool instead of ``None``
+  depending on whether the transfer was successful or not.
+  (https://github.com/manoss96/fluke/issues/20)
+
+- *Dir* API method *transfer_to* now receives a *suppress_output*
+  parameter in place of *show_progress*.
+ 
+### Fixed
+
+
 ## [0.2.0] - 2023/03/25
 
 ### Added

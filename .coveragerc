@@ -1,10 +1,13 @@
+[run]
+source = fluke
+
 [report]
 exclude_lines =
-    # Skip abstract methods.
-    @_absmethod
-
     # Re-enable the standard pragma.
     pragma: no cover
+
+    # Skip abstract methods.
+    @_absmethod
 
     # Skip exceptions.
     raise AssertionError

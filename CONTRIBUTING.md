@@ -2,8 +2,8 @@
 Contributing to Fluke
 ============================
 
-No matter whether you wish to report a bug or propose a new feature,
-please raise a new issue by visiting the [Issues Page][issues-page].
+Whether you wish to report a bug or propose a new feature,
+please proceed by [raising an issue][raise-issue].
 
 Setting up a development environment
 -------------------------------------
@@ -37,11 +37,11 @@ python3 -m unittest tests.test_storage
 ```
 Finally, you can get the test coverage by executing the following commands:
 ```
-python -m coverage run --rcfile=tests/.coveragerc -m unittest discover tests
+python -m coverage run -m unittest discover tests
 python -m coverage html
 ```
-This will produce a ``htmlcov/index.html`` file which will contain
+This will produce an ``htmlcov/index.html`` file which will contain
 various information regarding the test coverage.
 
 <!-- MARKDOWN LINKS & IMAGES -->
-[issues-page]: https://github.com/manoss96/fluke/issues
+[raise-issue]: https://github.com/manoss96/fluke/issues/new
