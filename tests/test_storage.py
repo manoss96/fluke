@@ -2556,7 +2556,6 @@ class TestRemoteDir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Count size of files via both dirs using the "File" API.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
             for file in no_cache_dir.get_files().values():
                 _ = file.get_size()
             for file in cache_dir.get_files().values():
@@ -3676,7 +3675,7 @@ class TestAzureBlobDir(unittest.TestCase):
 
     def test_transfer_to(self):
         # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME))
+        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
         os.mkdir(tmp_dir_path)
         # Copy the directory's contents into this tmp directory.
         with self.build_dir() as dir:
@@ -3699,7 +3698,7 @@ class TestAzureBlobDir(unittest.TestCase):
 
     def test_transfer_to_on_recursively(self):
         # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME))
+        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
         os.mkdir(tmp_dir_path)
         # Copy the directory's contents into this tmp directory.
         with self.build_dir() as dir:
@@ -3726,7 +3725,7 @@ class TestAzureBlobDir(unittest.TestCase):
 
     def test_transfer_to_on_chunk_size(self):
         # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME))
+        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
         os.mkdir(tmp_dir_path)
         # Copy the directory's contents into this tmp directory.
         with self.build_dir() as dir:
@@ -3752,7 +3751,7 @@ class TestAzureBlobDir(unittest.TestCase):
     def test_transfer_to_on_overwrite_set_to_false(self):
         # Create a copy of the directory.
         tmp_dir_name = TMP_DIR_NAME
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name))
+        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name)
         shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
         # While capturing stdout...
         with (
@@ -3774,7 +3773,7 @@ class TestAzureBlobDir(unittest.TestCase):
     def test_transfer_to_on_overwrite_set_to_true(self):
         # Create a copy of the directory.
         tmp_dir_name = TMP_DIR_NAME
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name))
+        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name)
         shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
         # While capturing stdout...
         with (
@@ -3799,7 +3798,7 @@ class TestAzureBlobDir(unittest.TestCase):
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
             # Create a temporary dictionary.
-            tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME))
+            tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
             os.mkdir(tmp_dir_path)
             tmp_dir = TestLocalDir.build_dir(path=tmp_dir_path)
             # Copy the directory's contents into this
@@ -3816,7 +3815,7 @@ class TestAzureBlobDir(unittest.TestCase):
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
             # Create a temporary dictionary.
-            tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME))
+            tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
             os.mkdir(tmp_dir_path)
             tmp_dir = TestLocalDir.build_dir(path=tmp_dir_path)
             # Copy the directory's contents into this
@@ -3834,7 +3833,7 @@ class TestAzureBlobDir(unittest.TestCase):
         filename = DIR_FILE_NAME
         with self.build_dir() as dir:
             # Create a temporary dictionary.
-            tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME))
+            tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
             os.mkdir(tmp_dir_path)
             tmp_dir = TestLocalDir.build_dir(path=tmp_dir_path)
             # Copy the directory's contents into this
@@ -3851,7 +3850,7 @@ class TestAzureBlobDir(unittest.TestCase):
         # Get source file.
         src_file = TestLocalFile.build_file()
         # Create a temporary "blob" dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
+        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
         os.mkdir(tmp_dir_path)
         with self.build_dir(path=tmp_dir_path) as azr_dir:
             # Copy file into dir.
@@ -3869,7 +3868,7 @@ class TestAzureBlobDir(unittest.TestCase):
         # Get source file.
         src_file = TestLocalFile.build_file()
         # Create a temporary "blob" dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
+        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
         os.mkdir(tmp_dir_path)
         with self.build_dir(path=tmp_dir_path) as azr_dir:
             # Copy file into dir.
@@ -3889,7 +3888,7 @@ class TestAzureBlobDir(unittest.TestCase):
         metadata = {'2': '2'}
         src_file.set_metadata(metadata=metadata)
         # Create a temporary "blob" dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
+        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
         os.mkdir(tmp_dir_path)
         with self.build_dir(path=tmp_dir_path) as azr_dir:
             # Copy file into dir.
@@ -3907,7 +3906,7 @@ class TestAzureBlobDir(unittest.TestCase):
         metadata = {'2': '2'}
         src_file.set_metadata(metadata=metadata)
         # Create a temporary "blob" dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
+        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
         os.mkdir(tmp_dir_path)
         with self.build_dir(path=tmp_dir_path) as azr_dir:
             # Copy file into dir.
