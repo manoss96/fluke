@@ -150,18 +150,6 @@ class _File(_ABC):
             return reader.read()
         
 
-    def read_chunks(self, chunk_size: int = 8192) -> _typ.Iterator[bytes]:
-        '''
-        Returns an iterator capable of going through the file's \
-        contents as distinct chunks of bytes.
-
-        :param int chunk_size: The file chunk size in bytes. \
-            Defaults to ``8192``.
-        '''
-        with self.__handler.get_reader(file_path=self.get_path()) as reader:
-            yield from reader.read_chunks(chunk_size=chunk_size)
-
-
     def read_range(
         self,
         start: _typ.Optional[int],
@@ -180,6 +168,70 @@ class _File(_ABC):
         '''
         with self.__handler.get_reader(file_path=self.get_path()) as reader:
             return reader.read_range(start, end)
+        
+
+    def read_chunks(self, chunk_size: int = 8192) -> _typ.Iterator[bytes]:
+        '''
+        Returns an iterator capable of going through the file's \
+        contents as distinct chunks of bytes.
+
+        :param int chunk_size: The file chunk size in bytes. \
+            Defaults to ``8192``.
+        '''
+        with self.__handler.get_reader(file_path=self.get_path()) as reader:
+            yield from reader.read_chunks(chunk_size=chunk_size)
+
+
+    def read_text(
+        self,
+        encoding: str = 'utf-8'
+    ) -> str:
+        '''
+        Reads and returns the file's contents as text.
+
+        :param str encoding: The encoding with which to decode \
+            the bytes. Defaults to ``utf-8``.
+
+        :note: See
+            `Standard Encodings <https://docs.python.org/3/library/codecs.html#standard-encodings>`_ \
+            for all available encodings.
+        '''
+        return self.read().decode(encoding)
+        
+
+    def read_lines(
+        self,
+        chunk_size: _typ.Optional[int] = None,
+        encoding: str = 'utf-8'
+    ) -> _typ.Iterator[str]:
+        '''
+        Returns an iterator capable of going through \
+        the file line-by-line.
+
+        :param int | None chunk_size: If not ``None``, then the file \
+            is read in distinct chunks, whose size are equal to this \
+            parameter value. Defaults to ``None``.
+        :param str encoding: The encoding with which to decode \
+            the bytes. Defaults to ``utf-8``.
+
+        :note: See
+            `Standard Encodings <https://docs.python.org/3/library/codecs.html#standard-encodings>`_ \
+            for all available encodings.
+        '''
+        if chunk_size is None:
+            for line in self.read_text(encoding).split('\n'):
+                yield line
+        else:
+            text_temp = ''
+            for chunk in self.read_chunks(chunk_size):
+                text_chunks = chunk.decode(encoding).split('\n')
+                if len(text_chunks) > 1:
+                    yield text_temp + text_chunks[0]
+                    for line in text_chunks[1:-1]:
+                        yield line
+                    text_temp = ''
+                text_temp += text_chunks[-1]
+            yield text_temp
 
 
     def transfer_to(

@@ -6,21 +6,35 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- *File/Dir* API *transfer_to* now receives a *chunk_size*
-  parameter in order to specify the size of the file chunk
-  that is transfered at a given time.
+- *File* API now provides a *read_range* method in order
+  to be able to partially read a file.
+  (https://github.com/manoss96/fluke/issues/20)
 
-- *File* API *transfer_to* now receives a *suppress_output*
-  parameter in order to suppress the method's output.
+- *File* API now provides a *read_chunks* method in order
+  to be able to read files in chunks of bytes.
+  (https://github.com/manoss96/fluke/issues/20)
+
+- *File* API now provides a *read_text* method in order
+  to be able to read files as text.
+  (https://github.com/manoss96/fluke/issues/21)
+
+- *File* API now provides a *read_lines* method in order
+  to be able to read a text file line-by-line.
+  (https://github.com/manoss96/fluke/issues/21)
    
 ### Changed
 
-- *File* API method *transfer_to* now returns bool instead of ``None``
-  depending on whether the transfer was successful or not.
+- *File/Dir* API method *transfer_to* now returns ``bool`` instead 
+  of ``None`` depending on whether the transfer was successful or not.
+  (https://github.com/manoss96/fluke/issues/20)
+
+- *File/Dir* API *transfer_to* now receives a *chunk_size*
+  parameter in order to specify the size of the file chunk
+  that is transfered at a given time.
   (https://github.com/manoss96/fluke/issues/20)
 
 - *Dir* API method *transfer_to* now receives a *suppress_output*
-  parameter in place of *show_progress*.
+  parameter in place of *show_progress*. (https://github.com/manoss96/fluke/issues/20)
  
 ### Fixed
 

@@ -203,8 +203,8 @@ or even read its entire contents as raw bytes and store them in memory:
   file_bytes = file.read()
 
 There is even the possibility of reading files partially. This is especially
-useful in cases where a file is too large to hold in memory, though you already
-know the position of the information that we seek within the file. Partially
+useful in cases where a file is too large to keep in memory, however, you are
+aware of the position of the information that you seek within the file. Partially
 reading a file is achieved through the *File* API's ``read_range`` method.
 
 .. code-block:: python
