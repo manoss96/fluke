@@ -572,6 +572,23 @@ class TestLocalFile(unittest.TestCase):
         data, start, end = b"", 100, 1
         self.assertEqual(data, file.read_range(start, end))
 
+    def test_read_text(self):
+        file = self.build_file()
+        data = "TEXT"
+        self.assertEqual(data, file.read_text())
+
+    def test_read_lines(self):
+        file = self.build_file()
+        data = "TEXT"
+        for line in file.read_lines():
+            self.assertEqual(data, line)
+
+    def test_read_lines_on_chunk_size(self):
+        file = self.build_file()
+        data = "TEXT"
+        for line in file.read_lines(chunk_size=1):
+            self.assertEqual(data, line)
+
     def test_transfer_to(self):
         file = self.build_file()
         dir = TestLocalDir.build_dir(path=ABS_DIR_PATH)
@@ -719,6 +736,23 @@ class TestRemoteFile(unittest.TestCase):
         with self.build_file() as file:
             data, start, end = b"", 100, 1
             self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_text(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            self.assertEqual(data, file.read_text())
+
+    def test_read_lines(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            for line in file.read_lines():
+                self.assertEqual(data, line)
+
+    def test_read_lines_on_chunk_size(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            for line in file.read_lines(chunk_size=1):
+                self.assertEqual(data, line)
 
     def test_transfer_to(self):
         with self.build_file() as file:
@@ -1020,6 +1054,23 @@ class TestAWSS3File(unittest.TestCase):
             data, start, end = b"", 100, 1
             self.assertEqual(data, file.read_range(start, end))
 
+    def test_read_text(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            self.assertEqual(data, file.read_text())
+
+    def test_read_lines(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            for line in file.read_lines():
+                self.assertEqual(data, line)
+
+    def test_read_lines_on_chunk_size(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            for line in file.read_lines(chunk_size=1):
+                self.assertEqual(data, line)
+
     def test_transfer_to(self):
         with self.build_file() as file:
             # Copy file into dir.
@@ -1306,6 +1357,23 @@ class TestAzureBlobFile(unittest.TestCase):
         with self.build_file() as file:
             data, start, end = b"", 100, 1
             self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_text(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            self.assertEqual(data, file.read_text())
+
+    def test_read_lines(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            for line in file.read_lines():
+                self.assertEqual(data, line)
+
+    def test_read_lines_on_chunk_size(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            for line in file.read_lines(chunk_size=1):
+                self.assertEqual(data, line)
 
     def test_transfer_to(self):
         with self.build_file() as file:
