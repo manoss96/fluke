@@ -63,61 +63,37 @@ class CacheManager():
         '''
         A class used in managing ``Cache`` instances.
         '''
-        # Regarding __cache:
+        # __cache explained:
+        #
         #   - __cache[file] --> Cache
-        #   - __cache[dir] --> dict[str, dict | Cache]
-        self.__cache: dict[str, _Union[dict, Cache]] = dict()
-        # has_been_traversed[dir_path]:
-        #   - 0 --> Has not been traversed
-        #   - 1 --> Has been traversed top-level
-        #   - 2 --> Has been traversed recursively
-        self.__has_been_traversed: dict[str, int] = dict()
+        #   - __cache[dir] --> list[int, dict[str, dict | Cache]]
+        #       - int:
+        #           - 0 --> dir has not been traversed
+        #           - 1 --> dir has been traversed top-level
+        #           - 2 --> dir has traversed recursively
+        #       - dict[str, dict | Cache]:
+        #           - A __cache-like dictionary.
+        #
+        #  Example:
+        #
+        #  {
+        #    'file1.txt': Cache(),
+        #    'dir' : [
+        #      1,
+        #      {
+        #        'file2.txt': Cache(),
+        #        'subdir': [0, {}]
+        #      }
+        #    ]
+        #  }
+        self.__cache: dict[str, _Union[list[int, dict], Cache]] = [0, dict()]
 
 
     def purge(self) -> None:
         '''
         Purges cache.
         '''
-        self.__cache = dict()
-        self.__has_been_traversed = dict()
-
-
-    def has_been_traversed(
-        self,
-        dir_path: str,
-        recursively: bool
-    ) -> bool:
-        '''
-        Returns ``True`` if the specified directory has been \
-        traversed, meaning it has had its contents listed and \
-        cached, else returns ``False``.
-
-        :param str dir_path: The absolute path of the directory \
-            in question.
-        :param bool recursively: Indicates whether to examine if \
-            the directory has been traversed recursively or not.
-        '''
-        n = self.__has_been_traversed.get(dir_path, 0)
-        return (n == 2) or (n == 1 and not recursively)
-    
-
-    def set_as_traversed(
-        self,
-        dir_path: str,
-        recursively: bool
-    ) -> None:
-        '''
-        Marks the specified directory as traversed, meaning it \
-        has had its contents listed and cached.
-
-        :param str dir_path: The absolute path of the directory \
-            in question.
-        :param bool recursively: Indicates whether to mark that \
-            the directory has been traversed recursivelt or not.
-        '''
-        if dir_path not in self.__has_been_traversed:
-            self.__has_been_traversed.update({dir_path: 0})
-        self.__has_been_traversed[dir_path] = 2 if recursively else 1
+        self.__cache = [0, dict()]
 
 
     def get_size(self, file_path: str) -> _Optional[int]:
@@ -197,15 +173,19 @@ class CacheManager():
             any directories when ``recursively`` has been set \
             to ``False``.
         '''
-
-        if not self.has_been_traversed(
-            dir_path=dir_path,
-            recursively=recursively
-        ):
-            print("NOT TRAVERSEDDDDD")
-            return None
-        
         sep = _infer_sep(path=dir_path)
+
+        dir_cache = self.__get_dir_cache_ref(
+            dir_path=dir_path,
+            sep=sep,
+            create_if_missing=False)
+        
+        if dir_cache is None:
+            return None
+        else:
+            n = dir_cache[0]
+            if not ((n == 2) or (n == 1 and not recursively)):
+                return None
 
         def iterate_recursively(dir_path: str) -> _Iterator[str]:
             '''
@@ -219,7 +199,7 @@ class CacheManager():
                 dir_path=dir_path,
                 sep=sep,
                 create_if_missing=False
-            )):
+            )[1]):
                 abs_path = _join_paths(sep, dir_path, name)
                 if isinstance(dir_cache[name], Cache):
                     yield abs_path
@@ -233,7 +213,7 @@ class CacheManager():
             dir_cache = self.__get_dir_cache_ref(
                 dir_path=dir_path,
                 sep=sep,
-                create_if_missing=False)
+                create_if_missing=False)[1]
             return (_join_paths(sep, dir_path, name) for name in filter(
                     lambda name: isinstance(dir_cache[name], Cache) or include_dirs,
                     dir_cache))
@@ -262,7 +242,8 @@ class CacheManager():
         # Grab the cache corresponding to the directory.
         # Create it if it does not already exist.
         sep = _infer_sep(path=dir_path)
-        cache = self.__get_dir_cache_ref(
+
+        dir_cache = self.__get_dir_cache_ref(
             dir_path=dir_path,
             sep=sep,
             create_if_missing=True)
@@ -270,20 +251,31 @@ class CacheManager():
         # Go through the directory's contents
         # and cache them.
         if recursively:
+            subdirs = set()
             for path in sorted(iterator):
                 _ = self.__get_file_cache_ref(
                     file_path=path,
                     sep=sep,
                     create_if_missing=True)
+                subdirs.add(sep.join(path.split(sep)[:-1]))
+            # TODO: Check the case where an intermediate subdir
+            #       has no files, only subdirs, so it won't
+            #       be set as having been recursively traversed.
+            # Set every subdir as recursively traversed too.
+            for subdir in subdirs:
+                self.__get_dir_cache_ref(
+                    dir_path=subdir,
+                    sep=sep,
+                    create_if_missing=False)[0] = 2
         else:
             for path in sorted(iterator):
-                if path not in cache:
-                    cache.update({path.removeprefix(dir_path):
-                        Cache() if is_file(path) else dict()})
+                if path not in dir_cache[1]:
+                    dir_cache[1].update({
+                        path.removeprefix(dir_path):
+                        Cache() if is_file(path) else [0, dict()]})
 
         # Set directory as traversed.
-        self.set_as_traversed(
-            dir_path=dir_path, recursively=recursively)
+        dir_cache[0] = 2 if recursively else 1
 
 
     def __get_file_cache_ref(
@@ -308,13 +300,13 @@ class CacheManager():
         # Remove any left separator.
         *parent_dirs, file_name = file_path.lstrip(sep).split(sep)
 
-        cache = self.__cache
+        cache = self.__cache[1]
 
         for dir in parent_dirs:
             dir += sep
             if dir not in cache:
-                cache.update({dir: dict()})
-            cache = cache[dir]
+                cache.update({dir: [0, dict()]})
+            cache = cache[dir][1]
         
         if file_name not in cache:
             if create_if_missing:
@@ -330,13 +322,13 @@ class CacheManager():
         dir_path: str,
         sep: str,
         create_if_missing: bool
-    ) -> dict:
+    ) -> _Optional[list[int, dict]]:
         '''
-        Returns a reference to the cache dictionary \
-        that corresponds to the specified directory. \
-        If said dictionary does not exist and ``create_if_missing`` \
-        has been set to ``True``, then this method goes on \
-        to create and return it, else returns ``None``.
+        Returns a reference to the list that corresponds \
+        to the specified directory's cache. If said directory \
+        does not exist and ``create_if_missing`` has been set \
+        to ``True``, then this method goes on to create and \
+        return it, else returns ``None``.
 
         :param str dir_path: The absolute path to the file \
             in question.
@@ -351,16 +343,16 @@ class CacheManager():
             lambda name: name + sep,
             dir_path.split(sep))
 
-        cache = self.__cache
+        cache = self.__cache[1]
 
         for dir in parent_dirs:
             if dir not in cache:
-                cache.update({dir: dict()})
-            cache = cache[dir]
+                cache.update({dir: [0, dict()]})
+            cache = cache[dir][1]
         
         if dir_name not in cache:
             if create_if_missing:
-                cache.update({dir_name: dict()})
+                cache.update({dir_name: [0, dict()]})
             else:
                 return None
 
