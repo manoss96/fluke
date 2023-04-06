@@ -139,7 +139,8 @@ class _File(_ABC):
         '''
         Returns the file's size in bytes.
         '''
-        return self._get_handler().get_file_size(self.get_path())
+        return self._get_handler().get_file_size(
+            file_path=self.get_path())
     
 
     def read(self) -> bytes:
@@ -670,7 +671,8 @@ class _CloudFile(_NonLocalFile, _ABC):
             method will be overriden after invoking this \
             method.
         '''
-        metadata = self._get_handler().get_file_metadata(self.get_path())
+        metadata = self._get_handler().get_file_metadata(
+            self.get_path())
         self.set_metadata(metadata=metadata)
 
 
@@ -1078,8 +1080,8 @@ class _Directory(_ABC):
         show_abs_path: bool = False
     ) -> _typ.Iterator[str]:
         '''
-        Returns an iterator capable of traversing the dictionary's \
-        contents as strings representing their paths.
+        Returns an iterator capable of traversing the directory \
+        by going through the paths of its contents.
 
         :param bool recursively: Indicates whether the directory \
             is to be traversed recursively or not. If set to  ``False``, \
@@ -1108,8 +1110,8 @@ class _Directory(_ABC):
         show_abs_path: bool = False
     ) -> list[str]:
         '''
-        Returns an iterator capable of traversing the dictionary's \
-        contents as strings representing their paths.
+        Returns a list containing the paths that \
+        correspond to the directory's contents.
 
         :param bool recursively: Indicates whether the directory \
             is to be traversed recursively or not. If set to  ``False``, \
@@ -1341,7 +1343,7 @@ class _Directory(_ABC):
     ) -> _typ.Iterator[_File]:
         '''
         Returns an iterator capable of going through the \
-        dictionaries files as ``File`` instances.
+        directory's files as ``File`` instances.
 
         :param bool recursively: Indicates whether the directory \
             is to be traversed recursively or not. If set to  ``False``, \
@@ -1462,12 +1464,12 @@ class _Directory(_ABC):
         if not (self.path_exists(file_path) and self.is_file(file_path)):
             raise _IFE(path=file_path)
         
-        rel_path = self._to_relative(path=file_path, replace_sep=False)
+        abs_path = self._to_absolute(path=file_path, replace_sep=False)
         
-        if rel_path not in self.__metadata:
-            self.__metadata.update({rel_path: dict()})
+        if abs_path not in self.__metadata:
+            self.__metadata.update({abs_path: dict()})
 
-        return self.__metadata.get(rel_path)
+        return self.__metadata.get(abs_path)
     
 
     def _upsert_metadata(self, file_path: str, metadata: dict[str, str]) -> None:
@@ -1482,17 +1484,17 @@ class _Directory(_ABC):
             containing the metadata that are to be \
             associated with the file.
         '''
-        rel_path = self._to_relative(path=file_path, replace_sep=False)
+        abs_path = self._to_absolute(path=file_path, replace_sep=False)
 
-        if rel_path not in self.__metadata:
-            self.__metadata.update({rel_path: dict()})
+        if abs_path not in self.__metadata:
+            self.__metadata.update({abs_path: dict()})
 
         # NOTE: Update the metadata dictionary without
         #       creating a new reference.
-        self.__metadata[rel_path].clear()
+        self.__metadata[abs_path].clear()
 
         for (key, val) in metadata.items():
-            self.__metadata[rel_path].update({ key: val })
+            self.__metadata[abs_path].update({ key: val })
     
 
     def __new__(cls, *args, **kwargs) -> '_Directory':
