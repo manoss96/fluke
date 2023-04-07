@@ -249,19 +249,22 @@ class CacheManager():
             create_if_missing=True)
         
         # Go through the directory's contents
-        # and cache them.
+        # recursively, and cache them.
         if recursively:
             subdirs = set()
             for path in sorted(iterator):
+                # This will cache its contents.
                 _ = self.__get_file_cache_ref(
                     file_path=path,
                     sep=sep,
                     create_if_missing=True)
-                subdirs.add(sep.join(path.split(sep)[:-1]))
-            # TODO: Check the case where an intermediate subdir
-            #       has no files, only subdirs, so it won't
-            #       be set as having been recursively traversed.
-            # Set every subdir as recursively traversed too.
+                # Meanwhile, gather all subdirectories.
+                *parent_dirs, _ = path.split(sep)
+                for i, dir in enumerate(parent_dirs):
+                    if dir == '':
+                        continue
+                    subdirs.add(f"{sep.join(parent_dirs[:i])}{sep+dir+sep}".lstrip(sep))
+            # Mark every subdir as recursively traversed as well.
             for subdir in subdirs:
                 self.__get_dir_cache_ref(
                     dir_path=subdir,
@@ -269,9 +272,9 @@ class CacheManager():
                     create_if_missing=False)[0] = 2
         else:
             for path in sorted(iterator):
-                if path not in dir_cache[1]:
-                    dir_cache[1].update({
-                        path.removeprefix(dir_path):
+                rel_path = path.removeprefix(dir_path)
+                if rel_path not in dir_cache[1]:
+                    dir_cache[1].update({rel_path:
                         Cache() if is_file(path) else [0, dict()]})
 
         # Set directory as traversed.
@@ -305,7 +308,10 @@ class CacheManager():
         for dir in parent_dirs:
             dir += sep
             if dir not in cache:
-                cache.update({dir: [0, dict()]})
+                if create_if_missing:
+                    cache.update({dir: [0, dict()]})
+                else:
+                    return None
             cache = cache[dir][1]
         
         if file_name not in cache:
@@ -347,7 +353,10 @@ class CacheManager():
 
         for dir in parent_dirs:
             if dir not in cache:
-                cache.update({dir: [0, dict()]})
+                if create_if_missing:
+                    cache.update({dir: [0, dict()]})
+                else:
+                    return None
             cache = cache[dir][1]
         
         if dir_name not in cache:
