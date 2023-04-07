@@ -335,6 +335,13 @@ class _File(_ABC):
         should close before the instance destructor is called.
         '''
         return self.__close_after_use
+
+
+    def _get_separator(self) -> str:
+        '''
+        Returns the file's path separator.
+        '''
+        return self.__separator
     
 
     def _get_handler(self) -> _ClientHandler:
@@ -342,13 +349,6 @@ class _File(_ABC):
         Returns this instance's ``ClientHandler``.
         '''
         return self.__handler
-    
-
-    def _get_separator(self) -> str:
-        '''
-        Returns the file's path separator.
-        '''
-        return self.__separator
     
 
     def __new__(
@@ -532,7 +532,8 @@ class _NonLocalFile(_File, _ABC):
                 # Purge cache.
                 self.purge()
                 # Warn if connections are open.
-                if  handler.is_open():
+                if handler.is_open():
+                    # Display warning.
                     msg = f'You might want to consider instantiating class "{self.__class__.__name__}"'
                     msg += " through the use of a context manager by utilizing Python's"
                     msg += ' "with" statement, or by simply invoking an instance\'s'
@@ -784,8 +785,6 @@ class AWSS3File(_CloudFile):
         Creates and returns an ``AWSS3File`` instance.
 
         :param str path: The path pointing to the file.
-        :param str host: The name of the host in which \
-            the file resides.
         :param AWSClientHandler handler: An ``AWSClientHandler`` \
             class instance.
         :param dict[str, str] metadata: A dictionary containing \
@@ -929,7 +928,7 @@ class AzureBlobFile(_CloudFile):
         :param str path: The path pointing to the file.
         :param str storage_account: The name of the storage \
             account to which the blob's container belongs.
-        :param AWSClientHandler handler: An ``AzureClientHandler`` \
+        :param AzureClientHandler handler: An ``AzureClientHandler`` \
             class instance.
         :param dict[str, str] metadata: A dictionary containing \
             any metadata associated with the file.
@@ -958,8 +957,13 @@ class _Directory(_ABC):
     for all directory-like classes.
 
     :param str path: The path pointing to the directory.
+    :param dict[str, dict[str, str]] metadata: A dictionary \
+        containing file metadata.
     :param ClientHandler handler: A ``ClientHandler`` class \
         instance used for interacting with the underlying handler.
+    :param bool close_after_use: This value indicates whether \
+        all open connections should close before the instance \
+        destructor is called.
     '''
 
     def __init__(
@@ -967,14 +971,20 @@ class _Directory(_ABC):
         path: str,
         metadata: dict[str, dict[str, str]],
         handler: _ClientHandler,
+        close_after_use: bool = True
     ):
         '''
         An abstract class which serves as the base class \
         for all directory-like classes.
 
         :param str path: The path pointing to the directory.
+        :param dict[str, dict[str, str]] metadata: A dictionary \
+            containing file metadata.
         :param ClientHandler handler: A ``ClientHandler`` class \
             instance used for interacting with the underlying handler.
+        :param bool close_after_use: This value indicates whether \
+            all open connections should close before the instance \
+            destructor is called.
         '''
         sep = _infer_sep(path)
         self.__path = f"{path.rstrip(sep)}{sep}" if path != '' else path
@@ -984,6 +994,7 @@ class _Directory(_ABC):
         self.__separator = sep
         self.__handler = handler
         self.__metadata = metadata
+        self.__close_after_use = close_after_use
 
 
     def get_path(self) -> str:
@@ -1399,9 +1410,17 @@ class _Directory(_ABC):
         return file_dict
     
 
+    def _get_close_after_use(self) -> bool:
+        '''
+        Returns a value indicating whether all open connections \
+        should close before the instance destructor is called.
+        '''
+        return self.__close_after_use
+    
+
     def _get_separator(self) -> str:
         '''
-        Returns the path's separator.
+        Returns the directory path's separator.
         '''
         return self.__separator
     
@@ -1411,6 +1430,38 @@ class _Directory(_ABC):
         Returns this instance's ``ClientHandler``.
         '''
         return self.__handler
+    
+
+    def _get_metadata_ref(self) -> dict[str, dict[str, str]]:
+        '''
+        Returns a reference to the metadata dictionary.
+        '''
+        return self.__metadata
+    
+
+    def _get_file_metadata_ref(self, file_path: str) -> dict[str, str]:
+        '''
+        Returns a reference to the metadata dictionary \
+        that corresponds to the specified file. If said \
+        dictionary doesn't exist, then this method creates it \
+        and returns it.
+
+        :param str file_path: Either the absolute path \
+            or the path relative to the directory of the \
+            file in question.
+
+        :raises InvalidFileError: The provided path does \
+            not point to a file within the directory.
+        '''
+        if not (self.path_exists(file_path) and self.is_file(file_path)):
+            raise _IFE(path=file_path)
+        
+        abs_path = self._to_absolute(path=file_path, replace_sep=False)
+        
+        if abs_path not in self.__metadata:
+            self.__metadata.update({abs_path: dict()})
+
+        return self.__metadata.get(abs_path)
     
 
     def _to_relative(self, path: str, replace_sep: bool) -> str:
@@ -1445,32 +1496,7 @@ class _Directory(_ABC):
             sep = _infer_sep(path)
             path = path.replace(sep, self._get_separator())
         return path
-        
-
-    def _get_file_metadata_ref(self, file_path: str) -> dict[str, str]:
-        '''
-        Returns the reference to the metadata dictionary \
-        that corresponds to the specified file. If said \
-        dictionary doesn't exist, then this method creates it \
-        and returns it.
-
-        :param str file_path: Either the absolute path \
-            or the path relative to the directory of the \
-            file in question.
-
-        :raises InvalidFileError: The provided path does \
-            not point to a file within the directory.
-        '''
-        if not (self.path_exists(file_path) and self.is_file(file_path)):
-            raise _IFE(path=file_path)
-        
-        abs_path = self._to_absolute(path=file_path, replace_sep=False)
-        
-        if abs_path not in self.__metadata:
-            self.__metadata.update({abs_path: dict()})
-
-        return self.__metadata.get(abs_path)
-    
+            
 
     def _upsert_metadata(self, file_path: str, metadata: dict[str, str]) -> None:
         '''
@@ -1528,6 +1554,30 @@ class _Directory(_ABC):
         :param str file_path: Either the absolute path \
             or the path relative to the directory of the \
             file in question.
+
+        :raises InvalidPathError: The provided path \
+            does not exist.
+        :raises InvalidFileError: The provided path does \
+            not point to a file within the directory.
+        '''
+        pass
+
+    
+    @_absmethod
+    def get_dir(self, dir_path: str) -> '_Directory':
+        '''
+        Returns the directory residing in the specified \
+        path as a ``_Directory`` instance.
+
+        :param str dir_path: Either the absolute path \
+            or the path relative to the directory of the \
+            subdirectory in question.
+
+        :raises InvalidPathError: The provided path \
+            does not exist.
+        :raises InvalidDirectoryError: The provided path \
+            does not point to a subdirectory within the \
+            directory.
         '''
         pass
 
@@ -1601,12 +1651,54 @@ class LocalDir(_Directory):
         :param str file_path: Either the absolute path \
             or the path relative to the directory of the \
             file in question.
+
+        :raises InvalidPathError: The provided path \
+            does not exist.
+        :raises InvalidFileError: The provided path does \
+            not point to a file within the directory.
         '''
+        if not self.path_exists(file_path):
+            raise _IPE(path=file_path)
+        if not self.is_file(file_path):
+            raise _IFE(path=file_path)
+        
         file_path = self._to_absolute(path=file_path, replace_sep=False)
         return LocalFile._create_file(
             path=file_path,
             handler=self._get_handler(),
             metadata=self._get_file_metadata_ref(file_path))
+    
+
+    def get_dir(self, dir_path: str) -> 'LocalDir':
+        '''
+        Returns the directory residing in the specified \
+        path as a ``LocalDir`` instance.
+
+        :param str dir_path: Either the absolute path \
+            or the path relative to the directory of the \
+            subdirectory in question.
+
+        :raises InvalidPathError: The provided path \
+            does not exist.
+        :raises InvalidDirectoryError: The provided path \
+            does not point to a subdirectory within the \
+            directory.
+        '''
+
+        if not self.path_exists(dir_path):
+            raise _IPE(path=dir_path)
+        if self.is_file(dir_path):
+            raise _IDE(path=dir_path)
+        
+        sep = self._get_separator()
+        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        dir_path = self._to_absolute(
+            path=dir_path, replace_sep=False)
+        
+        return __class__._create_dir(
+            path=dir_path,
+            handler=self._get_handler(),
+            metadata=self._get_metadata_ref())
     
 
     def traverse_files(
@@ -1656,6 +1748,33 @@ class LocalDir(_Directory):
         '''
         return super().get_files(
             recursively=recursively, show_abs_path=show_abs_path)
+    
+
+    @classmethod
+    def _create_dir(
+        cls,
+        path: str,
+        handler: _FileSystemHandler,
+        metadata: dict[str, str]
+    ) -> 'LocalDir':
+        '''
+        Creates and returns a ``LocalDir`` instance.
+
+        :param str path: The path pointing to the directory.
+        :param FileSystemHandler handler: A ``FileSystemHandler`` \
+            class instance.
+        :param dict[str, str] metadata: A dictionary containing \
+            file metadata.
+        '''
+        instance = cls.__new__(cls)
+        _Directory.__init__(
+            instance,
+            path=path,
+            metadata=metadata,
+            handler=handler,
+            close_after_use=False)
+        path = instance.get_path()
+        return instance
 
 
 class _NonLocalDir(_Directory, _ABC):
@@ -1716,24 +1835,6 @@ class _NonLocalDir(_Directory, _ABC):
         self._get_handler().close_connections()
 
 
-    def __del__(self) -> None:
-        '''
-        The class destructor method.
-        '''
-        handler = self._get_handler()
-        if handler is not None and handler.is_open():
-            # Purge cache (if it exists).
-            self.purge()
-            # Close any open connections.
-            self.close()
-            # Display warning.
-            msg = f'You might want to consider instantiating class "{self.__class__.__name__}"'
-            msg += " through the use of a context manager by utilizing Python's"
-            msg += ' "with" statement, or by simply invoking an instance\'s'
-            msg += ' "close" method after being done using it.'
-            _warn.warn(msg, ResourceWarning)
-    
-
     def __enter__(self) -> '_NonLocalDir':
         '''
         Enter the runtime context related to this instance.
@@ -1746,6 +1847,26 @@ class _NonLocalDir(_Directory, _ABC):
         Exit the runtime context related to this object. 
         '''
         self.close()
+
+
+    def __del__(self) -> None:
+        '''
+        The class destructor method.
+        '''
+        if self._get_close_after_use():
+            if (handler := self._get_handler()) is not None:
+                # Purge cache.
+                self.purge()
+                # Warn if connections are open.
+                if handler.is_open():
+                    # Display warning.
+                    msg = f'You might want to consider instantiating class "{self.__class__.__name__}"'
+                    msg += " through the use of a context manager by utilizing Python's"
+                    msg += ' "with" statement, or by simply invoking an instance\'s'
+                    msg += ' "close" method after being done using it.'
+                    _warn.warn(msg, ResourceWarning)
+                    # Close connections.
+                    self.close()
 
 
 class RemoteDir(_NonLocalDir):
@@ -1797,16 +1918,17 @@ class RemoteDir(_NonLocalDir):
             does not exist.
         :raises InvalidDirectoryError: The provided path \
             does not point to a directory.
-        '''
-        # Validate path.
-        if path == '':
-            raise _IPE(path=path)
-        
+        '''        
         ssh_handler = _SSHClientHandler(auth=auth, cache=cache)
 
         super().__init__(
             path=path,
             handler=ssh_handler)
+        
+        # Validate path.
+        if path == '':
+            self.close()
+            raise _IPE(path=path)
 
         self.__host = auth.get_credentials()['hostname']
 
@@ -1817,6 +1939,7 @@ class RemoteDir(_NonLocalDir):
                 self.close()
                 raise _IPE(path)
         if ssh_handler.is_file(file_path=path):
+            self.close()
             raise _IDE(path)
 
 
@@ -1843,13 +1966,55 @@ class RemoteDir(_NonLocalDir):
         :param str file_path: Either the absolute path \
             or the path relative to the directory of the \
             file in question.
+
+        :raises InvalidPathError: The provided path \
+            does not exist.
+        :raises InvalidFileError: The provided path does \
+            not point to a file within the directory.
         '''
+        if not self.path_exists(file_path):
+            raise _IPE(path=file_path)
+        if not self.is_file(file_path):
+            raise _IFE(path=file_path)
+        
         file_path = self._to_absolute(file_path, replace_sep=False)
         return RemoteFile._create_file(
             path=file_path,
             host=self.get_hostname(),
             handler=self._get_handler(),
             metadata=self._get_file_metadata_ref(file_path))
+    
+
+    def get_dir(self, dir_path: str) -> 'RemoteDir':
+        '''
+        Returns the directory residing in the specified \
+        path as a ``RemoteDir`` instance.
+
+        :param str dir_path: Either the absolute path \
+            or the path relative to the directory of the \
+            subdirectory in question.
+
+        :raises InvalidPathError: The provided path \
+            does not exist.
+        :raises InvalidDirectoryError: The provided path \
+            does not point to a subdirectory within the \
+            directory.
+        '''
+        if not self.path_exists(dir_path):
+            raise _IPE(path=dir_path)
+        if self.is_file(dir_path):
+            raise _IDE(path=dir_path)
+        
+        sep = self._get_separator()
+        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        dir_path = self._to_absolute(
+            path=dir_path, replace_sep=False)
+        
+        return __class__._create_dir(
+            path=dir_path,
+            host=self.get_hostname(),
+            handler=self._get_handler(),
+            metadata=self._get_metadata_ref())
     
 
     def traverse_files(
@@ -1899,6 +2064,36 @@ class RemoteDir(_NonLocalDir):
         '''
         return super().get_files(
             recursively=recursively, show_abs_path=show_abs_path)
+    
+
+    @classmethod
+    def _create_dir(
+        cls,
+        path: str,
+        host: str,
+        handler: _SSHClientHandler,
+        metadata: dict[str, str]
+    ) -> 'RemoteDir':
+        '''
+        Creates and returns a ``LocalDir`` instance.
+
+        :param str path: The path pointing to the directory.
+        :param str host: The name of the host in which \
+            the directory resides.
+        :param SSHClientHandler handler: An ``SSHClientHandler`` \
+            class instance.
+        :param dict[str, str] metadata: A dictionary containing \
+            file metadata.
+        '''
+        instance = cls.__new__(cls)
+        instance.__host = host
+        _Directory.__init__(
+            instance,
+            path=path,
+            metadata=metadata,
+            handler=handler,
+            close_after_use=False)
+        return instance
     
 
     def __enter__(self) -> 'RemoteDir':
@@ -2058,12 +2253,50 @@ class AWSS3Dir(_CloudDir):
         :param str file_path: Either the absolute path \
             or the path relative to the directory of the \
             file in question.
+
+        :raises InvalidPathError: The provided path \
+            does not exist.
+        :raises InvalidFileError: The provided path does \
+            not point to a file within the directory.
         '''
+        if not self.path_exists(file_path):
+            if self._get_handler().dir_exists(
+                self._to_absolute(file_path, False)
+            ):
+                raise _IFE(path=file_path)
+            raise _IPE(path=file_path)
+        
         file_path = self._to_absolute(file_path, replace_sep=False)
         return AWSS3File._create_file(
             path=file_path,
             handler=self._get_handler(),
             metadata=self._get_file_metadata_ref(file_path))
+    
+
+    def get_dir(self, dir_path: str) -> 'AWSS3Dir':
+        '''
+        Returns the directory residing in the specified \
+        path as an ``AWSS3Dir`` instance.
+
+        :param str dir_path: Either the absolute path \
+            or the path relative to the directory of the \
+            subdirectory in question.
+
+        :raises InvalidPathError: The provided path \
+            does not exist.
+        '''
+        sep = self._get_separator()
+        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        abs_dir_path = self._to_absolute(
+            path=dir_path, replace_sep=False)
+
+        if not self._get_handler().dir_exists(abs_dir_path):
+            raise _IPE(path=dir_path)
+        
+        return __class__._create_dir(
+            path=abs_dir_path,
+            handler=self._get_handler(),
+            metadata=self._get_metadata_ref())
 
 
     def traverse_files(
@@ -2115,6 +2348,32 @@ class AWSS3Dir(_CloudDir):
             recursively=recursively, show_abs_path=show_abs_path)
     
 
+    @classmethod
+    def _create_dir(
+        cls,
+        path: str,
+        handler: _AWSClientHandler,
+        metadata: dict[str, str]
+    ) -> 'AWSS3Dir':
+        '''
+        Creates and returns an ``AWSS3Dir`` instance.
+
+        :param str path: The path pointing to the directory.
+        :param AWSClientHandler handler: An ``AWSClientHandler`` \
+            class instance.
+        :param dict[str, str] metadata: A dictionary containing \
+            file metadata.
+        '''
+        instance = cls.__new__(cls)
+        _Directory.__init__(
+            instance,
+            path=path,
+            metadata=metadata,
+            handler=handler,
+            close_after_use=False)
+        return instance
+    
+
     def __enter__(self) -> 'AWSS3Dir':
         '''
         Enter the runtime context related to this instance.
@@ -2144,8 +2403,6 @@ class AzureBlobDir(_CloudDir):
 
     :raises InvalidPathError: The provided path \
         does not exist.
-    :raises InvalidDirectoryError: The provided path \
-        does not point to a directory.
 
     :note: The provided path must not begin with a separator.
         - Wrong: ``/path/to/dir/``
@@ -2248,13 +2505,52 @@ class AzureBlobDir(_CloudDir):
         :param str file_path: Either the absolute path \
             or the path relative to the directory of the \
             file in question.
+
+        :raises InvalidPathError: The provided path \
+            does not exist.
+        :raises InvalidFileError: The provided path does \
+            not point to a file within the directory.
         '''
+
+        if not self.path_exists(file_path):
+            raise _IPE(path=file_path)
+        if not self.is_file(file_path):
+            raise _IFE(path=file_path)
+        
         file_path = self._to_absolute(file_path, replace_sep=False)
         return AzureBlobFile._create_file(
             path=file_path,
             storage_account=self.__storage_account,
             handler=self._get_handler(),
             metadata=self._get_file_metadata_ref(file_path))
+    
+
+    def get_dir(self, dir_path: str) -> 'AzureBlobDir':
+        '''
+        Returns the directory residing in the specified \
+        path as an ``AzureBlobDir`` instance.
+
+        :param str dir_path: Either the absolute path \
+            or the path relative to the directory of the \
+            subdirectory in question.
+
+        :raises InvalidPathError: The provided path \
+            does not exist.
+        '''
+        sep = self._get_separator()
+        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+
+        if not self.path_exists(dir_path):
+            raise _IPE(path=dir_path)
+        
+        dir_path = self._to_absolute(
+            path=dir_path, replace_sep=False)
+        
+        return __class__._create_dir(
+            path=dir_path,
+            storage_account=self.__storage_account,
+            handler=self._get_handler(),
+            metadata=self._get_metadata_ref())
     
 
     def traverse_files(
@@ -2304,6 +2600,37 @@ class AzureBlobDir(_CloudDir):
         '''
         return super().get_files(
             recursively=recursively, show_abs_path=show_abs_path)
+    
+
+    @classmethod
+    def _create_dir(
+        cls,
+        path: str,
+        storage_account: str,
+        handler: _AzureClientHandler,
+        metadata: dict[str, str]
+    ) -> 'AzureBlobDir':
+        '''
+        Creates and returns an ``AzureBlobDir`` instance.
+
+        :param str path: The path pointing to the directory.
+        :param str storage_account: The name of the storage \
+            account to which the blob directory's container \
+            belongs.
+        :param AzureClientHandler handler: An ``AzureClientHandler`` \
+            class instance.
+        :param dict[str, str] metadata: A dictionary containing \
+            file metadata.
+        '''
+        instance = cls.__new__(cls)
+        instance.__storage_account = storage_account
+        _Directory.__init__(
+            instance,
+            path=path,
+            metadata=metadata,
+            handler=handler,
+            close_after_use=False)
+        return instance
     
     
     def __enter__(self) -> 'AzureBlobDir':

@@ -164,9 +164,20 @@ ABS_DIR_PATH = to_abs(REL_DIR_PATH)
 DIR_FILE_NAME = "file2.txt"
 REL_DIR_FILE_PATH = f"{REL_DIR_PATH}{DIR_FILE_NAME}"
 ABS_DIR_FILE_PATH = to_abs(REL_DIR_FILE_PATH)
+DIR_SUBDIR_NAME = f"subdir{SEPARATOR}"
+REL_DIR_SUBDIR_PATH = f"{REL_DIR_PATH}{DIR_SUBDIR_NAME}"
+ABS_DIR_SUBDIR_PATH = to_abs(REL_DIR_SUBDIR_PATH)
+DIR_SUBDIR_FILE_NAME = "file3.txt"
+REL_DIR_SUBDIR_FILE_PATH = f"{REL_DIR_SUBDIR_PATH}{DIR_SUBDIR_FILE_NAME}"
+ABS_DIR_SUBDIR_FILE_PATH = to_abs(REL_DIR_SUBDIR_FILE_PATH)
+CONTENTS = [DIR_FILE_NAME, DIR_SUBDIR_NAME]
+RECURSIVE_CONTENTS = [
+    DIR_FILE_NAME,
+    f'{DIR_SUBDIR_NAME}{DIR_SUBDIR_FILE_NAME}',
+    f'{DIR_SUBDIR_NAME}file4.txt']
 TMP_DIR_NAME = 'TMP_DIR'
-CONTENTS = [DIR_FILE_NAME, f'subdir{SEPARATOR}']
-RECURSIVE_CONTENTS = [DIR_FILE_NAME, f'subdir{SEPARATOR}file3.txt', f'subdir{SEPARATOR}file4.txt']
+
+
 def get_abs_contents(recursively: bool):
     return [
         join_paths(ABS_DIR_PATH, p) for p in (
@@ -783,7 +794,6 @@ class TestRemoteFile(unittest.TestCase):
                 self.assertEqual(file.read(), copy.read())
             # Remove copy of the file.
             os.remove(copy_path)
-
 
     def test_transfer_to_on_overwrite_error(self):
         with self.build_file() as file:
@@ -1971,31 +1981,69 @@ class TestLocalDir(unittest.TestCase):
         
     def test_get_file(self):
         dir = self.build_dir(path=ABS_DIR_PATH)
-        file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-        file = dir.get_file(file_path)
+        file = dir.get_file(DIR_FILE_NAME)
         self.assertEqual(file.get_path(), ABS_DIR_FILE_PATH)
+
+    def test_get_file_on_invalid_path_error(self):
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        self.assertRaises(InvalidPathError, dir.get_file, "NON_EXISTING_PATH")
+
+    def test_get_file_on_invalid_file_error(self):
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        self.assertRaises(InvalidFileError, dir.get_file, DIR_SUBDIR_NAME)
+
+    def test_get_dir(self):
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        subdir = dir.get_dir(DIR_SUBDIR_NAME)
+        self.assertEqual(subdir.get_path(), ABS_DIR_SUBDIR_PATH)
+
+    def test_get_dir_on_invalid_path_error(self):
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        self.assertRaises(InvalidPathError, dir.get_dir, "NON_EXISTING_PATH")
+
+    def test_get_dir_on_invalid_directory_error(self):
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        self.assertRaises(InvalidDirectoryError, dir.get_dir, DIR_FILE_NAME)
 
     def test_file_shared_metadata_on_modify_from_dir(self):
         # Create dir and get file.
         dir = self.build_dir(path=ABS_DIR_PATH)
-        file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-        file = dir.get_file(file_path)
+        file = dir.get_file(DIR_FILE_NAME)
         # Change metadata via "Dir" API.
-        dir.set_metadata(file_path, METADATA)
+        dir.set_metadata(DIR_FILE_NAME, METADATA)
         # Assert file metadata have been changed.
         self.assertEqual(file.get_metadata(), METADATA)
 
     def test_file_shared_metadata_on_modify_from_file(self):
         # Create dir and get file.
         dir = self.build_dir(path=ABS_DIR_PATH)
-        file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-        file = dir.get_file(file_path)
+        file = dir.get_file(DIR_FILE_NAME)
         # Change metadata via "File" API.
         file.set_metadata(METADATA)
         # Assert file metadata have been changed.
-        self.assertEqual(dir.get_metadata(file_path), METADATA)
-        
+        self.assertEqual(dir.get_metadata(DIR_FILE_NAME), METADATA)
 
+    def test_subdir_shared_metadata_on_modify_from_dir(self):
+        # Create dir and get file.
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        subdir = dir.get_dir(DIR_SUBDIR_NAME)
+        # Change metadata via "Dir" API.
+        dir.set_metadata(
+            DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME, METADATA)
+        # Assert file metadata have been changed.
+        self.assertEqual(
+            subdir.get_metadata(DIR_SUBDIR_FILE_NAME), METADATA)
+
+    def test_subdir_shared_metadata_on_modify_from_subdir(self):
+        # Create dir and get file.
+        dir = self.build_dir(path=ABS_DIR_PATH)
+        subdir = dir.get_dir(DIR_SUBDIR_NAME)
+        # Change metadata via "File" API.
+        subdir.set_metadata(DIR_SUBDIR_FILE_NAME, METADATA)
+        # Assert file metadata have been changed.
+        self.assertEqual(
+            dir.get_metadata(DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME), METADATA)
+        
 
 class TestRemoteDir(unittest.TestCase):
 
@@ -2034,6 +2082,9 @@ class TestRemoteDir(unittest.TestCase):
 
     def test_constructor_on_invalid_path_error(self):
         self.assertRaises(InvalidPathError, self.build_dir, path="NON_EXISTING_PATH")
+
+    def test_constructor_on_invalid_directory_error(self):
+        self.assertRaises(InvalidDirectoryError, self.build_dir, path=ABS_DIR_FILE_PATH)
 
     def test_get_hostname(self):
         with self.build_dir() as dir:
@@ -2446,29 +2497,69 @@ class TestRemoteDir(unittest.TestCase):
         
     def test_get_file(self):
         with self.build_dir() as dir:
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             self.assertEqual(file.get_path(), ABS_DIR_FILE_PATH)
+
+    def test_get_file_on_invalid_path_error(self):
+        with self.build_dir(path=ABS_DIR_PATH) as dir:
+            self.assertRaises(InvalidPathError, dir.get_file, "NON_EXISTING_PATH")
+
+    def test_get_file_on_invalid_file_error(self):
+        with self.build_dir(path=ABS_DIR_PATH) as dir:
+            self.assertRaises(InvalidFileError, dir.get_file, DIR_SUBDIR_NAME)
+
+    def test_get_dir(self):
+        with self.build_dir() as dir:
+            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            self.assertEqual(subdir.get_path(), ABS_DIR_SUBDIR_PATH)
+
+    def test_get_dir_on_invalid_path_error(self):
+        with self.build_dir(path=ABS_DIR_PATH) as dir:
+            self.assertRaises(InvalidPathError, dir.get_dir, "NON_EXISTING_PATH")
+
+    def test_get_dir_on_invalid_directory_error(self):
+        with self.build_dir(path=ABS_DIR_PATH) as dir:
+            self.assertRaises(InvalidDirectoryError, dir.get_dir, DIR_FILE_NAME)
 
     def test_file_shared_metadata_on_modify_from_dir(self):
         with self.build_dir() as dir:
             # Access file via dir.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             # Change metadata via "Dir" API.
-            dir.set_metadata(file_path, METADATA)
+            dir.set_metadata(DIR_FILE_NAME, METADATA)
             # Assert file metadata have been changed.
             self.assertEqual(file.get_metadata(), METADATA)
 
     def test_file_shared_metadata_on_modify_from_file(self):
         with self.build_dir() as dir:
             # Access file via dir.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             # Change metadata via "File" API.
             file.set_metadata(METADATA)
             # Assert file metadata have been changed.
-            self.assertEqual(dir.get_metadata(file_path), METADATA)
+            self.assertEqual(dir.get_metadata(DIR_FILE_NAME), METADATA)
+
+
+    def test_subdir_shared_metadata_on_modify_from_dir(self):
+        # Create dir and get file.
+        with self.build_dir() as dir:
+            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            # Change metadata via "Dir" API.
+            dir.set_metadata(
+                DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME, METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(
+                subdir.get_metadata(DIR_SUBDIR_FILE_NAME), METADATA)
+
+    def test_subdir_shared_metadata_on_modify_from_subdir(self):
+        # Create dir and get file.
+        with self.build_dir() as dir:
+            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            # Change metadata via "File" API.
+            subdir.set_metadata(DIR_SUBDIR_FILE_NAME, METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(
+                dir.get_metadata(DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME), METADATA)
         
     '''
     Test connection methods.
@@ -2601,9 +2692,8 @@ class TestRemoteDir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Access file via both dirs.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            no_cache_file = no_cache_dir.get_file(file_path)
-            cache_file = cache_dir.get_file(file_path)
+            no_cache_file = no_cache_dir.get_file(DIR_FILE_NAME)
+            cache_file = cache_dir.get_file(DIR_FILE_NAME)
             # Count total size for both dirs.
             _ = no_cache_dir.get_size()
             _ = cache_dir.get_size()
@@ -2635,6 +2725,47 @@ class TestRemoteDir(unittest.TestCase):
             # Time cache-dir's "get_size"
             t = time.time()
             _ = cache_dir.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_subdir_shared_cache_on_cache_via_dir(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Access subdir via both dirs.
+            no_cache_subdir = no_cache_dir.get_dir(DIR_SUBDIR_NAME)
+            cache_subdir = cache_dir.get_dir(DIR_SUBDIR_NAME)
+            # Count total size for both dirs.
+            _ = no_cache_dir.get_size(recursively=True)
+            _ = cache_dir.get_size(recursively=True)
+            # Time no-cache-subdir's "get_size"
+            t = time.time()
+            _ = no_cache_subdir.get_size()
+            normal_time = time.time() - t
+            # Time cache-subdir's "get_size"
+            t = time.time()
+            _ = cache_subdir.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_subdir_shared_cache_on_cache_via_subdir(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Count size of both subdirs.
+            _ = no_cache_dir.get_dir(DIR_SUBDIR_NAME).get_size()
+            _ = cache_dir.get_dir(DIR_SUBDIR_NAME).get_size()
+            # Time no-cache-dir's "get_size"
+            t = time.time()
+            _ = no_cache_dir.get_size(recursively=True)
+            normal_time = time.time() - t
+            # Time cache-dir's "get_size"
+            t = time.time()
+            _ = cache_dir.get_size(recursively=True)
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
@@ -3241,29 +3372,64 @@ class TestAWSS3Dir(unittest.TestCase):
         
     def test_get_file(self):
         with self.build_dir() as dir:
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             self.assertEqual(file.get_path(), REL_DIR_FILE_PATH)
+
+    def test_get_file_on_invalid_path_error(self):
+        with self.build_dir() as dir:
+            self.assertRaises(InvalidPathError, dir.get_file, "NON_EXISTING_PATH")
+
+    def test_get_file_on_invalid_file_error(self):
+        with self.build_dir() as dir:
+            self.assertRaises(InvalidFileError, dir.get_file, DIR_SUBDIR_NAME)
+
+    def test_get_dir(self):
+        with self.build_dir() as dir:
+            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            self.assertEqual(subdir.get_path(), REL_DIR_SUBDIR_PATH)
+
+    def test_get_dir_on_invalid_path_error(self):
+        with self.build_dir() as dir:
+            self.assertRaises(InvalidPathError, dir.get_dir, "NON_EXISTING_PATH")
 
     def test_file_shared_metadata_on_modify_from_dir(self):
         with self.build_dir() as dir:
             # Access file via dir.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             # Change metadata via "Dir" API.
-            dir.set_metadata(file_path, METADATA)
+            dir.set_metadata(DIR_FILE_NAME, METADATA)
             # Assert file metadata have been changed.
             self.assertEqual(file.get_metadata(), METADATA)
 
     def test_file_shared_metadata_on_modify_from_file(self):
         with self.build_dir() as dir:
             # Access file via dir.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             # Change metadata via "File" API.
             file.set_metadata(METADATA)
             # Assert file metadata have been changed.
-            self.assertEqual(dir.get_metadata(file_path), METADATA)
+            self.assertEqual(dir.get_metadata(DIR_FILE_NAME), METADATA)
+
+    def test_subdir_shared_metadata_on_modify_from_dir(self):
+        # Create dir and get file.
+        with self.build_dir() as dir:
+            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            # Change metadata via "Dir" API.
+            dir.set_metadata(
+                DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME, METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(
+                subdir.get_metadata(DIR_SUBDIR_FILE_NAME), METADATA)
+
+    def test_subdir_shared_metadata_on_modify_from_subdir(self):
+        # Create dir and get file.
+        with self.build_dir() as dir:
+            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            # Change metadata via "File" API.
+            subdir.set_metadata(DIR_SUBDIR_FILE_NAME, METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(
+                dir.get_metadata(DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME), METADATA)
         
     '''
     Test connection methods.
@@ -3434,9 +3600,8 @@ class TestAWSS3Dir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Access file via both dirs.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            no_cache_file = no_cache_dir.get_file(file_path)
-            cache_file = cache_dir.get_file(file_path)
+            no_cache_file = no_cache_dir.get_file(DIR_FILE_NAME)
+            cache_file = cache_dir.get_file(DIR_FILE_NAME)
             # Count total size for both dirs.
             _ = no_cache_dir.get_size()
             _ = cache_dir.get_size()
@@ -3457,7 +3622,6 @@ class TestAWSS3Dir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Count size of files via both dirs using the "File" API.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
             for file in no_cache_dir.get_files().values():
                 _ = file.get_size()
             for file in cache_dir.get_files().values():
@@ -3469,6 +3633,47 @@ class TestAWSS3Dir(unittest.TestCase):
             # Time cache-dir's "get_size"
             t = time.time()
             _ = cache_dir.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_subdir_shared_cache_on_cache_via_dir(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Access subdir via both dirs.
+            no_cache_subdir = no_cache_dir.get_dir(DIR_SUBDIR_NAME)
+            cache_subdir = cache_dir.get_dir(DIR_SUBDIR_NAME)
+            # Count total size for both dirs.
+            _ = no_cache_dir.get_size(recursively=True)
+            _ = cache_dir.get_size(recursively=True)
+            # Time no-cache-subdir's "get_size"
+            t = time.time()
+            _ = no_cache_subdir.get_size()
+            normal_time = time.time() - t
+            # Time cache-subdir's "get_size"
+            t = time.time()
+            _ = cache_subdir.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_subdir_shared_cache_on_cache_via_subdir(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Count size of both subdirs.
+            _ = no_cache_dir.get_dir(DIR_SUBDIR_NAME).get_size()
+            _ = cache_dir.get_dir(DIR_SUBDIR_NAME).get_size()
+            # Time no-cache-dir's "get_size"
+            t = time.time()
+            _ = no_cache_dir.get_size(recursively=True)
+            normal_time = time.time() - t
+            # Time cache-dir's "get_size"
+            t = time.time()
+            _ = cache_dir.get_size(recursively=True)
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
@@ -4033,29 +4238,64 @@ class TestAzureBlobDir(unittest.TestCase):
         
     def test_get_file(self):
         with self.build_dir() as dir:
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             self.assertEqual(file.get_path(), REL_DIR_FILE_PATH)
+
+    def test_get_file_on_invalid_path_error(self):
+        with self.build_dir(path=ABS_DIR_PATH) as dir:
+            self.assertRaises(InvalidPathError, dir.get_file, "NON_EXISTING_PATH")
+
+    def test_get_file_on_invalid_file_error(self):
+        with self.build_dir(path=ABS_DIR_PATH) as dir:
+            self.assertRaises(InvalidFileError, dir.get_file, DIR_SUBDIR_NAME)
+
+    def test_get_dir(self):
+        with self.build_dir() as dir:
+            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            self.assertEqual(subdir.get_path(), REL_DIR_SUBDIR_PATH)
+
+    def test_get_dir_on_invalid_path_error(self):
+        with self.build_dir(path=ABS_DIR_PATH) as dir:
+            self.assertRaises(InvalidPathError, dir.get_dir, "NON_EXISTING_PATH")
             
     def test_file_shared_metadata_on_modify_from_dir(self):
         with self.build_dir() as dir:
             # Access file via dir.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             # Change metadata via "Dir" API.
-            dir.set_metadata(file_path, METADATA)
+            dir.set_metadata(DIR_FILE_NAME, METADATA)
             # Assert file metadata have been changed.
             self.assertEqual(file.get_metadata(), METADATA)
 
     def test_file_shared_metadata_on_modify_from_file(self):
         with self.build_dir() as dir:
             # Access file via dir.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             # Change metadata via "File" API.
             file.set_metadata(METADATA)
             # Assert file metadata have been changed.
-            self.assertEqual(dir.get_metadata(file_path), METADATA)
+            self.assertEqual(dir.get_metadata(DIR_FILE_NAME), METADATA)
+
+    def test_subdir_shared_metadata_on_modify_from_dir(self):
+        # Create dir and get file.
+        with self.build_dir() as dir:
+            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            # Change metadata via "Dir" API.
+            dir.set_metadata(
+                DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME, METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(
+                subdir.get_metadata(DIR_SUBDIR_FILE_NAME), METADATA)
+
+    def test_subdir_shared_metadata_on_modify_from_subdir(self):
+        # Create dir and get file.
+        with self.build_dir() as dir:
+            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            # Change metadata via "File" API.
+            subdir.set_metadata(DIR_SUBDIR_FILE_NAME, METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(
+                dir.get_metadata(DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME), METADATA)
         
     '''
     Test connection methods.
@@ -4227,9 +4467,8 @@ class TestAzureBlobDir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Access file via both dirs.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            no_cache_file = no_cache_dir.get_file(file_path)
-            cache_file = cache_dir.get_file(file_path)
+            no_cache_file = no_cache_dir.get_file(DIR_FILE_NAME)
+            cache_file = cache_dir.get_file(DIR_FILE_NAME)
             # Count total size for both dirs.
             _ = no_cache_dir.get_size()
             _ = cache_dir.get_size()
@@ -4262,6 +4501,47 @@ class TestAzureBlobDir(unittest.TestCase):
             # Time cache-dir's "get_size"
             t = time.time()
             _ = cache_dir.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_subdir_shared_cache_on_cache_via_dir(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Access subdir via both dirs.
+            no_cache_subdir = no_cache_dir.get_dir(DIR_SUBDIR_NAME)
+            cache_subdir = cache_dir.get_dir(DIR_SUBDIR_NAME)
+            # Count total size for both dirs.
+            _ = no_cache_dir.get_size(recursively=True)
+            _ = cache_dir.get_size(recursively=True)
+            # Time no-cache-subdir's "get_size"
+            t = time.time()
+            _ = no_cache_subdir.get_size()
+            normal_time = time.time() - t
+            # Time cache-subdir's "get_size"
+            t = time.time()
+            _ = cache_subdir.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_subdir_shared_cache_on_cache_via_subdir(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Count size of both subdirs.
+            _ = no_cache_dir.get_dir(DIR_SUBDIR_NAME).get_size()
+            _ = cache_dir.get_dir(DIR_SUBDIR_NAME).get_size()
+            # Time no-cache-dir's "get_size"
+            t = time.time()
+            _ = no_cache_dir.get_size(recursively=True)
+            normal_time = time.time() - t
+            # Time cache-dir's "get_size"
+            t = time.time()
+            _ = cache_dir.get_size(recursively=True)
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
