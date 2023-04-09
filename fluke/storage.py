@@ -320,11 +320,8 @@ class _File(_ABC):
                     metadata=metadata)
         except Exception as e:
             if not suppress_output:
-                print(f"Operation unsuccessful: {e}")
+                print(f"Failure: {e}")
             return False
-        
-        if not suppress_output:
-            print("Operation successful!")
           
         return True
     
@@ -1236,7 +1233,9 @@ class _Directory(_ABC):
     ) -> bool:
         '''
         Copies all files within this directory into \
-        the destination directory.
+        the destination directory. Returns ``True`` if \
+        all files were successfully transfered, else returns \
+        ``False``.
 
         :param _Directory dst: A ``_Directory`` class instance, \
             which represents the transfer operation's destination.
@@ -1258,14 +1257,6 @@ class _Directory(_ABC):
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
         '''
-        source = self.get_uri() \
-            if isinstance(self, _NonLocalDir) \
-            else self.get_path()
-        
-        destination = dst.get_uri() \
-            if isinstance(dst, _NonLocalDir) \
-            else dst.get_path()
-
         # Store the directory's files in a list.
         file_paths = [fp for fp in self.__handler.traverse_dir(
             dir_path = self.get_path(),
@@ -1275,64 +1266,37 @@ class _Directory(_ABC):
 
         total_num_files = len(file_paths)
         failures = 0
+        dst_dirs = dict()
 
         # Iterate through all files that are to be transfered.
         for i, fp in enumerate(file_paths):
 
+            # Define src and dst paths.
             rel_fp = self._to_relative(path=fp, replace_sep=False)
-            dst_fp = dst._to_absolute(path=rel_fp, replace_sep=True)
+            dst_sep = dst._get_separator()
+            dst_fp = (dst_sep
+                .join(dst._to_absolute(path=rel_fp, replace_sep=True)
+                .split(dst_sep)[:-1])
+                + dst_sep)
+            
+            # Fetch src file and dst directory.
+            src_file = self.get_file(file_path=fp)
+            if dst_fp in dst_dirs:
+                dst_dir = dst_dirs[dst_fp]
+            else:
+                dst_dir = dst._get_dir_impl(dst_fp)
+                dst_dirs.update({dst_fp: dst_dir})
 
-            src_uri = f"{source}{rel_fp}"
-            dst_uri = f"{destination}{dst._get_separator().join(rel_fp.split(dst._get_separator())[:-1])}"
-
-            if not suppress_output:
-                print(f'\nTransfering file "{src_uri}" into "{dst_uri}"...')
-
-            try:
-                # Raise an "OverwriteError" if file exists
-                # in destination and "overwrite" is "False".
-                if not overwrite and dst.path_exists(dst_fp):
-                    raise _OverwriteError(file_path=dst_fp)
-                # Define metadata dictionary.
-                if include_metadata:
-                    if custom_metadata := self.get_metadata(fp):
-                        metadata = custom_metadata
-                    else:
-                        metadata = self.__handler.get_file_metadata(fp)
-                else:
-                    metadata = None
-                # Perform the file transfer.
-                with (
-                    _tqdm(
-                        disable=(
-                            suppress_output
-                            or chunk_size is None
-                        ),
-                        desc="Progress",
-                        unit='bytes',
-                        total=self.get_file(fp).get_size(),
-                    ) as progress,
-                    self.__handler.get_reader(
-                        file_path=fp
-                    ) as reader,
-                    dst._get_handler().get_writer(
-                        file_path=dst_fp,
-                        metadata=metadata,
-                        in_chunks=chunk_size is not None
-                    ) as writer
-                ):
-                    if chunk_size is None:
-                        writer.write(reader.read())
-                    else:
-                        for chunk in reader.read_chunks(chunk_size):
-                            progress.update(n=writer.write(chunk))
-                # Upsert metadata to destination if not "None".
-                if metadata is not None:
-                    dst._upsert_metadata(file_path=dst_fp, metadata=metadata)
-            except Exception as e:
+            # Perform the transfer.
+            if not src_file.transfer_to(
+                dst=dst_dir,
+                overwrite=overwrite,
+                include_metadata=include_metadata,
+                chunk_size=chunk_size,
+                suppress_output=suppress_output
+            ):
                 failures += 1
-                if not suppress_output:
-                    print(f"Failure: {e}")
+
             if not suppress_output:
                 print(f"Total progress: {i+1}/{total_num_files} files.")
 
@@ -1582,6 +1546,25 @@ class _Directory(_ABC):
         pass
 
 
+    @_absmethod
+    def _get_dir_impl(self, dir_path: str) -> '_Directory':
+        '''
+        Returns the directory residing in the specified \
+        path as a ``_Directory`` instance.
+
+        :param str dir_path: Either the absolute path \
+            or the path relative to the directory of the \
+            subdirectory in question.
+
+        :raises InvalidPathError: The provided path \
+            does not exist.
+        :raises InvalidDirectoryError: The provided path \
+            does not point to a subdirectory within the \
+            directory.
+        '''
+        pass
+
+
 class LocalDir(_Directory):
     '''
     This class represents a directory which resides \
@@ -1690,15 +1673,7 @@ class LocalDir(_Directory):
         if self.is_file(dir_path):
             raise _IDE(path=dir_path)
         
-        sep = self._get_separator()
-        dir_path = f"{dir_path.rstrip(sep)}{sep}"
-        dir_path = self._to_absolute(
-            path=dir_path, replace_sep=False)
-        
-        return __class__._create_dir(
-            path=dir_path,
-            handler=self._get_handler(),
-            metadata=self._get_metadata_ref())
+        return self._get_dir_impl(dir_path)
     
 
     def traverse_files(
@@ -1775,6 +1750,26 @@ class LocalDir(_Directory):
             close_after_use=False)
         path = instance.get_path()
         return instance
+    
+
+    def _get_dir_impl(self, dir_path: str) -> 'LocalDir':
+        '''
+        Returns the directory residing in the specified \
+        path as a ``LocalDir`` instance.
+
+        :param str dir_path: Either the absolute path \
+            or the path relative to the directory of the \
+            subdirectory in question.
+        '''        
+        sep = self._get_separator()
+        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        dir_path = self._to_absolute(
+            path=dir_path, replace_sep=False)
+        
+        return __class__._create_dir(
+            path=dir_path,
+            handler=self._get_handler(),
+            metadata=self._get_metadata_ref())
 
 
 class _NonLocalDir(_Directory, _ABC):
@@ -2005,16 +2000,7 @@ class RemoteDir(_NonLocalDir):
         if self.is_file(dir_path):
             raise _IDE(path=dir_path)
         
-        sep = self._get_separator()
-        dir_path = f"{dir_path.rstrip(sep)}{sep}"
-        dir_path = self._to_absolute(
-            path=dir_path, replace_sep=False)
-        
-        return __class__._create_dir(
-            path=dir_path,
-            host=self.get_hostname(),
-            handler=self._get_handler(),
-            metadata=self._get_metadata_ref())
+        return self._get_dir_impl(dir_path)
     
 
     def traverse_files(
@@ -2094,6 +2080,27 @@ class RemoteDir(_NonLocalDir):
             handler=handler,
             close_after_use=False)
         return instance
+    
+
+    def _get_dir_impl(self, dir_path: str) -> 'RemoteDir':
+        '''
+        Returns the directory residing in the specified \
+        path as a ``RemoteDir`` instance.
+
+        :param str dir_path: Either the absolute path \
+            or the path relative to the directory of the \
+            subdirectory in question.
+        '''        
+        sep = self._get_separator()
+        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        dir_path = self._to_absolute(
+            path=dir_path, replace_sep=False)
+        
+        return __class__._create_dir(
+            path=dir_path,
+            host=self.get_hostname(),
+            handler=self._get_handler(),
+            metadata=self._get_metadata_ref())
     
 
     def __enter__(self) -> 'RemoteDir':
@@ -2293,10 +2300,7 @@ class AWSS3Dir(_CloudDir):
         if not self._get_handler().dir_exists(abs_dir_path):
             raise _IPE(path=dir_path)
         
-        return __class__._create_dir(
-            path=abs_dir_path,
-            handler=self._get_handler(),
-            metadata=self._get_metadata_ref())
+        return self._get_dir_impl(dir_path)
 
 
     def traverse_files(
@@ -2372,6 +2376,26 @@ class AWSS3Dir(_CloudDir):
             handler=handler,
             close_after_use=False)
         return instance
+    
+
+    def _get_dir_impl(self, dir_path: str) -> 'AWSS3Dir':
+        '''
+        Returns the directory residing in the specified \
+        path as an ``AWSS3Dir`` instance.
+
+        :param str dir_path: Either the absolute path \
+            or the path relative to the directory of the \
+            subdirectory in question.
+        '''
+        sep = self._get_separator()
+        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        abs_dir_path = self._to_absolute(
+            path=dir_path, replace_sep=False)
+        
+        return __class__._create_dir(
+            path=abs_dir_path,
+            handler=self._get_handler(),
+            metadata=self._get_metadata_ref())
     
 
     def __enter__(self) -> 'AWSS3Dir':
@@ -2543,14 +2567,7 @@ class AzureBlobDir(_CloudDir):
         if not self.path_exists(dir_path):
             raise _IPE(path=dir_path)
         
-        dir_path = self._to_absolute(
-            path=dir_path, replace_sep=False)
-        
-        return __class__._create_dir(
-            path=dir_path,
-            storage_account=self.__storage_account,
-            handler=self._get_handler(),
-            metadata=self._get_metadata_ref())
+        return self._get_dir_impl(dir_path)
     
 
     def traverse_files(
@@ -2632,6 +2649,28 @@ class AzureBlobDir(_CloudDir):
             close_after_use=False)
         return instance
     
+
+    def _get_dir_impl(self, dir_path: str) -> 'AzureBlobDir':
+        '''
+        Returns the directory residing in the specified \
+        path as an ``AzureBlobDir`` instance.
+
+        :param str dir_path: Either the absolute path \
+            or the path relative to the directory of the \
+            subdirectory in question.
+        '''
+        sep = self._get_separator()
+        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        
+        dir_path = self._to_absolute(
+            path=dir_path, replace_sep=False)
+        
+        return __class__._create_dir(
+            path=dir_path,
+            storage_account=self.__storage_account,
+            handler=self._get_handler(),
+            metadata=self._get_metadata_ref())
+
     
     def __enter__(self) -> 'AzureBlobDir':
         '''

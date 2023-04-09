@@ -944,7 +944,6 @@ class AWSClientHandler(ClientHandler):
         return False
         
     
-
     def mkdir(self, path: str) -> None:
         '''
         Creates a directory into the provided path.
