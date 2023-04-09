@@ -103,19 +103,17 @@ class's context manager:
 .. _accesing-files-through-a-directory:
 
 ----------------------------------------
-Accessing files through a directory
+Accessing files and subdirectories
 ----------------------------------------
 
 After having gained access to a directory, you may also
-access its files as individual *File* instances through
-certain methods which are part of the *Dir* API. These
-methods are the following:
+access its files and/or subdirectories as individual
+*File*/*Dir* instances through the following methods:
 
 * ``get_file(file_path: str) -> File``
-* ``get_files(recursively: bool, show_abs_path: bool) -> dict[str, File]``
-* ``traverse_files(recursively: bool) -> Iterator[File]``
+* ``get_subdir(dir_path: str) -> Dir``
 
-Consider the following example in which we use the directory's
+Consider the following example in which we use a directory's
 ``get_file`` method in order to access a file which resides
 directly within it, namely ``file.txt``:
 
@@ -173,7 +171,8 @@ directory:
   # the underlying connection has been closed.
   dir_size = aws_dir.get_size()
 
-As for the file metadata and cache storage, you can read more in
+The same principle of course applies to subdirectories. As for
+the file metadata and cache storage, you can read more in
 :ref:`Assigning metadata to files <assigning-metadata-to-files>` and
 :ref:`Speeding things up with caching <speeding-things-up-with-caching>`
 respectively.

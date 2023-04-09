@@ -22,7 +22,7 @@ All notable changes to this project will be documented in this file.
   to be able to read a text file line-by-line.
   (https://github.com/manoss96/fluke/issues/21)
 
-- *Dir* API now provides a *get_dir* method in order
+- *Dir* API now provides a *get_subdir* method in order
   to be able to access any subdirectory of a directory
   as a *Dir* instance. (https://github.com/manoss96/fluke/issues/25)
    
@@ -47,6 +47,8 @@ All notable changes to this project will be documented in this file.
 - *File* API method *get_file* method now throws an *InvalidFileError*
   exception if the specified path exists, but points to a directory.
   (https://github.com/manoss96/fluke/issues/25)
+
+- Removed *Dir* API methods *get_files* and *traverse_files*.
  
 ### Fixed
 

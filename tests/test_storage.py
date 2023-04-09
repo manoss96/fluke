@@ -1938,46 +1938,6 @@ class TestLocalDir(unittest.TestCase):
                         aws_dir.get_bucket_name(),
                         REL_DIR_FILE_PATH).metadata,
                     metadata)
-                
-    def test_traverse_files(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
-        self.assertEqual(
-            ''.join(map(lambda file: file.get_path(), dir.traverse_files())),
-            ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
-
-    def test_traverse_files_on_recursively(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
-        self.assertEqual(
-            ''.join(map(lambda file: file.get_path(), dir.traverse_files(recursively=True))),
-            ''.join(get_abs_contents(recursively=True)))
-        
-    def test_get_files(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
-        files = dir.get_files()
-        self.assertEqual(
-            ''.join(map(lambda path: files[path].get_path(), files)),
-            ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
-
-    def test_get_files_on_recursively(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
-        files = dir.get_files(recursively=True)
-        self.assertEqual(
-            ''.join(map(lambda path: files[path].get_path(), files)),
-            ''.join(get_abs_contents(recursively=True)))
-        
-    def test_get_files_on_show_abs_path(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
-        files = dir.get_files(show_abs_path=True)
-        self.assertEqual(
-            ''.join(files),
-            ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
-        
-    def test_get_files_on_recursively_and_show_abs_path(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
-        files = dir.get_files(recursively=True, show_abs_path=True)
-        self.assertEqual(
-            ''.join(files),
-            ''.join(get_abs_contents(recursively=True)))
         
     def test_get_file(self):
         dir = self.build_dir(path=ABS_DIR_PATH)
@@ -1992,18 +1952,18 @@ class TestLocalDir(unittest.TestCase):
         dir = self.build_dir(path=ABS_DIR_PATH)
         self.assertRaises(InvalidFileError, dir.get_file, DIR_SUBDIR_NAME)
 
-    def test_get_dir(self):
+    def test_get_subdir(self):
         dir = self.build_dir(path=ABS_DIR_PATH)
-        subdir = dir.get_dir(DIR_SUBDIR_NAME)
+        subdir = dir.get_subdir(DIR_SUBDIR_NAME)
         self.assertEqual(subdir.get_path(), ABS_DIR_SUBDIR_PATH)
 
-    def test_get_dir_on_invalid_path_error(self):
+    def test_get_subdir_on_invalid_path_error(self):
         dir = self.build_dir(path=ABS_DIR_PATH)
-        self.assertRaises(InvalidPathError, dir.get_dir, "NON_EXISTING_PATH")
+        self.assertRaises(InvalidPathError, dir.get_subdir, "NON_EXISTING_PATH")
 
-    def test_get_dir_on_invalid_directory_error(self):
+    def test_get_subdir_on_invalid_directory_error(self):
         dir = self.build_dir(path=ABS_DIR_PATH)
-        self.assertRaises(InvalidDirectoryError, dir.get_dir, DIR_FILE_NAME)
+        self.assertRaises(InvalidDirectoryError, dir.get_subdir, DIR_FILE_NAME)
 
     def test_file_shared_metadata_on_modify_from_dir(self):
         # Create dir and get file.
@@ -2026,7 +1986,7 @@ class TestLocalDir(unittest.TestCase):
     def test_subdir_shared_metadata_on_modify_from_dir(self):
         # Create dir and get file.
         dir = self.build_dir(path=ABS_DIR_PATH)
-        subdir = dir.get_dir(DIR_SUBDIR_NAME)
+        subdir = dir.get_subdir(DIR_SUBDIR_NAME)
         # Change metadata via "Dir" API.
         dir.set_metadata(
             DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME, METADATA)
@@ -2037,7 +1997,7 @@ class TestLocalDir(unittest.TestCase):
     def test_subdir_shared_metadata_on_modify_from_subdir(self):
         # Create dir and get file.
         dir = self.build_dir(path=ABS_DIR_PATH)
-        subdir = dir.get_dir(DIR_SUBDIR_NAME)
+        subdir = dir.get_subdir(DIR_SUBDIR_NAME)
         # Change metadata via "File" API.
         subdir.set_metadata(DIR_SUBDIR_FILE_NAME, METADATA)
         # Assert file metadata have been changed.
@@ -2455,45 +2415,6 @@ class TestRemoteDir(unittest.TestCase):
                 self.assertEqual(file.read(), copy.read())
         shutil.rmtree(tmp_dir_path)
 
-    def test_traverse_files(self):
-        with self.build_dir() as dir:
-            self.assertEqual(
-                ''.join(map(lambda file: file.get_path(), dir.traverse_files())),
-                ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
-
-    def test_traverse_files_on_recursively(self):
-        with self.build_dir() as dir:
-            self.assertEqual(
-                ''.join(map(lambda file: file.get_path(), dir.traverse_files(recursively=True))),
-                ''.join(get_abs_contents(recursively=True)))
-        
-    def test_get_files(self):
-        with self.build_dir() as dir:
-            files = dir.get_files()
-            self.assertEqual(
-                ''.join(map(lambda path: files[path].get_path(), files)),
-                ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
-
-    def test_get_files_on_recursively(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(recursively=True)
-            self.assertEqual(
-                ''.join(map(lambda path: files[path].get_path(), files)),
-                ''.join(get_abs_contents(recursively=True)))
-        
-    def test_get_files_on_show_abs_path(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(show_abs_path=True)
-            self.assertEqual(
-                ''.join(files),
-                ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
-        
-    def test_get_files_on_recursively_and_show_abs_path(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(recursively=True, show_abs_path=True)
-            self.assertEqual(
-                ''.join(files),
-                ''.join(get_abs_contents(recursively=True)))
         
     def test_get_file(self):
         with self.build_dir() as dir:
@@ -2508,18 +2429,18 @@ class TestRemoteDir(unittest.TestCase):
         with self.build_dir(path=ABS_DIR_PATH) as dir:
             self.assertRaises(InvalidFileError, dir.get_file, DIR_SUBDIR_NAME)
 
-    def test_get_dir(self):
+    def test_get_subdir(self):
         with self.build_dir() as dir:
-            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
             self.assertEqual(subdir.get_path(), ABS_DIR_SUBDIR_PATH)
 
-    def test_get_dir_on_invalid_path_error(self):
+    def test_get_subdir_on_invalid_path_error(self):
         with self.build_dir(path=ABS_DIR_PATH) as dir:
-            self.assertRaises(InvalidPathError, dir.get_dir, "NON_EXISTING_PATH")
+            self.assertRaises(InvalidPathError, dir.get_subdir, "NON_EXISTING_PATH")
 
-    def test_get_dir_on_invalid_directory_error(self):
+    def test_get_subdir_on_invalid_directory_error(self):
         with self.build_dir(path=ABS_DIR_PATH) as dir:
-            self.assertRaises(InvalidDirectoryError, dir.get_dir, DIR_FILE_NAME)
+            self.assertRaises(InvalidDirectoryError, dir.get_subdir, DIR_FILE_NAME)
 
     def test_file_shared_metadata_on_modify_from_dir(self):
         with self.build_dir() as dir:
@@ -2543,7 +2464,7 @@ class TestRemoteDir(unittest.TestCase):
     def test_subdir_shared_metadata_on_modify_from_dir(self):
         # Create dir and get file.
         with self.build_dir() as dir:
-            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
             # Change metadata via "Dir" API.
             dir.set_metadata(
                 DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME, METADATA)
@@ -2554,7 +2475,7 @@ class TestRemoteDir(unittest.TestCase):
     def test_subdir_shared_metadata_on_modify_from_subdir(self):
         # Create dir and get file.
         with self.build_dir() as dir:
-            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
             # Change metadata via "File" API.
             subdir.set_metadata(DIR_SUBDIR_FILE_NAME, METADATA)
             # Assert file metadata have been changed.
@@ -2714,10 +2635,12 @@ class TestRemoteDir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Count size of files via both dirs using the "File" API.
-            for file in no_cache_dir.get_files().values():
-                _ = file.get_size()
-            for file in cache_dir.get_files().values():
-                _ = file.get_size()
+            for path in no_cache_dir.traverse():
+                try:
+                    _ = no_cache_dir.get_file(path).get_size()
+                    _ = cache_dir.get_file(path).get_size()
+                except:
+                    continue
             # Time no-cache-dir's "get_size"
             t = time.time()
             _ = no_cache_dir.get_size()
@@ -2735,8 +2658,8 @@ class TestRemoteDir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Access subdir via both dirs.
-            no_cache_subdir = no_cache_dir.get_dir(DIR_SUBDIR_NAME)
-            cache_subdir = cache_dir.get_dir(DIR_SUBDIR_NAME)
+            no_cache_subdir = no_cache_dir.get_subdir(DIR_SUBDIR_NAME)
+            cache_subdir = cache_dir.get_subdir(DIR_SUBDIR_NAME)
             # Count total size for both dirs.
             _ = no_cache_dir.get_size(recursively=True)
             _ = cache_dir.get_size(recursively=True)
@@ -2757,8 +2680,8 @@ class TestRemoteDir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Count size of both subdirs.
-            _ = no_cache_dir.get_dir(DIR_SUBDIR_NAME).get_size()
-            _ = cache_dir.get_dir(DIR_SUBDIR_NAME).get_size()
+            _ = no_cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
+            _ = cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
             # Time no-cache-dir's "get_size"
             t = time.time()
             _ = no_cache_dir.get_size(recursively=True)
@@ -3328,48 +3251,6 @@ class TestAWSS3Dir(unittest.TestCase):
                 get_aws_s3_object(BUCKET, copy_path).metadata,
                 metadata)
         
-    def test_traverse_files(self):
-        with self.build_dir() as dir:
-            self.assertEqual(
-                ''.join(map(lambda file: file.get_path(), dir.traverse_files())),
-                ''.join(filter(lambda path: not path.endswith('/'), self.get_abs_contents(recursively=False))))
-
-    def test_traverse_files_on_recursively(self):
-        with self.build_dir() as dir:
-            self.assertEqual(
-                ''.join(map(lambda file: file.get_path(), dir.traverse_files(recursively=True))),
-                ''.join(self.get_abs_contents(recursively=True)))
-        
-    def test_get_files(self):
-        with self.build_dir() as dir:
-            files = dir.get_files()
-            self.assertEqual(
-                ''.join(map(lambda path: files[path].get_path(), files)),
-                ''.join(filter(lambda path: not path.endswith('/'),
-                    self.get_abs_contents(recursively=False))))
-
-    def test_get_files_on_recursively(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(recursively=True)
-            self.assertEqual(
-                ''.join(map(lambda path: files[path].get_path(), files)),
-                ''.join(self.get_abs_contents(recursively=True)))
-        
-    def test_get_files_on_show_abs_path(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(show_abs_path=True)
-            self.assertEqual(
-                ''.join(files),
-                ''.join(filter(lambda path: not path.endswith('/'),
-                    self.get_abs_contents(recursively=False))))
-        
-    def test_get_files_on_recursively_and_show_abs_path(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(recursively=True, show_abs_path=True)
-            self.assertEqual(
-                ''.join(files),
-                ''.join(self.get_abs_contents(recursively=True)))
-        
     def test_get_file(self):
         with self.build_dir() as dir:
             file = dir.get_file(DIR_FILE_NAME)
@@ -3383,14 +3264,14 @@ class TestAWSS3Dir(unittest.TestCase):
         with self.build_dir() as dir:
             self.assertRaises(InvalidFileError, dir.get_file, DIR_SUBDIR_NAME)
 
-    def test_get_dir(self):
+    def test_get_subdir(self):
         with self.build_dir() as dir:
-            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
             self.assertEqual(subdir.get_path(), REL_DIR_SUBDIR_PATH)
 
-    def test_get_dir_on_invalid_path_error(self):
+    def test_get_subdir_on_invalid_path_error(self):
         with self.build_dir() as dir:
-            self.assertRaises(InvalidPathError, dir.get_dir, "NON_EXISTING_PATH")
+            self.assertRaises(InvalidPathError, dir.get_subdir, "NON_EXISTING_PATH")
 
     def test_file_shared_metadata_on_modify_from_dir(self):
         with self.build_dir() as dir:
@@ -3413,7 +3294,7 @@ class TestAWSS3Dir(unittest.TestCase):
     def test_subdir_shared_metadata_on_modify_from_dir(self):
         # Create dir and get file.
         with self.build_dir() as dir:
-            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
             # Change metadata via "Dir" API.
             dir.set_metadata(
                 DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME, METADATA)
@@ -3424,7 +3305,7 @@ class TestAWSS3Dir(unittest.TestCase):
     def test_subdir_shared_metadata_on_modify_from_subdir(self):
         # Create dir and get file.
         with self.build_dir() as dir:
-            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
             # Change metadata via "File" API.
             subdir.set_metadata(DIR_SUBDIR_FILE_NAME, METADATA)
             # Assert file metadata have been changed.
@@ -3622,10 +3503,12 @@ class TestAWSS3Dir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Count size of files via both dirs using the "File" API.
-            for file in no_cache_dir.get_files().values():
-                _ = file.get_size()
-            for file in cache_dir.get_files().values():
-                _ = file.get_size()
+            for path in no_cache_dir.traverse():
+                try:
+                    _ = no_cache_dir.get_file(path).get_size()
+                    _ = cache_dir.get_file(path).get_size()
+                except:
+                    continue
             # Time no-cache-dir's "get_size"
             t = time.time()
             _ = no_cache_dir.get_size()
@@ -3643,8 +3526,8 @@ class TestAWSS3Dir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Access subdir via both dirs.
-            no_cache_subdir = no_cache_dir.get_dir(DIR_SUBDIR_NAME)
-            cache_subdir = cache_dir.get_dir(DIR_SUBDIR_NAME)
+            no_cache_subdir = no_cache_dir.get_subdir(DIR_SUBDIR_NAME)
+            cache_subdir = cache_dir.get_subdir(DIR_SUBDIR_NAME)
             # Count total size for both dirs.
             _ = no_cache_dir.get_size(recursively=True)
             _ = cache_dir.get_size(recursively=True)
@@ -3665,8 +3548,8 @@ class TestAWSS3Dir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Count size of both subdirs.
-            _ = no_cache_dir.get_dir(DIR_SUBDIR_NAME).get_size()
-            _ = cache_dir.get_dir(DIR_SUBDIR_NAME).get_size()
+            _ = no_cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
+            _ = cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
             # Time no-cache-dir's "get_size"
             t = time.time()
             _ = no_cache_dir.get_size(recursively=True)
@@ -4193,48 +4076,6 @@ class TestAzureBlobDir(unittest.TestCase):
                 azr_dir.get_metadata(file_path=copy_path),
                 metadata)
         shutil.rmtree(tmp_dir_path)
-
-    def test_traverse_files(self):
-        with self.build_dir() as dir:
-            self.assertEqual(
-                ''.join(map(lambda file: file.get_path(), dir.traverse_files())),
-                ''.join(filter(lambda path: not path.endswith('/'), self.get_abs_contents(recursively=False))))
-
-    def test_traverse_files_on_recursively(self):
-        with self.build_dir() as dir:
-            self.assertEqual(
-                ''.join(map(lambda file: file.get_path(), dir.traverse_files(recursively=True))),
-                ''.join(self.get_abs_contents(recursively=True)))
-        
-    def test_get_files(self):
-        with self.build_dir() as dir:
-            files = dir.get_files()
-            self.assertEqual(
-                ''.join(map(lambda path: files[path].get_path(), files)),
-                ''.join(filter(lambda path: not path.endswith('/'),
-                    self.get_abs_contents(recursively=False))))
-
-    def test_get_files_on_recursively(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(recursively=True)
-            self.assertEqual(
-                ''.join(map(lambda path: files[path].get_path(), files)),
-                ''.join(self.get_abs_contents(recursively=True)))
-        
-    def test_get_files_on_show_abs_path(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(show_abs_path=True)
-            self.assertEqual(
-                ''.join(files),
-                ''.join(filter(lambda path: not path.endswith('/'),
-                    self.get_abs_contents(recursively=False))))
-        
-    def test_get_files_on_recursively_and_show_abs_path(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(recursively=True, show_abs_path=True)
-            self.assertEqual(
-                ''.join(files),
-                ''.join(self.get_abs_contents(recursively=True)))
         
     def test_get_file(self):
         with self.build_dir() as dir:
@@ -4249,14 +4090,14 @@ class TestAzureBlobDir(unittest.TestCase):
         with self.build_dir(path=ABS_DIR_PATH) as dir:
             self.assertRaises(InvalidFileError, dir.get_file, DIR_SUBDIR_NAME)
 
-    def test_get_dir(self):
+    def test_get_subdir(self):
         with self.build_dir() as dir:
-            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
             self.assertEqual(subdir.get_path(), REL_DIR_SUBDIR_PATH)
 
-    def test_get_dir_on_invalid_path_error(self):
+    def test_get_subdir_on_invalid_path_error(self):
         with self.build_dir(path=ABS_DIR_PATH) as dir:
-            self.assertRaises(InvalidPathError, dir.get_dir, "NON_EXISTING_PATH")
+            self.assertRaises(InvalidPathError, dir.get_subdir, "NON_EXISTING_PATH")
             
     def test_file_shared_metadata_on_modify_from_dir(self):
         with self.build_dir() as dir:
@@ -4279,7 +4120,7 @@ class TestAzureBlobDir(unittest.TestCase):
     def test_subdir_shared_metadata_on_modify_from_dir(self):
         # Create dir and get file.
         with self.build_dir() as dir:
-            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
             # Change metadata via "Dir" API.
             dir.set_metadata(
                 DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME, METADATA)
@@ -4290,7 +4131,7 @@ class TestAzureBlobDir(unittest.TestCase):
     def test_subdir_shared_metadata_on_modify_from_subdir(self):
         # Create dir and get file.
         with self.build_dir() as dir:
-            subdir = dir.get_dir(DIR_SUBDIR_NAME)
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
             # Change metadata via "File" API.
             subdir.set_metadata(DIR_SUBDIR_FILE_NAME, METADATA)
             # Assert file metadata have been changed.
@@ -4489,11 +4330,12 @@ class TestAzureBlobDir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Count size of files via both dirs using the "File" API.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            for file in no_cache_dir.get_files().values():
-                _ = file.get_size()
-            for file in cache_dir.get_files().values():
-                _ = file.get_size()
+            for path in no_cache_dir.traverse():
+                try:
+                    _ = no_cache_dir.get_file(path).get_size()
+                    _ = cache_dir.get_file(path).get_size()
+                except:
+                    continue
             # Time no-cache-dir's "get_size"
             t = time.time()
             _ = no_cache_dir.get_size()
@@ -4511,8 +4353,8 @@ class TestAzureBlobDir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Access subdir via both dirs.
-            no_cache_subdir = no_cache_dir.get_dir(DIR_SUBDIR_NAME)
-            cache_subdir = cache_dir.get_dir(DIR_SUBDIR_NAME)
+            no_cache_subdir = no_cache_dir.get_subdir(DIR_SUBDIR_NAME)
+            cache_subdir = cache_dir.get_subdir(DIR_SUBDIR_NAME)
             # Count total size for both dirs.
             _ = no_cache_dir.get_size(recursively=True)
             _ = cache_dir.get_size(recursively=True)
@@ -4533,8 +4375,8 @@ class TestAzureBlobDir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Count size of both subdirs.
-            _ = no_cache_dir.get_dir(DIR_SUBDIR_NAME).get_size()
-            _ = cache_dir.get_dir(DIR_SUBDIR_NAME).get_size()
+            _ = no_cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
+            _ = cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
             # Time no-cache-dir's "get_size"
             t = time.time()
             _ = no_cache_dir.get_size(recursively=True)

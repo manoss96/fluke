@@ -1284,7 +1284,7 @@ class _Directory(_ABC):
             if dst_fp in dst_dirs:
                 dst_dir = dst_dirs[dst_fp]
             else:
-                dst_dir = dst._get_dir_impl(dst_fp)
+                dst_dir = dst._get_subdir_impl(dst_fp)
                 dst_dirs.update({dst_fp: dst_dir})
 
             # Perform the transfer.
@@ -1311,69 +1311,7 @@ class _Directory(_ABC):
                 print(msg)
             return False
     
-
-    def traverse_files(
-        self,
-        recursively: bool = False
-    ) -> _typ.Iterator[_File]:
-        '''
-        Returns an iterator capable of going through the \
-        directory's files as ``File`` instances.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be traversed recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-
-        :note: The resulting iterator may vary depending on the \
-            value of parameter ``recursively``.
-        '''
-        for file_path in self.__handler.traverse_dir(
-            dir_path=self.get_path(),
-            recursively=recursively,
-            include_dirs=False,
-            show_abs_path=True
-        ):
-            yield self.get_file(file_path)
-
-
-    def get_files(
-        self,
-        recursively: bool = False,
-        show_abs_path: bool = False
-    ) -> dict[str, _File]:
-        '''
-        Returns a dictionary mapping file paths to ``File`` instances \
-        regarding the files contained within the directory.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be traversed recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Determines whether to include the \
-            files' absolute path or their path relative to this directory. \
-            Defaults to ``False``.
-
-        :note: The resulting iterator may vary depending on the \
-            value of parameter ``recursively``.
-        '''
-        file_dict = dict()
-        for file_path in self.__handler.traverse_dir(
-            dir_path=self.get_path(),
-            recursively=recursively,
-            include_dirs=False,
-            show_abs_path=show_abs_path
-        ):
-            file_dict.update({ file_path: self.get_file(file_path)})
-        return file_dict
     
-
     def _get_close_after_use(self) -> bool:
         '''
         Returns a value indicating whether all open connections \
@@ -1528,7 +1466,7 @@ class _Directory(_ABC):
 
     
     @_absmethod
-    def get_dir(self, dir_path: str) -> '_Directory':
+    def get_subdir(self, dir_path: str) -> '_Directory':
         '''
         Returns the directory residing in the specified \
         path as a ``_Directory`` instance.
@@ -1547,7 +1485,7 @@ class _Directory(_ABC):
 
 
     @_absmethod
-    def _get_dir_impl(self, dir_path: str) -> '_Directory':
+    def _get_subdir_impl(self, dir_path: str) -> '_Directory':
         '''
         Returns the directory residing in the specified \
         path as a ``_Directory`` instance.
@@ -1652,7 +1590,7 @@ class LocalDir(_Directory):
             metadata=self._get_file_metadata_ref(file_path))
     
 
-    def get_dir(self, dir_path: str) -> 'LocalDir':
+    def get_subdir(self, dir_path: str) -> 'LocalDir':
         '''
         Returns the directory residing in the specified \
         path as a ``LocalDir`` instance.
@@ -1673,56 +1611,7 @@ class LocalDir(_Directory):
         if self.is_file(dir_path):
             raise _IDE(path=dir_path)
         
-        return self._get_dir_impl(dir_path)
-    
-
-    def traverse_files(
-        self,
-        recursively: bool = False
-    ) -> _typ.Iterator[LocalFile]:
-        '''
-        Returns an iterator capable of going through the \
-        dictionaries files as ``File`` instances.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be traversed recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-
-        :note: The resulting iterator may vary depending on the \
-            value of parameter ``recursively``.
-        '''
-        yield from super().traverse_files(recursively=recursively)
-
-
-    def get_files(
-        self,
-        recursively: bool = False,
-        show_abs_path: bool = False
-    ) -> dict[str, LocalFile]:
-        '''
-        Returns a dictionary mapping file paths to ``File`` instances \
-        regarding the files contained within the directory.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be traversed recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Determines whether to include the \
-            files' absolute path or their path relative to this directory. \
-            Defaults to ``False``.
-
-        :note: The resulting iterator may vary depending on the \
-            value of parameter ``recursively``.
-        '''
-        return super().get_files(
-            recursively=recursively, show_abs_path=show_abs_path)
+        return self._get_subdir_impl(dir_path)
     
 
     @classmethod
@@ -1752,7 +1641,7 @@ class LocalDir(_Directory):
         return instance
     
 
-    def _get_dir_impl(self, dir_path: str) -> 'LocalDir':
+    def _get_subdir_impl(self, dir_path: str) -> 'LocalDir':
         '''
         Returns the directory residing in the specified \
         path as a ``LocalDir`` instance.
@@ -1980,9 +1869,9 @@ class RemoteDir(_NonLocalDir):
             metadata=self._get_file_metadata_ref(file_path))
     
 
-    def get_dir(self, dir_path: str) -> 'RemoteDir':
+    def get_subdir(self, dir_path: str) -> 'RemoteDir':
         '''
-        Returns the directory residing in the specified \
+        Returns the subdirectory residing in the specified \
         path as a ``RemoteDir`` instance.
 
         :param str dir_path: Either the absolute path \
@@ -2000,56 +1889,7 @@ class RemoteDir(_NonLocalDir):
         if self.is_file(dir_path):
             raise _IDE(path=dir_path)
         
-        return self._get_dir_impl(dir_path)
-    
-
-    def traverse_files(
-        self,
-        recursively: bool = False
-    ) -> _typ.Iterator[RemoteFile]:
-        '''
-        Returns an iterator capable of going through the \
-        dictionaries files as ``File`` instances.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be traversed recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-
-        :note: The resulting iterator may vary depending on the \
-            value of parameter ``recursively``.
-        '''
-        yield from super().traverse_files(recursively=recursively)
-
-
-    def get_files(
-        self,
-        recursively: bool = False,
-        show_abs_path: bool = False
-    ) -> dict[str, RemoteFile]:
-        '''
-        Returns a dictionary mapping file paths to ``File`` instances \
-        regarding the files contained within the directory.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be traversed recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Determines whether to include the \
-            files' absolute path or their path relative to this directory. \
-            Defaults to ``False``.
-
-        :note: The resulting iterator may vary depending on the \
-            value of parameter ``recursively``.
-        '''
-        return super().get_files(
-            recursively=recursively, show_abs_path=show_abs_path)
+        return self._get_subdir_impl(dir_path)
     
 
     @classmethod
@@ -2082,7 +1922,7 @@ class RemoteDir(_NonLocalDir):
         return instance
     
 
-    def _get_dir_impl(self, dir_path: str) -> 'RemoteDir':
+    def _get_subdir_impl(self, dir_path: str) -> 'RemoteDir':
         '''
         Returns the directory residing in the specified \
         path as a ``RemoteDir`` instance.
@@ -2280,7 +2120,7 @@ class AWSS3Dir(_CloudDir):
             metadata=self._get_file_metadata_ref(file_path))
     
 
-    def get_dir(self, dir_path: str) -> 'AWSS3Dir':
+    def get_subdir(self, dir_path: str) -> 'AWSS3Dir':
         '''
         Returns the directory residing in the specified \
         path as an ``AWSS3Dir`` instance.
@@ -2300,57 +2140,8 @@ class AWSS3Dir(_CloudDir):
         if not self._get_handler().dir_exists(abs_dir_path):
             raise _IPE(path=dir_path)
         
-        return self._get_dir_impl(dir_path)
+        return self._get_subdir_impl(dir_path)
 
-
-    def traverse_files(
-        self,
-        recursively: bool = False
-    ) -> _typ.Iterator[AWSS3File]:
-        '''
-        Returns an iterator capable of going through the \
-        dictionaries files as ``File`` instances.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be traversed recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-
-        :note: The resulting iterator may vary depending on the \
-            value of parameter ``recursively``.
-        '''
-        yield from super().traverse_files(recursively=recursively)
-
-
-    def get_files(
-        self,
-        recursively: bool = False,
-        show_abs_path: bool = False
-    ) -> dict[str, AWSS3File]:
-        '''
-        Returns a dictionary mapping file paths to ``File`` instances \
-        regarding the files contained within the directory.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be traversed recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Determines whether to include the \
-            files' absolute path or their path relative to this directory. \
-            Defaults to ``False``.
-
-        :note: The resulting iterator may vary depending on the \
-            value of parameter ``recursively``.
-        '''
-        return super().get_files(
-            recursively=recursively, show_abs_path=show_abs_path)
-    
 
     @classmethod
     def _create_dir(
@@ -2378,7 +2169,7 @@ class AWSS3Dir(_CloudDir):
         return instance
     
 
-    def _get_dir_impl(self, dir_path: str) -> 'AWSS3Dir':
+    def _get_subdir_impl(self, dir_path: str) -> 'AWSS3Dir':
         '''
         Returns the directory residing in the specified \
         path as an ``AWSS3Dir`` instance.
@@ -2549,7 +2340,7 @@ class AzureBlobDir(_CloudDir):
             metadata=self._get_file_metadata_ref(file_path))
     
 
-    def get_dir(self, dir_path: str) -> 'AzureBlobDir':
+    def get_subdir(self, dir_path: str) -> 'AzureBlobDir':
         '''
         Returns the directory residing in the specified \
         path as an ``AzureBlobDir`` instance.
@@ -2567,56 +2358,7 @@ class AzureBlobDir(_CloudDir):
         if not self.path_exists(dir_path):
             raise _IPE(path=dir_path)
         
-        return self._get_dir_impl(dir_path)
-    
-
-    def traverse_files(
-        self,
-        recursively: bool = False
-    ) -> _typ.Iterator[AzureBlobFile]:
-        '''
-        Returns an iterator capable of going through the \
-        dictionaries files as ``File`` instances.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be traversed recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-
-        :note: The resulting iterator may vary depending on the \
-            value of parameter ``recursively``.
-        '''
-        yield from super().traverse_files(recursively=recursively)
-
-
-    def get_files(
-        self,
-        recursively: bool = False,
-        show_abs_path: bool = False
-    ) -> dict[str, AzureBlobFile]:
-        '''
-        Returns a dictionary mapping file paths to ``File`` instances \
-        regarding the files contained within the directory.
-
-        :param bool recursively: Indicates whether the directory \
-            is to be traversed recursively or not. If set to  ``False``, \
-            then only those files that reside directly within the \
-            directory are to be considered. If set to ``True``, \
-            then all files are considered, no matter whether they \
-            reside directly within the directory or within any of \
-            its subdirectories. Defaults to ``False``.
-        :param bool show_abs_path: Determines whether to include the \
-            files' absolute path or their path relative to this directory. \
-            Defaults to ``False``.
-
-        :note: The resulting iterator may vary depending on the \
-            value of parameter ``recursively``.
-        '''
-        return super().get_files(
-            recursively=recursively, show_abs_path=show_abs_path)
+        return self._get_subdir_impl(dir_path)
     
 
     @classmethod
@@ -2650,7 +2392,7 @@ class AzureBlobDir(_CloudDir):
         return instance
     
 
-    def _get_dir_impl(self, dir_path: str) -> 'AzureBlobDir':
+    def _get_subdir_impl(self, dir_path: str) -> 'AzureBlobDir':
         '''
         Returns the directory residing in the specified \
         path as an ``AzureBlobDir`` instance.
