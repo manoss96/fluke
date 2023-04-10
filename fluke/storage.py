@@ -693,9 +693,11 @@ class AWSS3File(_CloudFile):
     :raises InvalidFileError: The provided path \
         points to a directory.
 
-    :note: The provided path must not begin with a separator.
-        - Wrong: ``/path/to/file.txt``
-        - Right: ``path/to/file.txt``
+    :note: The provided path must not begin with \
+        a separator.
+
+            * Wrong: ``/path/to/file.txt``
+            * Right: ``path/to/file.txt``
     '''
 
     def __init__(
@@ -723,9 +725,11 @@ class AWSS3File(_CloudFile):
         :raises InvalidFileError: The provided path \
             points to a directory.
 
-        :note: The provided path must not begin with a separator.
-            - Wrong: ``/path/to/file.txt``
-            - Right: ``path/to/file.txt``
+        :note: The provided path must not begin with \
+            a separator.
+                
+                * Wrong: ``/path/to/file.txt``
+                * Right: ``path/to/file.txt``
         '''
         # Validate path.
         sep = _infer_sep(path=path)
@@ -825,9 +829,11 @@ class AzureBlobFile(_CloudFile):
     :raises InvalidFileError: The provided path \
         points to a directory.
 
-    :note: The provided path must not begin with a separator.
-        - Wrong: ``/path/to/file.txt``
-        - Right: ``path/to/file.txt``
+    :note: The provided path must not begin with \
+        a separator.
+            
+            * Wrong: ``/path/to/file.txt``
+            * Right: ``path/to/file.txt``
     '''
 
     def __init__(
@@ -857,9 +863,11 @@ class AzureBlobFile(_CloudFile):
         :raises InvalidFileError: The provided path \
             points to a directory.
 
-        :note: The provided path must not begin with a separator.
-            - Wrong: ``/path/to/file.txt``
-            - Right: ``path/to/file.txt``
+        :note: The provided path must not begin with \
+            a separator.
+                
+                * Wrong: ``/path/to/file.txt``
+                * Right: ``path/to/file.txt``
         '''
         # Validate path.
         sep = _infer_sep(path=path)
@@ -1448,14 +1456,14 @@ class _Directory(_ABC):
 
 
     @_absmethod
-    def get_file(self, file_path: str) -> '_File':
+    def get_file(self, path: str) -> '_File':
         '''
         Returns the file residing in the specified \
         path as a ``_File`` instance.
 
-        :param str file_path: Either the absolute path \
-            or the path relative to the directory of the \
-            file in question.
+        :param str path: Either the absolute path or the \
+            path relative to the directory of the file in \
+            question.
 
         :raises InvalidPathError: The provided path \
             does not exist.
@@ -1466,14 +1474,14 @@ class _Directory(_ABC):
 
     
     @_absmethod
-    def get_subdir(self, dir_path: str) -> '_Directory':
+    def get_subdir(self, path: str) -> '_Directory':
         '''
         Returns the directory residing in the specified \
         path as a ``_Directory`` instance.
 
-        :param str dir_path: Either the absolute path \
-            or the path relative to the directory of the \
-            subdirectory in question.
+        :param str path: Either the absolute path or the \
+            path relative to the directory of the subdirectory \
+            in question.
 
         :raises InvalidPathError: The provided path \
             does not exist.
@@ -1564,40 +1572,40 @@ class LocalDir(_Directory):
         return f"file:///{self.get_path().lstrip(sep)}"
 
 
-    def get_file(self, file_path: str) -> LocalFile:
+    def get_file(self, path: str) -> LocalFile:
         '''
         Returns the file residing in the specified \
         path as a ``LocalFile`` instance.
 
-        :param str file_path: Either the absolute path \
-            or the path relative to the directory of the \
-            file in question.
+        :param str path: Either the absolute path or the \
+            path relative to the directory of the file in \
+            question.
 
         :raises InvalidPathError: The provided path \
             does not exist.
         :raises InvalidFileError: The provided path does \
             not point to a file within the directory.
         '''
-        if not self.path_exists(file_path):
-            raise _IPE(path=file_path)
-        if not self.is_file(file_path):
-            raise _IFE(path=file_path)
+        if not self.path_exists(path):
+            raise _IPE(path=path)
+        if not self.is_file(path):
+            raise _IFE(path=path)
         
-        file_path = self._to_absolute(path=file_path, replace_sep=False)
+        path = self._to_absolute(path=path, replace_sep=False)
         return LocalFile._create_file(
-            path=file_path,
+            path=path,
             handler=self._get_handler(),
-            metadata=self._get_file_metadata_ref(file_path))
+            metadata=self._get_file_metadata_ref(path))
     
 
-    def get_subdir(self, dir_path: str) -> 'LocalDir':
+    def get_subdir(self, path: str) -> 'LocalDir':
         '''
         Returns the directory residing in the specified \
         path as a ``LocalDir`` instance.
 
-        :param str dir_path: Either the absolute path \
-            or the path relative to the directory of the \
-            subdirectory in question.
+        :param str path: Either the absolute path or the \
+            path relative to the directory of the subdirectory \
+            in question.
 
         :raises InvalidPathError: The provided path \
             does not exist.
@@ -1606,12 +1614,12 @@ class LocalDir(_Directory):
             directory.
         '''
 
-        if not self.path_exists(dir_path):
-            raise _IPE(path=dir_path)
-        if self.is_file(dir_path):
-            raise _IDE(path=dir_path)
+        if not self.path_exists(path):
+            raise _IPE(path=path)
+        if self.is_file(path):
+            raise _IDE(path=path)
         
-        return self._get_subdir_impl(dir_path)
+        return self._get_subdir_impl(path)
     
 
     @classmethod
@@ -1842,41 +1850,41 @@ class RemoteDir(_NonLocalDir):
         return f"sftp://{self.__host}/{self.get_path().lstrip(self._get_separator())}"
     
 
-    def get_file(self, file_path: str) -> RemoteFile:
+    def get_file(self, path: str) -> RemoteFile:
         '''
         Returns the file residing in the specified \
         path as a ``RemoteFile`` instance.
 
-        :param str file_path: Either the absolute path \
-            or the path relative to the directory of the \
-            file in question.
+        :param str path: Either the absolute path or the \
+            path relative to the directory of the file in \
+            question.
 
         :raises InvalidPathError: The provided path \
             does not exist.
         :raises InvalidFileError: The provided path does \
             not point to a file within the directory.
         '''
-        if not self.path_exists(file_path):
-            raise _IPE(path=file_path)
-        if not self.is_file(file_path):
-            raise _IFE(path=file_path)
+        if not self.path_exists(path):
+            raise _IPE(path=path)
+        if not self.is_file(path):
+            raise _IFE(path=path)
         
-        file_path = self._to_absolute(file_path, replace_sep=False)
+        path = self._to_absolute(path, replace_sep=False)
         return RemoteFile._create_file(
-            path=file_path,
+            path=path,
             host=self.get_hostname(),
             handler=self._get_handler(),
-            metadata=self._get_file_metadata_ref(file_path))
+            metadata=self._get_file_metadata_ref(path))
     
 
-    def get_subdir(self, dir_path: str) -> 'RemoteDir':
+    def get_subdir(self, path: str) -> 'RemoteDir':
         '''
         Returns the subdirectory residing in the specified \
         path as a ``RemoteDir`` instance.
 
-        :param str dir_path: Either the absolute path \
-            or the path relative to the directory of the \
-            subdirectory in question.
+        :param str path: Either the absolute path or the \
+            path relative to the directory of the subdirectory \
+            in question.
 
         :raises InvalidPathError: The provided path \
             does not exist.
@@ -1884,12 +1892,12 @@ class RemoteDir(_NonLocalDir):
             does not point to a subdirectory within the \
             directory.
         '''
-        if not self.path_exists(dir_path):
-            raise _IPE(path=dir_path)
-        if self.is_file(dir_path):
-            raise _IDE(path=dir_path)
+        if not self.path_exists(path):
+            raise _IPE(path=path)
+        if self.is_file(path):
+            raise _IDE(path=path)
         
-        return self._get_subdir_impl(dir_path)
+        return self._get_subdir_impl(path)
     
 
     @classmethod
@@ -2013,9 +2021,11 @@ class AWSS3Dir(_CloudDir):
     :raises InvalidPathError: The provided path \
         does not exist.
 
-    :note: The provided path must not begin with a separator.
-        - Wrong: ``/path/to/dir/``
-        - Right: ``path/to/dir/``
+    :note: The provided path must not begin with \
+        a separator.
+            
+            * Wrong: ``/path/to/file.txt``
+            * Right: ``path/to/file.txt``
     '''
     def __init__(
         self,
@@ -2047,9 +2057,11 @@ class AWSS3Dir(_CloudDir):
         :raises InvalidPathError: The provided path \
             does not exist.
 
-        :note: The provided path must not begin with a separator.
-            - Wrong: ``/path/to/dir/``
-            - Right: ``path/to/dir/``
+        :note: The provided path must not begin with \
+            a separator.
+                
+                * Wrong: ``/path/to/file.txt``
+                * Right: ``path/to/file.txt``
         '''
         # Validate path.
         if path is None:
@@ -2092,55 +2104,55 @@ class AWSS3Dir(_CloudDir):
         return f"s3://{self.get_bucket_name()}/{self.get_path()}"
     
 
-    def get_file(self, file_path: str) -> AWSS3File:
+    def get_file(self, path: str) -> AWSS3File:
         '''
         Returns the file residing in the specified \
         path as a ``AWSS3File`` instance.
 
-        :param str file_path: Either the absolute path \
-            or the path relative to the directory of the \
-            file in question.
+        :param str path: Either the absolute path or the \
+            path relative to the directory of the file in \
+            question.
 
         :raises InvalidPathError: The provided path \
             does not exist.
         :raises InvalidFileError: The provided path does \
             not point to a file within the directory.
         '''
-        if not self.path_exists(file_path):
+        if not self.path_exists(path):
             if self._get_handler().dir_exists(
-                self._to_absolute(file_path, False)
+                self._to_absolute(path, False)
             ):
-                raise _IFE(path=file_path)
-            raise _IPE(path=file_path)
+                raise _IFE(path=path)
+            raise _IPE(path=path)
         
-        file_path = self._to_absolute(file_path, replace_sep=False)
+        path = self._to_absolute(path, replace_sep=False)
         return AWSS3File._create_file(
-            path=file_path,
+            path=path,
             handler=self._get_handler(),
-            metadata=self._get_file_metadata_ref(file_path))
+            metadata=self._get_file_metadata_ref(path))
     
 
-    def get_subdir(self, dir_path: str) -> 'AWSS3Dir':
+    def get_subdir(self, path: str) -> 'AWSS3Dir':
         '''
         Returns the directory residing in the specified \
         path as an ``AWSS3Dir`` instance.
 
-        :param str dir_path: Either the absolute path \
-            or the path relative to the directory of the \
-            subdirectory in question.
+        :param str path: Either the absolute path or the \
+            path relative to the directory of the subdirectory \
+            in question.
 
         :raises InvalidPathError: The provided path \
             does not exist.
         '''
         sep = self._get_separator()
-        dir_path = f"{dir_path.rstrip(sep)}{sep}"
-        abs_dir_path = self._to_absolute(
-            path=dir_path, replace_sep=False)
+        path = f"{path.rstrip(sep)}{sep}"
+        abs_path = self._to_absolute(
+            path=path, replace_sep=False)
 
-        if not self._get_handler().dir_exists(abs_dir_path):
-            raise _IPE(path=dir_path)
+        if not self._get_handler().dir_exists(abs_path):
+            raise _IPE(path=path)
         
-        return self._get_subdir_impl(dir_path)
+        return self._get_subdir_impl(path)
 
 
     @classmethod
@@ -2219,9 +2231,11 @@ class AzureBlobDir(_CloudDir):
     :raises InvalidPathError: The provided path \
         does not exist.
 
-    :note: The provided path must not begin with a separator.
-        - Wrong: ``/path/to/dir/``
-        - Right: ``path/to/dir/``
+    :note: The provided path must not begin with \
+        a separator.
+            
+            * Wrong: ``/path/to/file.txt``
+            * Right: ``path/to/file.txt``
     '''
     def __init__(
         self,
@@ -2255,9 +2269,11 @@ class AzureBlobDir(_CloudDir):
         :raises InvalidDirectoryError: The provided path \
             does not point to a directory.
 
-        :note: The provided path must not begin with a separator.
-            - Wrong: ``/path/to/dir/``
-            - Right: ``path/to/dir/``
+        :note: The provided path must not begin with \
+            a separator.
+                
+                * Wrong: ``/path/to/file.txt``
+                * Right: ``path/to/file.txt``
         '''        
         # Validate path.
         if path is None:
@@ -2312,14 +2328,14 @@ class AzureBlobDir(_CloudDir):
         return uri
     
 
-    def get_file(self, file_path: str) -> AzureBlobFile:
+    def get_file(self, path: str) -> AzureBlobFile:
         '''
         Returns the file residing in the specified \
         path as a ``AzureBlobFile`` instance.
 
-        :param str file_path: Either the absolute path \
-            or the path relative to the directory of the \
-            file in question.
+        :param str path: Either the absolute path or the \
+            path relative to the directory of the file in \
+            question.
 
         :raises InvalidPathError: The provided path \
             does not exist.
@@ -2327,38 +2343,38 @@ class AzureBlobDir(_CloudDir):
             not point to a file within the directory.
         '''
 
-        if not self.path_exists(file_path):
-            raise _IPE(path=file_path)
-        if not self.is_file(file_path):
-            raise _IFE(path=file_path)
+        if not self.path_exists(path):
+            raise _IPE(path=path)
+        if not self.is_file(path):
+            raise _IFE(path=path)
         
-        file_path = self._to_absolute(file_path, replace_sep=False)
+        path = self._to_absolute(path, replace_sep=False)
         return AzureBlobFile._create_file(
-            path=file_path,
+            path=path,
             storage_account=self.__storage_account,
             handler=self._get_handler(),
-            metadata=self._get_file_metadata_ref(file_path))
+            metadata=self._get_file_metadata_ref(path))
     
 
-    def get_subdir(self, dir_path: str) -> 'AzureBlobDir':
+    def get_subdir(self, path: str) -> 'AzureBlobDir':
         '''
         Returns the directory residing in the specified \
         path as an ``AzureBlobDir`` instance.
 
-        :param str dir_path: Either the absolute path \
-            or the path relative to the directory of the \
-            subdirectory in question.
+        :param str path: Either the absolute path or the \
+            path relative to the directory of the subdirectory \
+            in question.
 
         :raises InvalidPathError: The provided path \
             does not exist.
         '''
         sep = self._get_separator()
-        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        path = f"{path.rstrip(sep)}{sep}"
 
-        if not self.path_exists(dir_path):
-            raise _IPE(path=dir_path)
+        if not self.path_exists(path):
+            raise _IPE(path=path)
         
-        return self._get_subdir_impl(dir_path)
+        return self._get_subdir_impl(path)
     
 
     @classmethod

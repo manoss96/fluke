@@ -48,7 +48,12 @@ All notable changes to this project will be documented in this file.
   exception if the specified path exists, but points to a directory.
   (https://github.com/manoss96/fluke/issues/25)
 
+- *File* API method *get_file* method's *file_path* param
+  has been renamed to *path*.
+  (https://github.com/manoss96/fluke/issues/25)
+
 - Removed *Dir* API methods *get_files* and *traverse_files*.
+  (https://github.com/manoss96/fluke/issues/25)
  
 ### Fixed
 
