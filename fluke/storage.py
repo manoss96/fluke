@@ -1288,7 +1288,7 @@ class _Directory(_ABC):
                 + dst_sep)
             
             # Fetch src file and dst directory.
-            src_file = self.get_file(file_path=fp)
+            src_file = self.get_file(path=fp)
             if dst_fp in dst_dirs:
                 dst_dir = dst_dirs[dst_fp]
             else:
