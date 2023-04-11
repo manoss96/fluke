@@ -51,6 +51,7 @@ class ClientHandler(_ABC):
             any fetched data to be cached for faster subsequent \
             access. Defaults to ``False``.
         '''
+
         self.__cache_manager = _CacheManager() if cache else None
 
 
@@ -70,14 +71,14 @@ class ClientHandler(_ABC):
         '''
         if self.is_cacheable():
             self.__cache_manager.purge()
-            self.__cache_manager = _CacheManager()
 
 
     def get_file_size(self, file_path: str) -> int:
         '''
         Returns the size of a file in bytes.
         
-        :param str file_path: The path of the file in question.
+        :param str file_path: The absolute path of the \
+            file in question.
 
         :note: This method will go on to fetch the requested value \
             from a remote resource only when one of the following is \
@@ -104,7 +105,8 @@ class ClientHandler(_ABC):
         '''
         Returns a dictionary containing the metadata of a file.
         
-        :param str file_path: The path of the file in question.
+        :param str file_path: The absolute path of the file \
+            in question.
         
         :note: This method will go on to fetch the requested value \
             from a remote resource only when one of the following is \
@@ -117,7 +119,9 @@ class ClientHandler(_ABC):
             after it has been retrieved.
         '''
         if self.is_cacheable():
-            if (metadata := self.__cache_manager.get_metadata(file_path=file_path)) is not None:
+            if (metadata := self.__cache_manager.get_metadata(
+                file_path=file_path)
+            ) is not None:
                 return metadata
             else:
                 metadata = self._get_file_metadata_impl(file_path)
@@ -135,8 +139,8 @@ class ClientHandler(_ABC):
         show_abs_path: bool
     ) -> _Iterator[str]:
         '''
-        Returns an iterator capable of going through the paths \
-        of the dictionary's contents as strings.
+        Returns an iterator capable of going through \
+        the directory's contents as their paths.
 
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
@@ -168,6 +172,7 @@ class ClientHandler(_ABC):
         if self.is_cacheable():
             # Grab content iterator from cache if it exists.
             if (iterator := self.__cache_manager.get_content_iterator(
+                dir_path=dir_path,
                 recursively=recursively,
                 include_dirs=include_dirs)
             ) is not None:
@@ -184,11 +189,13 @@ class ClientHandler(_ABC):
                     show_abs_path=True)
                 # Cache all contents.
                 self.__cache_manager.cache_contents(
+                    dir_path=dir_path,
                     iterator=iterator,
                     recursively=recursively,
                     is_file=self.is_file)
                 # Reset iterator by grabbing it from cache.
                 iterator = self.__cache_manager.get_content_iterator(
+                    dir_path=dir_path,
                     recursively=recursively,
                     include_dirs=include_dirs)
                 if show_abs_path:
@@ -316,8 +323,8 @@ class ClientHandler(_ABC):
         show_abs_path: bool
     ) -> _Iterator[str]:
         '''
-        Returns an iterator capable of going through the paths \
-        of the dictionary's contents as strings.
+        Returns an iterator capable of going through \
+        the directory's contents as their paths.
 
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
@@ -497,8 +504,8 @@ class FileSystemHandler(ClientHandler):
         show_abs_path: bool
     ) -> _Iterator[str]:
         '''
-        Returns an iterator capable of going through the paths \
-        of the dictionary's contents as strings.
+        Returns an iterator capable of going through \
+        the directory's contents as their paths.
 
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
@@ -757,8 +764,8 @@ class SSHClientHandler(ClientHandler):
         show_abs_path: bool
     ) -> _Iterator[str]:
         '''
-        Returns an iterator capable of going through the paths \
-        of the dictionary's contents as strings.
+        Returns an iterator capable of going through \
+        the directory's contents as their paths.
 
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
@@ -937,7 +944,6 @@ class AWSClientHandler(ClientHandler):
         return False
         
     
-
     def mkdir(self, path: str) -> None:
         '''
         Creates a directory into the provided path.
@@ -1019,8 +1025,8 @@ class AWSClientHandler(ClientHandler):
         show_abs_path: bool
     ) -> _Iterator[str]:
         '''
-        Returns an iterator capable of going through the paths \
-        of the dictionary's contents as strings.
+        Returns an iterator capable of going through \
+        the directory's contents as their paths.
 
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
@@ -1040,9 +1046,9 @@ class AWSClientHandler(ClientHandler):
         '''
         paginator = self.__bucket.meta.client.get_paginator('list_objects')
 
-        delimiter = '' if recursively else '/'
-
         sep = _infer_sep(dir_path)
+
+        delimiter = '' if recursively else sep
 
         def page_iterator():
             yield from paginator.paginate(
@@ -1287,8 +1293,8 @@ class AzureClientHandler(ClientHandler):
         show_abs_path: bool
     ) -> _Iterator[str]:
         '''
-        Returns an iterator capable of going through the paths \
-        of the dictionary's contents as strings.
+        Returns an iterator capable of going through \
+        the directory's contents as their paths.
 
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
