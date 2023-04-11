@@ -1940,34 +1940,34 @@ class TestLocalDir(unittest.TestCase):
                     metadata)
         
     def test_get_file(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
+        dir = self.build_dir()
         file = dir.get_file(DIR_FILE_NAME)
         self.assertEqual(file.get_path(), ABS_DIR_FILE_PATH)
 
     def test_get_file_on_invalid_path_error(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
+        dir = self.build_dir()
         self.assertRaises(InvalidPathError, dir.get_file, "NON_EXISTING_PATH")
 
     def test_get_file_on_invalid_file_error(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
+        dir = self.build_dir()
         self.assertRaises(InvalidFileError, dir.get_file, DIR_SUBDIR_NAME)
 
     def test_get_subdir(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
+        dir = self.build_dir()
         subdir = dir.get_subdir(DIR_SUBDIR_NAME)
         self.assertEqual(subdir.get_path(), ABS_DIR_SUBDIR_PATH)
 
     def test_get_subdir_on_invalid_path_error(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
+        dir = self.build_dir()
         self.assertRaises(InvalidPathError, dir.get_subdir, "NON_EXISTING_PATH")
 
     def test_get_subdir_on_invalid_directory_error(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
+        dir = self.build_dir()
         self.assertRaises(InvalidDirectoryError, dir.get_subdir, DIR_FILE_NAME)
 
     def test_file_shared_metadata_on_modify_from_dir(self):
         # Create dir and get file.
-        dir = self.build_dir(path=ABS_DIR_PATH)
+        dir = self.build_dir()
         file = dir.get_file(DIR_FILE_NAME)
         # Change metadata via "Dir" API.
         dir.set_metadata(DIR_FILE_NAME, METADATA)
@@ -1976,7 +1976,7 @@ class TestLocalDir(unittest.TestCase):
 
     def test_file_shared_metadata_on_modify_from_file(self):
         # Create dir and get file.
-        dir = self.build_dir(path=ABS_DIR_PATH)
+        dir = self.build_dir()
         file = dir.get_file(DIR_FILE_NAME)
         # Change metadata via "File" API.
         file.set_metadata(METADATA)
@@ -1985,7 +1985,7 @@ class TestLocalDir(unittest.TestCase):
 
     def test_subdir_shared_metadata_on_modify_from_dir(self):
         # Create dir and get file.
-        dir = self.build_dir(path=ABS_DIR_PATH)
+        dir = self.build_dir()
         subdir = dir.get_subdir(DIR_SUBDIR_NAME)
         # Change metadata via "Dir" API.
         dir.set_metadata(
@@ -1996,7 +1996,7 @@ class TestLocalDir(unittest.TestCase):
 
     def test_subdir_shared_metadata_on_modify_from_subdir(self):
         # Create dir and get file.
-        dir = self.build_dir(path=ABS_DIR_PATH)
+        dir = self.build_dir()
         subdir = dir.get_subdir(DIR_SUBDIR_NAME)
         # Change metadata via "File" API.
         subdir.set_metadata(DIR_SUBDIR_FILE_NAME, METADATA)
@@ -2422,11 +2422,11 @@ class TestRemoteDir(unittest.TestCase):
             self.assertEqual(file.get_path(), ABS_DIR_FILE_PATH)
 
     def test_get_file_on_invalid_path_error(self):
-        with self.build_dir(path=ABS_DIR_PATH) as dir:
+        with self.build_dir() as dir:
             self.assertRaises(InvalidPathError, dir.get_file, "NON_EXISTING_PATH")
 
     def test_get_file_on_invalid_file_error(self):
-        with self.build_dir(path=ABS_DIR_PATH) as dir:
+        with self.build_dir() as dir:
             self.assertRaises(InvalidFileError, dir.get_file, DIR_SUBDIR_NAME)
 
     def test_get_subdir(self):
@@ -2435,11 +2435,11 @@ class TestRemoteDir(unittest.TestCase):
             self.assertEqual(subdir.get_path(), ABS_DIR_SUBDIR_PATH)
 
     def test_get_subdir_on_invalid_path_error(self):
-        with self.build_dir(path=ABS_DIR_PATH) as dir:
+        with self.build_dir() as dir:
             self.assertRaises(InvalidPathError, dir.get_subdir, "NON_EXISTING_PATH")
 
     def test_get_subdir_on_invalid_directory_error(self):
-        with self.build_dir(path=ABS_DIR_PATH) as dir:
+        with self.build_dir() as dir:
             self.assertRaises(InvalidDirectoryError, dir.get_subdir, DIR_FILE_NAME)
 
     def test_file_shared_metadata_on_modify_from_dir(self):
@@ -2459,7 +2459,6 @@ class TestRemoteDir(unittest.TestCase):
             file.set_metadata(METADATA)
             # Assert file metadata have been changed.
             self.assertEqual(dir.get_metadata(DIR_FILE_NAME), METADATA)
-
 
     def test_subdir_shared_metadata_on_modify_from_dir(self):
         # Create dir and get file.
@@ -4083,11 +4082,11 @@ class TestAzureBlobDir(unittest.TestCase):
             self.assertEqual(file.get_path(), REL_DIR_FILE_PATH)
 
     def test_get_file_on_invalid_path_error(self):
-        with self.build_dir(path=ABS_DIR_PATH) as dir:
+        with self.build_dir() as dir:
             self.assertRaises(InvalidPathError, dir.get_file, "NON_EXISTING_PATH")
 
     def test_get_file_on_invalid_file_error(self):
-        with self.build_dir(path=ABS_DIR_PATH) as dir:
+        with self.build_dir() as dir:
             self.assertRaises(InvalidFileError, dir.get_file, DIR_SUBDIR_NAME)
 
     def test_get_subdir(self):
@@ -4096,7 +4095,7 @@ class TestAzureBlobDir(unittest.TestCase):
             self.assertEqual(subdir.get_path(), REL_DIR_SUBDIR_PATH)
 
     def test_get_subdir_on_invalid_path_error(self):
-        with self.build_dir(path=ABS_DIR_PATH) as dir:
+        with self.build_dir() as dir:
             self.assertRaises(InvalidPathError, dir.get_subdir, "NON_EXISTING_PATH")
             
     def test_file_shared_metadata_on_modify_from_dir(self):
