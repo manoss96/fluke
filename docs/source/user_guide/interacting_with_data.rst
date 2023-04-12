@@ -322,9 +322,9 @@ Transfering data
 Being able to move data between various locations is arguably
 Fluke's predominant feature, and it is rendered possible
 through the use of the ``transfer_to`` method, which is part of
-both *File* and *Dir* APIs. Below is a complete example in which
+both APIs *File* and *Dir*. Below is a complete example in which
 we transfer the contents of a virtual directory residing within an
-Azure S3 bucket to a virtual directory of an Azure blob container,
+Amazon S3 bucket to a virtual directory of an Azure blob container,
 all in just a few lines of code:
 
 .. code-block:: python

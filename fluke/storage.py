@@ -2081,12 +2081,15 @@ class AWSS3Dir(_CloudDir):
             path=path,
             handler=aws_handler)
 
-        if not aws_handler.dir_exists(path=path):
-            if create_if_missing:
-                aws_handler.mkdir(path=path)
-            else:
-                self.close()
-                raise _IPE(path)
+        # Create directory or throw an exception
+        # depending on the value of "create_if_missing".
+        if path != '':
+            if not aws_handler.dir_exists(path=path):
+                if create_if_missing:
+                    aws_handler.mkdir(path=path)
+                else:
+                    self.close()
+                    raise _IPE(path)
 
 
     def get_bucket_name(self) -> str:
@@ -2277,7 +2280,7 @@ class AzureBlobDir(_CloudDir):
         '''        
         # Validate path.
         if path is None:
-            path = '/'
+            path = ''
         else:
             sep = _infer_sep(path=path)
             if path.startswith(sep):
@@ -2303,12 +2306,13 @@ class AzureBlobDir(_CloudDir):
 
         # Create directory or throw an exception
         # depending on the value of "create_if_missing".
-        if not azr_handler.path_exists(path=path):
-            if create_if_missing:
-                azr_handler.mkdir(path=path)
-            else:
-                self.close()
-                raise _IPE(path)
+        if path != '':
+            if not azr_handler.path_exists(path=path):
+                if create_if_missing:
+                    azr_handler.mkdir(path=path)
+                else:
+                    self.close()
+                    raise _IPE(path)
 
 
     def get_container_name(self) -> str:

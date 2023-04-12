@@ -232,7 +232,7 @@ you have two options:
        key_type=RemoteAuth.KeyType.SSH_RSA
      )
 
-#. Alternatively, you can simply set parameter ``verify_host`` to ``False``:
+#. Alternatively, you may simply set parameter ``verify_host`` to ``False``:
 
    .. code-block:: python
 
