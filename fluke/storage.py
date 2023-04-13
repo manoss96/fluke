@@ -331,7 +331,10 @@ class _File(_ABC):
         Returns a value indicating whether all open connections \
         should close before the instance destructor is called.
         '''
-        return self.__close_after_use
+        try:
+            return self.__close_after_use
+        except AttributeError:
+            return True
 
 
     def _get_separator(self) -> str:
@@ -1325,7 +1328,10 @@ class _Directory(_ABC):
         Returns a value indicating whether all open connections \
         should close before the instance destructor is called.
         '''
-        return self.__close_after_use
+        try:
+            return self.__close_after_use
+        except AttributeError:
+            return True
     
 
     def _get_separator(self) -> str:
