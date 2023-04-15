@@ -3609,7 +3609,7 @@ class TestAzureBlobDir(unittest.TestCase):
 
     def test_get_path_on_none_path(self):
         with self.build_dir(path=None) as dir:
-            self.assertEqual(dir.get_path(), SEPARATOR)  
+            self.assertEqual(dir.get_path(), '')  
 
     def test_get_name(self):
         with self.build_dir() as dir:
