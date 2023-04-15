@@ -54,6 +54,11 @@ All notable changes to this project will be documented in this file.
 
 - Removed *Dir* API methods *get_files* and *traverse_files*.
   (https://github.com/manoss96/fluke/issues/25)
+
+- *AzureBlobDir.get_path* now returns the empty
+  string when no path (or a ``None`` path) has
+  been provided via the class constructor.
+  (https://github.com/manoss96/fluke/issues/25)
  
 ### Fixed
 
