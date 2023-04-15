@@ -600,6 +600,8 @@ class SSHClientHandler(ClientHandler):
         key_type = credentials.pop('key_type')
         verify_host = credentials.pop('verify_host')
 
+        print(f"\nEstablishing connection to {credentials['hostname']}...")
+
         # Load all known hosts.
         ssh.load_system_host_keys()
 
@@ -646,6 +648,7 @@ class SSHClientHandler(ClientHandler):
 
         self.__ssh = ssh
         self.__sftp = ssh.open_sftp()
+        print("Connection established!")
 
 
     def close_connections(self):
@@ -889,10 +892,12 @@ class AWSClientHandler(ClientHandler):
         if self.__bucket is not None:
             return
 
+        print(f"\nEstablishing connection to '{self.__bucket_name}' Amazon S3 bucket...")
         self.__bucket = _boto3.resource(
             service_name='s3',
             **self.__auth.get_credentials()
         ).Bucket(self.__bucket_name)
+        print("Connection established.")
 
 
     def close_connections(self):
@@ -1166,6 +1171,7 @@ class AzureClientHandler(ClientHandler):
 
         credentials = self.__auth.get_credentials()
 
+        print(f"\nEstablishing connection to '{self.__container_name}' Azure blob container...")
         if 'conn_string' in credentials:
             self.__container = _ContainerClient.from_connection_string(
                 conn_str=credentials['conn_string'],
@@ -1175,7 +1181,7 @@ class AzureClientHandler(ClientHandler):
                 account_url=credentials.pop('account_url'),
                 container_name=self.__container_name,
                 credential=_CSC(**credentials))
-
+        print("Connection established!")
 
     def close_connections(self):
         '''

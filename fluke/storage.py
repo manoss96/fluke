@@ -318,9 +318,11 @@ class _File(_ABC):
                 dst._upsert_metadata(
                     file_path=dst_fp,
                     metadata=metadata)
+            if not suppress_output:
+                print("Operation successful!")
         except Exception as e:
             if not suppress_output:
-                print(f"Failure: {e}")
+                print(f"Operation unsuccessful: {e}")
             return False
           
         return True
@@ -585,11 +587,11 @@ class RemoteFile(_NonLocalFile):
         :raises InvalidFileError: The provided path \
             points to a directory.
         '''
-        # Instantiate a connection handler,
-        # if none has been set.
-        if (ssh_handler := self._get_handler()) is None:
-            ssh_handler = _SSHClientHandler(auth=auth, cache=cache)
-            self.__host = auth.get_credentials()['hostname']
+        # Instantiate a connection handler.
+        ssh_handler = _SSHClientHandler(auth=auth, cache=cache)
+
+        # Set up hostname.
+        self.__host = auth.get_credentials()['hostname']
 
         super().__init__(
             path=path,
@@ -736,18 +738,15 @@ class AWSS3File(_CloudFile):
         '''
         # Validate path.
         sep = _infer_sep(path=path)
-
         if path.startswith(sep):
             raise _IPE(path=path)
         
-        # Instantiate a connection handler,
-        # if none has been set.
-        if (aws_handler := self._get_handler()) is None:
-            aws_handler = _AWSClientHandler(
-                auth=auth,
-                bucket=bucket,
-                cache=cache)
-        
+        # Instantiate a connection handler.
+        aws_handler = _AWSClientHandler(
+            auth=auth,
+            bucket=bucket,
+            cache=cache)
+
         super().__init__(
             path=path,
             handler=aws_handler)
@@ -877,13 +876,11 @@ class AzureBlobFile(_CloudFile):
         if path.startswith(sep):
             raise _IPE(path=path)
 
-        # Instantiate a connection handler,
-        # if none has been set.
-        if (azr_handler := self._get_handler()) is None:
-            azr_handler = _AzureClientHandler(
-                auth=auth,
-                container=container,
-                cache=cache)
+        # Instantiate a connection handler.
+        azr_handler = _AzureClientHandler(
+            auth=auth,
+            container=container,
+            cache=cache)
         
         # Infer storage account.
         self.__storage_account = auth._get_storage_account()
@@ -1313,12 +1310,12 @@ class _Directory(_ABC):
 
         if failures == 0:
             if not suppress_output:
-                print(f'\nOperation successful: Copied all {total_num_files} files!')
+                print(f'\nOperation successful: All {total_num_files} files were transfered!')
             return True
         else:
             if not suppress_output:
-                msg = "\nOperation unsuccessful: Failed to copy "
-                msg += f"{failures} out of {total_num_files} files."
+                msg = f"\nOperation unsuccessful: {failures} out of "
+                msg += f"{total_num_files} files failed to be transferred."
                 print(msg)
             return False
     
@@ -1818,6 +1815,7 @@ class RemoteDir(_NonLocalDir):
             does not point to a directory.
         '''        
         ssh_handler = _SSHClientHandler(auth=auth, cache=cache)
+        self.__host = auth.get_credentials()['hostname']
 
         super().__init__(
             path=path,
@@ -1827,8 +1825,6 @@ class RemoteDir(_NonLocalDir):
         if path == '':
             self.close()
             raise _IPE(path=path)
-
-        self.__host = auth.get_credentials()['hostname']
 
         if not ssh_handler.path_exists(path=path):
             if create_if_missing:
