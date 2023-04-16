@@ -111,6 +111,11 @@ def create_aws_s3_bucket(mock_s3, bucket_name: str, metadata: dict[str, str]):
                     Key=file_path.replace(os.sep, SEPARATOR),
                     Fileobj=file,
                     ExtraArgs={ "Metadata": metadata })
+    # Finally, create a TMP dir.
+    with io.BytesIO() as empty_buffer:
+        bucket.upload_fileobj(
+            Key=join_paths(TEST_FILES_DIR, TMP_DIR_NAME, 'DUMMY'),
+            Fileobj=empty_buffer)
 
         
 def get_aws_s3_object(bucket_name: str, path: str):
@@ -159,8 +164,20 @@ ABS_DIR_PATH = to_abs(REL_DIR_PATH)
 DIR_FILE_NAME = "file2.txt"
 REL_DIR_FILE_PATH = f"{REL_DIR_PATH}{DIR_FILE_NAME}"
 ABS_DIR_FILE_PATH = to_abs(REL_DIR_FILE_PATH)
-CONTENTS = [DIR_FILE_NAME, f'subdir{SEPARATOR}']
-RECURSIVE_CONTENTS = [DIR_FILE_NAME, f'subdir{SEPARATOR}file3.txt', f'subdir{SEPARATOR}file4.txt']
+DIR_SUBDIR_NAME = f"subdir{SEPARATOR}"
+REL_DIR_SUBDIR_PATH = f"{REL_DIR_PATH}{DIR_SUBDIR_NAME}"
+ABS_DIR_SUBDIR_PATH = to_abs(REL_DIR_SUBDIR_PATH)
+DIR_SUBDIR_FILE_NAME = "file3.txt"
+REL_DIR_SUBDIR_FILE_PATH = f"{REL_DIR_SUBDIR_PATH}{DIR_SUBDIR_FILE_NAME}"
+ABS_DIR_SUBDIR_FILE_PATH = to_abs(REL_DIR_SUBDIR_FILE_PATH)
+CONTENTS = [DIR_FILE_NAME, DIR_SUBDIR_NAME]
+RECURSIVE_CONTENTS = [
+    DIR_FILE_NAME,
+    f'{DIR_SUBDIR_NAME}{DIR_SUBDIR_FILE_NAME}',
+    f'{DIR_SUBDIR_NAME}file4.txt']
+TMP_DIR_NAME = 'TMP_DIR'
+
+
 def get_abs_contents(recursively: bool):
     return [
         join_paths(ABS_DIR_PATH, p) for p in (
@@ -191,6 +208,32 @@ STORAGE_ACCOUNT_CONN_STRING = f"DefaultEndpointsProtocol=https;AccountName={STOR
 Helper Mock Classes
 '''
 class MockSFTPClient():
+
+    class MockSFTPFile():
+
+        def __init__(self, filename: str, mode: str) -> None:
+            self.__file = open(file=filename, mode=mode)
+
+        def seek(self, offset: int) -> None:
+            self.__file.seek(offset)
+
+        def tell(self) -> int:
+            return self.__file.tell()
+
+        def read(self, size: Optional[int] = None) -> None:
+            if size is None:
+                return self.__file.read()
+            return self.__file.read(size)
+        
+        def write(self, chunk: bytes) -> None:
+            self.__file.write(chunk)
+        
+        def flush(self) -> None:
+            self.__file.flush()
+
+        def close(self):
+            self.__file.close()
+            
 
     @staticmethod
     def get_mock_methods() -> dict[str, Mock]:
@@ -228,15 +271,8 @@ class MockSFTPClient():
         return [self.stat(join_paths(path, f)) for f in sorted(os.listdir(path=path))]
     
     @simulate_latency
-    def getfo(self, remotepath, fl, callback=None, prefetch=True):
-        with open(remotepath, "rb") as fr:
-            fl.write(fr.read())
-            return fr.tell()
-        
-    @simulate_latency
-    def putfo(self, fl, remotepath, file_size=0, callback=None, confirm=True):
-        with open(remotepath, "wb") as fr:
-            fr.write(fl.read())
+    def open(self, filename: str, mode: str) -> MockSFTPFile:
+        return MockSFTPClient.MockSFTPFile(filename, mode)
 
     @simulate_latency
     def close(self):
@@ -261,23 +297,36 @@ class MockContainerClient():
 
     class MockStreamStorageDownloader():
 
-        def __init__(self, name: str, metadata: dict[str, str], size: int):
+        def __init__(
+            self, name: str,
+            metadata: dict[str, str],
+            size: int,
+            offset: Optional[int] = None,
+            length: Optional[int] = None
+        ):
             self.name = name
             self.size = size
             self.properties = MockContainerClient.MockBlobProperties(
                 name=name,
                 metadata=metadata,
                 size=size)
+            self.offset = offset
+            self.length = length
 
         @simulate_latency
-        def readinto(self, stream: io.BytesIO):
+        def read(self):
             with open(file=self.name, mode="rb") as file:
-                stream.write(file.read())
+                if self.offset is not None:
+                    file.seek(self.offset)
+                if self.length is None:
+                    return file.read()
+                return file.read(self.length)
 
     class MockBlobClient():
 
         def __init__(self, blob_name: str):
             self.blob_name: str = blob_name
+            self.metadata = {}
 
         @simulate_latency
         def exists(self) -> bool:
@@ -285,12 +334,59 @@ class MockContainerClient():
 
         @simulate_latency  
         def create_append_blob(self):
-            os.makedirs(join_paths(*self.blob_name.split(SEPARATOR)[:-1]))
+            os.makedirs(join_paths(*self.blob_name.split(SEPARATOR)[:-1]), exist_ok=True)
             with (
                 open(file=self.blob_name, mode='wb') as file,
                 io.BytesIO() as empty_buffer
             ):
                 file.write(empty_buffer.read())
+
+        def set_blob_metadata(self, metadata: dict[str, str]) -> None:
+            self.metadata = metadata
+
+        @simulate_latency    
+        def download_blob(
+            self,
+            offset: Optional[int] = None,
+            length: Optional[int] = None
+        ):
+            file_path = to_abs(self.blob_name)
+            return MockContainerClient.MockStreamStorageDownloader(
+                name=file_path,
+                metadata=self.metadata,
+                size=os.stat(file_path).st_size,
+                offset=offset,
+                length=length)
+        
+        @simulate_latency   
+        def upload_blob(
+            self,
+            data: bytes,
+            length: int,
+            metadata: Optional[dict[str, str]],
+            overwrite: bool
+        ):
+            name = self.blob_name
+            # Raise error if file exists and overwrite
+            # has not been set to True.
+            if os.path.exists(name) and not overwrite:
+                raise OverwriteError(file_path=name)
+            # Write contents to file.
+            with open(file=name, mode="wb") as file:
+                file.write(data)
+            # Store metadata if not None.
+            if metadata is not None:
+                self.metadata = metadata
+
+        @simulate_latency
+        def append_block(
+            self,
+            data: bytes,
+            length: int
+        ):
+            # Write contents to file.
+            with open(file=self.blob_name, mode="ab") as file:
+                file.write(data)
 
         @simulate_latency
         def delete_blob(self):
@@ -391,7 +487,6 @@ class MockContainerClient():
         else:
             raise ValueError()
                 
-
     @simulate_latency    
     def download_blob(self, blob: str):
         file_path = to_abs(blob)
@@ -399,24 +494,6 @@ class MockContainerClient():
             name=blob,
             metadata=self.metadata[blob],
             size=os.stat(file_path).st_size)
-    
-    @simulate_latency   
-    def upload_blob(
-        self,
-        name: str,
-        data: io.BytesIO,
-        metadata: Optional[dict[str, str]],
-        overwrite: bool
-    ):
-        # Raise error if file exists and overwrite
-        # has not been set to True.
-        if os.path.exists(name) and not overwrite:
-            raise OverwriteError(file_path=name)
-        # Update metadata.
-        self.metadata.update({name: metadata})
-        # Write contents to file.
-        with open(file=name, mode="wb") as file:
-            file.write(data.read())
 
     @simulate_latency
     def close(self):
@@ -449,7 +526,7 @@ class TestLocalFile(unittest.TestCase):
 
     def test_get_uri(self):
         file = self.build_file()
-        self.assertEqual(file.get_uri(), f"file:///{ABS_FILE_PATH.lstrip(SEPARATOR)}")
+        self.assertEqual(file.get_uri(), f"file:///{ABS_FILE_PATH.removeprefix(SEPARATOR)}")
 
     def test_get_metadata(self):
         file = self.build_file()
@@ -479,6 +556,50 @@ class TestLocalFile(unittest.TestCase):
         file = self.build_file()
         self.assertEqual(file.read(), b"TEXT")
 
+    def test_read_chunks(self):
+        file = self.build_file()
+        data, chunk_size = b"TEXT", 1
+        with io.BytesIO(data) as buffer:
+            for chunk in file.read_chunks(chunk_size):
+                self.assertEqual(chunk, buffer.read(chunk_size))
+
+    def test_read_range(self):
+        file = self.build_file()
+        data, start, end = b"EX", 1, 3
+        self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_is_none(self):
+        file = self.build_file()
+        data, start, end = b"TE", None, 2
+        self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_end_is_none(self):
+        file = self.build_file()
+        data, start, end = b"XT", 2, None
+        self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_greater_than_end(self):
+        file = self.build_file()
+        data, start, end = b"", 100, 1
+        self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_text(self):
+        file = self.build_file()
+        data = "TEXT"
+        self.assertEqual(data, file.read_text())
+
+    def test_read_lines(self):
+        file = self.build_file()
+        data = "TEXT"
+        for line in file.read_lines():
+            self.assertEqual(data, line)
+
+    def test_read_lines_on_chunk_size(self):
+        file = self.build_file()
+        data = "TEXT"
+        for line in file.read_lines(chunk_size=1):
+            self.assertEqual(data, line)
+
     def test_transfer_to(self):
         file = self.build_file()
         dir = TestLocalDir.build_dir(path=ABS_DIR_PATH)
@@ -488,7 +609,31 @@ class TestLocalFile(unittest.TestCase):
         
         # Confirm that file was indeed copied.
         copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
-        self.assertTrue(os.path.exists(copy_path))
+
+        with (
+            open(ABS_FILE_PATH, mode='rb') as file,
+            open(copy_path, mode='rb') as copy
+        ):
+            self.assertEqual(file.read(), copy.read())
+
+        # Remove copy of the file.
+        os.remove(copy_path)
+
+    def test_transfer_to_on_chunk_size(self):
+        file = self.build_file()
+        dir = TestLocalDir.build_dir(path=ABS_DIR_PATH)
+
+        # Copy file into dir.
+        file.transfer_to(dst=dir, chunk_size=1)
+        
+        # Confirm that file was indeed copied.
+        copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
+
+        with (
+            open(ABS_FILE_PATH, mode='rb') as file,
+            open(copy_path, mode='rb') as copy
+        ):
+            self.assertEqual(file.read(), copy.read())
 
         # Remove copy of the file.
         os.remove(copy_path)
@@ -501,12 +646,11 @@ class TestLocalFile(unittest.TestCase):
         file.transfer_to(dst=dir)
         # Ensure OverwriteError is raised when trying
         # to copy file a second time.
-        self.assertRaises(OverwriteError, file.transfer_to, dst=dir)
+        self.assertFalse(file.transfer_to(dst=dir))
         
         # Remove copy of the file.
         copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
         os.remove(copy_path)
-
 
 class TestRemoteFile(unittest.TestCase):
 
@@ -545,7 +689,7 @@ class TestRemoteFile(unittest.TestCase):
 
     def test_get_uri(self):
         with self.build_file() as file:
-            self.assertEqual(file.get_uri(), f"sftp://{HOST}/{ABS_FILE_PATH.lstrip(os.sep)}")
+            self.assertEqual(file.get_uri(), f"sftp://{HOST}/{ABS_FILE_PATH.removeprefix(os.sep)}")
 
     def test_get_metadata(self):
         with self.build_file() as file:
@@ -575,13 +719,79 @@ class TestRemoteFile(unittest.TestCase):
         with self.build_file() as file:
             self.assertEqual(file.read(), b"TEXT")
 
+    def test_read_chunks(self):
+        data, chunk_size = b"TEXT", 1
+        with (
+            self.build_file() as file,
+            io.BytesIO(data) as buffer
+        ):
+            for chunk in file.read_chunks(chunk_size):
+                self.assertEqual(chunk, buffer.read(chunk_size))
+
+    def test_read_range(self):
+        data, start, end = b"EX", 1, 3
+        with self.build_file() as file:
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_is_none(self):
+        with self.build_file() as file:
+            data, start, end = b"TE", None, 2
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_end_is_none(self):
+        with self.build_file() as file:
+            data, start, end = b"XT", 2, None
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_greater_than_end(self):
+        with self.build_file() as file:
+            data, start, end = b"", 100, 1
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_text(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            self.assertEqual(data, file.read_text())
+
+    def test_read_lines(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            for line in file.read_lines():
+                self.assertEqual(data, line)
+
+    def test_read_lines_on_chunk_size(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            for line in file.read_lines(chunk_size=1):
+                self.assertEqual(data, line)
+
     def test_transfer_to(self):
         with self.build_file() as file:
             # Copy file into dir.
             file.transfer_to(dst=TestLocalDir.build_dir(path=ABS_DIR_PATH))
             # Confirm that file was indeed copied.
             copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
-            self.assertTrue(os.path.exists(copy_path))
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
+            # Remove copy of the file.
+            os.remove(copy_path)
+
+    def test_transfer_to_on_chunk_size(self):
+        with self.build_file() as file:
+            # Copy file into dir.
+            file.transfer_to(
+                dst=TestLocalDir.build_dir(path=ABS_DIR_PATH),
+                chunk_size=1)
+            # Confirm that file was indeed copied.
+            copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
             # Remove copy of the file.
             os.remove(copy_path)
 
@@ -592,7 +802,7 @@ class TestRemoteFile(unittest.TestCase):
             file.transfer_to(dst=dir)
             # Ensure OverwriteError is raised when trying
             # to copy file a second time.
-            self.assertRaises(OverwriteError, file.transfer_to, dst=dir)
+            self.assertFalse(file.transfer_to(dst=dir))
             # Remove copy of the file.
             copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
             os.remove(copy_path)
@@ -825,13 +1035,79 @@ class TestAWSS3File(unittest.TestCase):
         with self.build_file() as file:
             self.assertEqual(file.read(), b"TEXT")
 
+    def test_read_chunks(self):
+        data, chunk_size = b"TEXT", 1
+        with (
+            self.build_file() as file,
+            io.BytesIO(data) as buffer
+        ):
+            for chunk in file.read_chunks(chunk_size):
+                self.assertEqual(chunk, buffer.read(chunk_size))
+
+    def test_read_range(self):
+        data, start, end = b"EX", 1, 3
+        with self.build_file() as file:
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_is_none(self):
+        with self.build_file() as file:
+            data, start, end = b"TE", None, 2
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_end_is_none(self):
+        with self.build_file() as file:
+            data, start, end = b"XT", 2, None
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_greater_than_end(self):
+        with self.build_file() as file:
+            data, start, end = b"", 100, 1
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_text(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            self.assertEqual(data, file.read_text())
+
+    def test_read_lines(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            for line in file.read_lines():
+                self.assertEqual(data, line)
+
+    def test_read_lines_on_chunk_size(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            for line in file.read_lines(chunk_size=1):
+                self.assertEqual(data, line)
+
     def test_transfer_to(self):
         with self.build_file() as file:
             # Copy file into dir.
             file.transfer_to(dst=TestLocalDir.build_dir(path=ABS_DIR_PATH))
             # Confirm that file was indeed copied.
             copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
-            self.assertTrue(os.path.exists(copy_path))
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
+            # Remove copy of the file.
+            os.remove(copy_path)
+
+    def test_transfer_to_on_chunk_size(self):
+        with self.build_file() as file:
+            # Copy file into dir.
+            file.transfer_to(
+                dst=TestLocalDir.build_dir(path=ABS_DIR_PATH),
+                chunk_size=1)
+            # Confirm that file was indeed copied.
+            copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
             # Remove copy of the file.
             os.remove(copy_path)
 
@@ -842,7 +1118,7 @@ class TestAWSS3File(unittest.TestCase):
             file.transfer_to(dst=dir)
             # Ensure OverwriteError is raised when trying
             # to copy file a second time.
-            self.assertRaises(OverwriteError, file.transfer_to, dst=dir)
+            self.assertFalse(file.transfer_to(dst=dir))
             # Remove copy of the file.
             copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
             os.remove(copy_path)
@@ -1059,10 +1335,55 @@ class TestAzureBlobFile(unittest.TestCase):
         with self.build_file() as file:
             self.assertEqual(file.get_size(), 4)
 
-
     def test_read(self):
         with self.build_file() as file:
             self.assertEqual(file.read(), b"TEXT")
+
+    def test_read_chunks(self):
+        data, chunk_size = b"TEXT", 1
+        with (
+            self.build_file() as file,
+            io.BytesIO(data) as buffer
+        ):
+            for chunk in file.read_chunks(chunk_size):
+                self.assertEqual(chunk, buffer.read(chunk_size))
+
+    def test_read_range(self):
+        data, start, end = b"EX", 1, 3
+        with self.build_file() as file:
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_is_none(self):
+        with self.build_file() as file:
+            data, start, end = b"TE", None, 2
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_end_is_none(self):
+        with self.build_file() as file:
+            data, start, end = b"XT", 2, None
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_greater_than_end(self):
+        with self.build_file() as file:
+            data, start, end = b"", 100, 1
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_text(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            self.assertEqual(data, file.read_text())
+
+    def test_read_lines(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            for line in file.read_lines():
+                self.assertEqual(data, line)
+
+    def test_read_lines_on_chunk_size(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            for line in file.read_lines(chunk_size=1):
+                self.assertEqual(data, line)
 
     def test_transfer_to(self):
         with self.build_file() as file:
@@ -1070,7 +1391,27 @@ class TestAzureBlobFile(unittest.TestCase):
             file.transfer_to(dst=TestLocalDir.build_dir(path=ABS_DIR_PATH))
             # Confirm that file was indeed copied.
             copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
-            self.assertTrue(os.path.exists(copy_path))
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
+            # Remove copy of the file.
+            os.remove(copy_path)
+
+    def test_transfer_to_on_chunk_size(self):
+        with self.build_file() as file:
+            # Copy file into dir.
+            file.transfer_to(
+                dst=TestLocalDir.build_dir(path=ABS_DIR_PATH),
+                chunk_size=1)
+            # Confirm that file was indeed copied.
+            copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
             # Remove copy of the file.
             os.remove(copy_path)
 
@@ -1081,7 +1422,7 @@ class TestAzureBlobFile(unittest.TestCase):
             file.transfer_to(dst=dir)
             # Ensure OverwriteError is raised when trying
             # to copy file a second time.
-            self.assertRaises(OverwriteError, file.transfer_to, dst=dir)
+            self.assertFalse(file.transfer_to(dst=dir))
             # Remove copy of the file.
             copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
             os.remove(copy_path)
@@ -1260,11 +1601,11 @@ class TestLocalDir(unittest.TestCase):
 
     def test_get_name(self):
         dir = self.build_dir(path=ABS_DIR_PATH)
-        self.assertEqual(dir.get_name(), DIR_NAME.rstrip(SEPARATOR))
+        self.assertEqual(dir.get_name(), DIR_NAME.removesuffix(SEPARATOR))
 
     def test_get_uri(self):
         dir = self.build_dir(path=ABS_DIR_PATH)
-        self.assertEqual(dir.get_uri(), f"file:///{ABS_DIR_PATH.lstrip(SEPARATOR)}")
+        self.assertEqual(dir.get_uri(), f"file:///{ABS_DIR_PATH.removeprefix(SEPARATOR)}")
 
     def test_get_metadata_on_invalid_file_error(self):
         dir = self.build_dir()
@@ -1433,21 +1774,30 @@ class TestLocalDir(unittest.TestCase):
 
     def test_transfer_to(self):
         # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', 'TMP_DIR'))
+        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
         os.mkdir(tmp_dir_path)
         # Copy the directory's contents into this tmp directory.
         self.build_dir(path=ABS_DIR_PATH).transfer_to(
             dst=self.build_dir(path=tmp_dir_path))
-        # Assert that the two directories contains the same contents
-        self.assertEqual(
-            ''.join(s for s in sorted(os.listdir(ABS_DIR_PATH)) if s.endswith('.txt')),
-            ''.join(s for s in sorted(os.listdir(tmp_dir_path))))
+        # Assert that the two directories contains the same contents.
+        original = [s for s in sorted(os.listdir(ABS_DIR_PATH)) if s.endswith('.txt')]
+        copies = [s for s in sorted(os.listdir(tmp_dir_path))]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                open(file=join_paths(ABS_DIR_PATH, ofp), mode='rb') as of,
+                open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
+            ):
+                self.assertEqual(of.read(), cp.read())
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
     def test_transfer_to_on_recursively(self):
         # Create a temporary dictionary.
-        tmp_dir_name = 'TMP_DIR'
+        tmp_dir_name = TMP_DIR_NAME
         tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', tmp_dir_name))
         os.mkdir(tmp_dir_path)
         # Recursively copy the directory's contents
@@ -1455,20 +1805,51 @@ class TestLocalDir(unittest.TestCase):
         self.build_dir(path=ABS_DIR_PATH).transfer_to(
             dst=self.build_dir(path=tmp_dir_path),
             recursively=True)
-        # Assert that the two directories contain the same contents.
-        self.assertEqual(
-            ''.join(join_paths(dp, f).replace(
-                f'{SEPARATOR}dir{SEPARATOR}',
-                f'{SEPARATOR}{tmp_dir_name}{SEPARATOR}')
-                for dp, _, fn in os.walk(ABS_DIR_PATH) for f in fn),
-            ''.join(join_paths(dp, f)
-                for dp, _, fn in os.walk(tmp_dir_path) for f in fn))
+        # Assert that the two directories contains the same contents.
+        original = [join_paths(dp, f) for dp, _, fn in 
+                    os.walk(ABS_DIR_PATH) for f in fn]
+        copies = [join_paths(dp, f) for dp, _, fn in 
+                os.walk(tmp_dir_path) for f in fn]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                open(file=ofp, mode='rb') as of,
+                open(file=cfp, mode='rb') as cp
+            ):
+                self.assertEqual(of.read(), cp.read())
+        # Remove temporary directory.
+        shutil.rmtree(tmp_dir_path)
+
+    def test_transfer_to_on_chunk_size(self):
+        # Create a temporary dictionary.
+        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
+        os.mkdir(tmp_dir_path)
+        # Copy the directory's contents into this tmp directory.
+        self.build_dir(path=ABS_DIR_PATH).transfer_to(
+            dst=self.build_dir(path=tmp_dir_path),
+            chunk_size=1)
+        # Assert that the two directories contains the same contents.
+        original = [s for s in sorted(os.listdir(ABS_DIR_PATH)) if s.endswith('.txt')]
+        copies = [s for s in sorted(os.listdir(tmp_dir_path))]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                open(file=join_paths(ABS_DIR_PATH, ofp), mode='rb') as of,
+                open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
+            ):
+                self.assertEqual(of.read(), cp.read())
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
     def test_transfer_to_on_overwrite_set_to_false(self):
         # Create a copy of the directory.
-        tmp_dir_name = 'TMP_DIR'
+        tmp_dir_name = TMP_DIR_NAME
         tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', tmp_dir_name))
         shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
         # While capturing stdout...
@@ -1487,7 +1868,7 @@ class TestLocalDir(unittest.TestCase):
 
     def test_transfer_to_on_overwrite_set_to_true(self):
         # Create a copy of the directory.
-        tmp_dir_name = 'TMP_DIR'
+        tmp_dir_name = TMP_DIR_NAME
         tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', tmp_dir_name))
         shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
         # While capturing stdout...
@@ -1510,7 +1891,7 @@ class TestLocalDir(unittest.TestCase):
         dir = self.build_dir(path=ABS_DIR_PATH)
         dir.set_metadata(file_path=filename, metadata=metadata)
         # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', 'TMP_DIR'))
+        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
         os.mkdir(tmp_dir_path)
         tmp_dir = self.build_dir(path=tmp_dir_path)
         # Copy the directory's contents into this
@@ -1527,7 +1908,7 @@ class TestLocalDir(unittest.TestCase):
         dir = self.build_dir(path=ABS_DIR_PATH)
         dir.set_metadata(file_path=filename, metadata=metadata)
         # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', 'TMP_DIR'))
+        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
         os.mkdir(tmp_dir_path)
         tmp_dir = self.build_dir(path=tmp_dir_path)
         # Copy the directory's contents into this
@@ -1540,7 +1921,7 @@ class TestLocalDir(unittest.TestCase):
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_cloud_dir_include_metadata_set_to_true(self):
+    def test_transfer_to_on_aws_cloud_dir_include_metadata_set_to_true(self):
         # Set metadata for a directory's file.
         with mock_s3() as mocks3:
             # Create AWSS3 bucket.
@@ -1557,74 +1938,72 @@ class TestLocalDir(unittest.TestCase):
                         aws_dir.get_bucket_name(),
                         REL_DIR_FILE_PATH).metadata,
                     metadata)
-                
-    def test_traverse_files(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
-        self.assertEqual(
-            ''.join(map(lambda file: file.get_path(), dir.traverse_files())),
-            ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
-
-    def test_traverse_files_on_recursively(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
-        self.assertEqual(
-            ''.join(map(lambda file: file.get_path(), dir.traverse_files(recursively=True))),
-            ''.join(get_abs_contents(recursively=True)))
-        
-    def test_get_files(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
-        files = dir.get_files()
-        self.assertEqual(
-            ''.join(map(lambda path: files[path].get_path(), files)),
-            ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
-
-    def test_get_files_on_recursively(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
-        files = dir.get_files(recursively=True)
-        self.assertEqual(
-            ''.join(map(lambda path: files[path].get_path(), files)),
-            ''.join(get_abs_contents(recursively=True)))
-        
-    def test_get_files_on_show_abs_path(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
-        files = dir.get_files(show_abs_path=True)
-        self.assertEqual(
-            ''.join(files),
-            ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
-        
-    def test_get_files_on_recursively_and_show_abs_path(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
-        files = dir.get_files(recursively=True, show_abs_path=True)
-        self.assertEqual(
-            ''.join(files),
-            ''.join(get_abs_contents(recursively=True)))
         
     def test_get_file(self):
-        dir = self.build_dir(path=ABS_DIR_PATH)
-        file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-        file = dir.get_file(file_path)
+        dir = self.build_dir()
+        file = dir.get_file(DIR_FILE_NAME)
         self.assertEqual(file.get_path(), ABS_DIR_FILE_PATH)
+
+    def test_get_file_on_invalid_path_error(self):
+        dir = self.build_dir()
+        self.assertRaises(InvalidPathError, dir.get_file, "NON_EXISTING_PATH")
+
+    def test_get_file_on_invalid_file_error(self):
+        dir = self.build_dir()
+        self.assertRaises(InvalidFileError, dir.get_file, DIR_SUBDIR_NAME)
+
+    def test_get_subdir(self):
+        dir = self.build_dir()
+        subdir = dir.get_subdir(DIR_SUBDIR_NAME)
+        self.assertEqual(subdir.get_path(), ABS_DIR_SUBDIR_PATH)
+
+    def test_get_subdir_on_invalid_path_error(self):
+        dir = self.build_dir()
+        self.assertRaises(InvalidPathError, dir.get_subdir, "NON_EXISTING_PATH")
+
+    def test_get_subdir_on_invalid_directory_error(self):
+        dir = self.build_dir()
+        self.assertRaises(InvalidDirectoryError, dir.get_subdir, DIR_FILE_NAME)
 
     def test_file_shared_metadata_on_modify_from_dir(self):
         # Create dir and get file.
-        dir = self.build_dir(path=ABS_DIR_PATH)
-        file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-        file = dir.get_file(file_path)
+        dir = self.build_dir()
+        file = dir.get_file(DIR_FILE_NAME)
         # Change metadata via "Dir" API.
-        dir.set_metadata(file_path, METADATA)
+        dir.set_metadata(DIR_FILE_NAME, METADATA)
         # Assert file metadata have been changed.
         self.assertEqual(file.get_metadata(), METADATA)
 
     def test_file_shared_metadata_on_modify_from_file(self):
         # Create dir and get file.
-        dir = self.build_dir(path=ABS_DIR_PATH)
-        file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-        file = dir.get_file(file_path)
+        dir = self.build_dir()
+        file = dir.get_file(DIR_FILE_NAME)
         # Change metadata via "File" API.
         file.set_metadata(METADATA)
         # Assert file metadata have been changed.
-        self.assertEqual(dir.get_metadata(file_path), METADATA)
-        
+        self.assertEqual(dir.get_metadata(DIR_FILE_NAME), METADATA)
 
+    def test_subdir_shared_metadata_on_modify_from_dir(self):
+        # Create dir and get file.
+        dir = self.build_dir()
+        subdir = dir.get_subdir(DIR_SUBDIR_NAME)
+        # Change metadata via "Dir" API.
+        dir.set_metadata(
+            DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME, METADATA)
+        # Assert file metadata have been changed.
+        self.assertEqual(
+            subdir.get_metadata(DIR_SUBDIR_FILE_NAME), METADATA)
+
+    def test_subdir_shared_metadata_on_modify_from_subdir(self):
+        # Create dir and get file.
+        dir = self.build_dir()
+        subdir = dir.get_subdir(DIR_SUBDIR_NAME)
+        # Change metadata via "File" API.
+        subdir.set_metadata(DIR_SUBDIR_FILE_NAME, METADATA)
+        # Assert file metadata have been changed.
+        self.assertEqual(
+            dir.get_metadata(DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME), METADATA)
+        
 
 class TestRemoteDir(unittest.TestCase):
 
@@ -1664,6 +2043,9 @@ class TestRemoteDir(unittest.TestCase):
     def test_constructor_on_invalid_path_error(self):
         self.assertRaises(InvalidPathError, self.build_dir, path="NON_EXISTING_PATH")
 
+    def test_constructor_on_invalid_directory_error(self):
+        self.assertRaises(InvalidDirectoryError, self.build_dir, path=ABS_DIR_FILE_PATH)
+
     def test_get_hostname(self):
         with self.build_dir() as dir:
             self.assertEqual(dir.get_hostname(), HOST)
@@ -1674,7 +2056,7 @@ class TestRemoteDir(unittest.TestCase):
 
     def test_get_uri(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_uri(), f"sftp://{HOST}/{ABS_DIR_PATH.lstrip(os.sep)}")
+            self.assertEqual(dir.get_uri(), f"sftp://{HOST}/{ABS_DIR_PATH.removeprefix(os.sep)}")
             
     def test_set_and_get_metadata(self):
         with self.build_dir() as dir:
@@ -1842,39 +2224,82 @@ class TestRemoteDir(unittest.TestCase):
 
     def test_transfer_to(self):
         # Create a temporary dictionary.
-        tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, 'TMP_DIR')
+        tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
         os.mkdir(tmp_dir_path)
         # Copy the directory's contents into this tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(dst=LocalDir(path=tmp_dir_path))
-        # Assert that the two directories contain the same contents.
-        self.assertEqual(
-            ''.join(s for s in sorted(os.listdir(REL_DIR_PATH)) if s.endswith('.txt')),
-            ''.join(s for s in sorted(os.listdir(tmp_dir_path))))
+        # Assert that the two directories contains the same contents.
+        original = [s for s in sorted(os.listdir(ABS_DIR_PATH)) if s.endswith('.txt')]
+        copies = [s for s in sorted(os.listdir(tmp_dir_path))]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                open(file=join_paths(ABS_DIR_PATH, ofp), mode='rb') as of,
+                open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
+            ):
+                self.assertEqual(of.read(), cp.read())
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
     def test_transfer_to_on_recursively(self):
         # Create a temporary dictionary.
-        tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, 'TMP_DIR')
+        tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
         os.mkdir(tmp_dir_path)
         # Copy the directory's contents into this tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
                 dst=LocalDir(path=tmp_dir_path),
                 recursively=True)
-        # Assert that the two directories contain the same contents.
-        self.assertEqual(
-            ''.join(join_paths(dp, f).removeprefix(REL_DIR_PATH)
-                for dp, _, fn in os.walk(REL_DIR_PATH) for f in fn),
-            ''.join(join_paths(dp, f).removeprefix(tmp_dir_path)
-                for dp, _, fn in os.walk(tmp_dir_path) for f in fn))
+        # Assert that the two directories contains the same contents.
+        original = [join_paths(dp, f) for dp, _, fn in 
+                    os.walk(ABS_DIR_PATH) for f in fn]
+        copies = [join_paths(dp, f) for dp, _, fn in 
+                os.walk(tmp_dir_path) for f in fn]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                open(file=ofp, mode='rb') as of,
+                open(file=cfp, mode='rb') as cp
+            ):
+                self.assertEqual(of.read(), cp.read())
+        # Remove temporary directory.
+        shutil.rmtree(tmp_dir_path)
+
+    def test_transfer_to_on_chunk_size(self):
+        # Create a temporary dictionary.
+        tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
+        os.mkdir(tmp_dir_path)
+        # Copy the directory's contents into this tmp directory.
+        with self.build_dir() as dir:
+            dir.transfer_to(
+                dst=LocalDir(path=tmp_dir_path),
+                chunk_size=1)
+        # Assert that the two directories contains the same contents.
+        original = [s for s in sorted(os.listdir(ABS_DIR_PATH)) if s.endswith('.txt')]
+        copies = [s for s in sorted(os.listdir(tmp_dir_path))]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                open(file=join_paths(ABS_DIR_PATH, ofp), mode='rb') as of,
+                open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
+            ):
+                self.assertEqual(of.read(), cp.read())
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
     def test_transfer_to_on_overwrite_set_to_false(self):
         # Create a copy of the directory.
-        tmp_dir_name = 'TMP_DIR'
+        tmp_dir_name = TMP_DIR_NAME
         tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, tmp_dir_name)
         shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
         # While capturing stdout...
@@ -1896,7 +2321,7 @@ class TestRemoteDir(unittest.TestCase):
 
     def test_transfer_to_on_overwrite_set_to_true(self):
         # Create a copy of the directory.
-        tmp_dir_name = 'TMP_DIR'
+        tmp_dir_name = TMP_DIR_NAME
         tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, tmp_dir_name)
         shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
         # While capturing stdout...
@@ -1922,7 +2347,7 @@ class TestRemoteDir(unittest.TestCase):
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
             # Create a temporary dictionary.
-            tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, 'TMP_DIR')
+            tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
             os.makedirs(tmp_dir_path)
             tmp_dir = LocalDir(path=tmp_dir_path)
             # Copy the directory's contents into this
@@ -1940,7 +2365,7 @@ class TestRemoteDir(unittest.TestCase):
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
             # Create a temporary dictionary.
-            tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, 'TMP_DIR')
+            tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
             os.mkdir(tmp_dir_path)
             tmp_dir = LocalDir(path=tmp_dir_path)
             # Copy the directory's contents into this
@@ -1953,107 +2378,108 @@ class TestRemoteDir(unittest.TestCase):
             metadata)
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
-
-    def test_transfer_to_on_cloud_dir_include_metadata_set_to_true(self):
-        # Set metadata for a directory's file.
-        with mock_s3() as mocks3:
-            # Create AWSS3 bucket.
-            create_aws_s3_bucket(mocks3, BUCKET, METADATA)
-            # Copy directory contents including metadata
-            filename, metadata = ABS_DIR_FILE_PATH, {'2': '2'}
-            with (
-                self.build_dir() as dir,
-                TestAWSS3Dir().build_dir() as aws_dir
-            ):
-                dir.set_metadata(file_path=filename, metadata=metadata)
-                dir.transfer_to(dst=aws_dir, overwrite=True, include_metadata=True)
-                # Assert that the object's metadata have been modified.
-                self.assertEqual(
-                    get_aws_s3_object(
-                        aws_dir.get_bucket_name(),
-                        REL_DIR_FILE_PATH).metadata,
-                    metadata)
                 
-    def test_transfer_to_as_destination(self):
-        # Create a "remote" temporary dictionary.
-        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, 'TMP_DIR')
+    def test_transfer_to_as_dst(self):
+        # Get source file.
+        src_file = TestLocalFile.build_file()
+        # Create a temporary "remote" dictionary.
+        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
         os.mkdir(tmp_dir_path)
-        # Copy the local dir's contents into this
-        # "remote" tmp directory.
-        with self.build_dir(path=tmp_dir_path) as dir:
-            TestLocalDir.build_dir(ABS_DIR_PATH).transfer_to(dir)
-        # Assert that the two directories contain the same contents.
-        self.assertEqual(
-            ''.join(s for s in sorted(os.listdir(ABS_DIR_PATH)) if s.endswith('.txt')),
-            ''.join(s for s in sorted(os.listdir(tmp_dir_path))))
-        # Remove temporary directory.
+        with self.build_dir(path=tmp_dir_path) as remote_dir:
+            # Copy file into dir.
+            src_file.transfer_to(dst=remote_dir)
+            # Confirm that file was indeed copied.
+            copy_path = join_paths(tmp_dir_path, FILE_NAME)
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
         shutil.rmtree(tmp_dir_path)
 
-    def test_traverse_files(self):
-        with self.build_dir() as dir:
-            self.assertEqual(
-                ''.join(map(lambda file: file.get_path(), dir.traverse_files())),
-                ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
+    def test_transfer_to_as_dst_on_chunk_size(self):
+        # Get source file.
+        src_file = TestLocalFile.build_file()
+        # Create a temporary "remote" dictionary.
+        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
+        os.mkdir(tmp_dir_path)
+        with self.build_dir(path=tmp_dir_path) as remote_dir:
+            # Copy file into dir.
+            src_file.transfer_to(dst=remote_dir, chunk_size=1)
+            # Confirm that file was indeed copied.
+            copy_path = join_paths(tmp_dir_path, FILE_NAME)
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
+        shutil.rmtree(tmp_dir_path)
 
-    def test_traverse_files_on_recursively(self):
-        with self.build_dir() as dir:
-            self.assertEqual(
-                ''.join(map(lambda file: file.get_path(), dir.traverse_files(recursively=True))),
-                ''.join(get_abs_contents(recursively=True)))
-        
-    def test_get_files(self):
-        with self.build_dir() as dir:
-            files = dir.get_files()
-            self.assertEqual(
-                ''.join(map(lambda path: files[path].get_path(), files)),
-                ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
-
-    def test_get_files_on_recursively(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(recursively=True)
-            self.assertEqual(
-                ''.join(map(lambda path: files[path].get_path(), files)),
-                ''.join(get_abs_contents(recursively=True)))
-        
-    def test_get_files_on_show_abs_path(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(show_abs_path=True)
-            self.assertEqual(
-                ''.join(files),
-                ''.join(filter(lambda path: not path.endswith('/'), get_abs_contents(recursively=False))))
-        
-    def test_get_files_on_recursively_and_show_abs_path(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(recursively=True, show_abs_path=True)
-            self.assertEqual(
-                ''.join(files),
-                ''.join(get_abs_contents(recursively=True)))
         
     def test_get_file(self):
         with self.build_dir() as dir:
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             self.assertEqual(file.get_path(), ABS_DIR_FILE_PATH)
+
+    def test_get_file_on_invalid_path_error(self):
+        with self.build_dir() as dir:
+            self.assertRaises(InvalidPathError, dir.get_file, "NON_EXISTING_PATH")
+
+    def test_get_file_on_invalid_file_error(self):
+        with self.build_dir() as dir:
+            self.assertRaises(InvalidFileError, dir.get_file, DIR_SUBDIR_NAME)
+
+    def test_get_subdir(self):
+        with self.build_dir() as dir:
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
+            self.assertEqual(subdir.get_path(), ABS_DIR_SUBDIR_PATH)
+
+    def test_get_subdir_on_invalid_path_error(self):
+        with self.build_dir() as dir:
+            self.assertRaises(InvalidPathError, dir.get_subdir, "NON_EXISTING_PATH")
+
+    def test_get_subdir_on_invalid_directory_error(self):
+        with self.build_dir() as dir:
+            self.assertRaises(InvalidDirectoryError, dir.get_subdir, DIR_FILE_NAME)
 
     def test_file_shared_metadata_on_modify_from_dir(self):
         with self.build_dir() as dir:
             # Access file via dir.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             # Change metadata via "Dir" API.
-            dir.set_metadata(file_path, METADATA)
+            dir.set_metadata(DIR_FILE_NAME, METADATA)
             # Assert file metadata have been changed.
             self.assertEqual(file.get_metadata(), METADATA)
 
     def test_file_shared_metadata_on_modify_from_file(self):
         with self.build_dir() as dir:
             # Access file via dir.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             # Change metadata via "File" API.
             file.set_metadata(METADATA)
             # Assert file metadata have been changed.
-            self.assertEqual(dir.get_metadata(file_path), METADATA)
+            self.assertEqual(dir.get_metadata(DIR_FILE_NAME), METADATA)
+
+    def test_subdir_shared_metadata_on_modify_from_dir(self):
+        # Create dir and get file.
+        with self.build_dir() as dir:
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
+            # Change metadata via "Dir" API.
+            dir.set_metadata(
+                DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME, METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(
+                subdir.get_metadata(DIR_SUBDIR_FILE_NAME), METADATA)
+
+    def test_subdir_shared_metadata_on_modify_from_subdir(self):
+        # Create dir and get file.
+        with self.build_dir() as dir:
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
+            # Change metadata via "File" API.
+            subdir.set_metadata(DIR_SUBDIR_FILE_NAME, METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(
+                dir.get_metadata(DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME), METADATA)
         
     '''
     Test connection methods.
@@ -2186,9 +2612,8 @@ class TestRemoteDir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Access file via both dirs.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            no_cache_file = no_cache_dir.get_file(file_path)
-            cache_file = cache_dir.get_file(file_path)
+            no_cache_file = no_cache_dir.get_file(DIR_FILE_NAME)
+            cache_file = cache_dir.get_file(DIR_FILE_NAME)
             # Count total size for both dirs.
             _ = no_cache_dir.get_size()
             _ = cache_dir.get_size()
@@ -2209,11 +2634,12 @@ class TestRemoteDir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Count size of files via both dirs using the "File" API.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            for file in no_cache_dir.get_files().values():
-                _ = file.get_size()
-            for file in cache_dir.get_files().values():
-                _ = file.get_size()
+            for path in no_cache_dir.traverse():
+                try:
+                    _ = no_cache_dir.get_file(path).get_size()
+                    _ = cache_dir.get_file(path).get_size()
+                except:
+                    continue
             # Time no-cache-dir's "get_size"
             t = time.time()
             _ = no_cache_dir.get_size()
@@ -2221,6 +2647,47 @@ class TestRemoteDir(unittest.TestCase):
             # Time cache-dir's "get_size"
             t = time.time()
             _ = cache_dir.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_subdir_shared_cache_on_cache_via_dir(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Access subdir via both dirs.
+            no_cache_subdir = no_cache_dir.get_subdir(DIR_SUBDIR_NAME)
+            cache_subdir = cache_dir.get_subdir(DIR_SUBDIR_NAME)
+            # Count total size for both dirs.
+            _ = no_cache_dir.get_size(recursively=True)
+            _ = cache_dir.get_size(recursively=True)
+            # Time no-cache-subdir's "get_size"
+            t = time.time()
+            _ = no_cache_subdir.get_size()
+            normal_time = time.time() - t
+            # Time cache-subdir's "get_size"
+            t = time.time()
+            _ = cache_subdir.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_subdir_shared_cache_on_cache_via_subdir(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Count size of both subdirs.
+            _ = no_cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
+            _ = cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
+            # Time no-cache-dir's "get_size"
+            t = time.time()
+            _ = no_cache_dir.get_size(recursively=True)
+            normal_time = time.time() - t
+            # Time cache-dir's "get_size"
+            t = time.time()
+            _ = cache_dir.get_size(recursively=True)
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
@@ -2532,43 +2999,85 @@ class TestAWSS3Dir(unittest.TestCase):
 
     def test_transfer_to(self):
         # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, 'TMP_DIR'))
+        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME))
         os.mkdir(tmp_dir_path)
         # Copy the directory's contents into this tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(dst=TestLocalDir.build_dir(path=tmp_dir_path))
-        # Assert that the two directories contain the same contents.
-        self.assertEqual(
-            ''.join(s for s in sorted(self.iterate_aws_s3_dir_objects())),
-            ''.join(s for s in sorted(os.listdir(tmp_dir_path))))
+        # Assert that the two directories contains the same contents.
+        original = [s for s in sorted(self.iterate_aws_s3_dir_objects(show_abs_path=True))]
+        copies = [s for s in sorted(os.listdir(tmp_dir_path))]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                io.BytesIO() as buffer,
+                open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
+            ):
+                get_aws_s3_object(BUCKET, ofp).download_fileobj(buffer)
+                self.assertEqual(buffer.getvalue(), cp.read())
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
     def test_transfer_to_on_recursively(self):
         # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, 'TMP_DIR'))
+        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME))
         os.mkdir(tmp_dir_path)
         # Copy the directory's contents into this tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
                 dst=TestLocalDir.build_dir(path=tmp_dir_path),
                 recursively=True)
-        # Assert that the two directories contain the same contents.
-            expected_results = []
-            for dp, dn, fn in os.walk(tmp_dir_path):
-                dn.sort()
-                for f in sorted(fn):
-                    expected_results.append(
-                        join_paths(dp, f).removeprefix(tmp_dir_path))
-        self.assertEqual(
-            ''.join(s for s in self.iterate_aws_s3_dir_objects(recursively=True)),
-            ''.join(expected_results))
+        # Assert that the two directories contains the same contents.
+        original = [s for s in sorted(self.iterate_aws_s3_dir_objects(
+            recursively=True, show_abs_path=True))]
+        copies = [join_paths(dp, f) for dp, _, fn in 
+                os.walk(tmp_dir_path) for f in fn]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                io.BytesIO() as buffer,
+                open(cfp, mode='rb') as cp
+            ):
+                get_aws_s3_object(BUCKET, ofp).download_fileobj(buffer)
+                self.assertEqual(buffer.getvalue(), cp.read())
+        # Remove temporary directory.
+        shutil.rmtree(tmp_dir_path)
+
+    def test_transfer_to_on_chunk_size(self):
+        # Create a temporary dictionary.
+        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME))
+        os.mkdir(tmp_dir_path)
+        # Copy the directory's contents into this tmp directory.
+        with self.build_dir() as dir:
+            dir.transfer_to(
+                dst=TestLocalDir.build_dir(path=tmp_dir_path),
+                chunk_size=1)
+        # Assert that the two directories contains the same contents.
+        original = [s for s in sorted(self.iterate_aws_s3_dir_objects(show_abs_path=True))]
+        copies = [s for s in sorted(os.listdir(tmp_dir_path))]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                io.BytesIO() as buffer,
+                open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
+            ):
+                get_aws_s3_object(BUCKET, ofp).download_fileobj(buffer)
+                self.assertEqual(buffer.getvalue(), cp.read())
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
     def test_transfer_to_on_overwrite_set_to_false(self):
         # Create a copy of the directory.
-        tmp_dir_name = 'TMP_DIR'
+        tmp_dir_name = TMP_DIR_NAME
         tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name))
         shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
         # While capturing stdout...
@@ -2590,7 +3099,7 @@ class TestAWSS3Dir(unittest.TestCase):
 
     def test_transfer_to_on_overwrite_set_to_true(self):
         # Create a copy of the directory.
-        tmp_dir_name = 'TMP_DIR'
+        tmp_dir_name = TMP_DIR_NAME
         tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name))
         shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
         # While capturing stdout...
@@ -2663,86 +3172,144 @@ class TestAWSS3Dir(unittest.TestCase):
             METADATA)
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
+        
+    def test_transfer_to_as_dst(self):
+        # Get source file.
+        src_file = TestLocalFile.build_file()
+        # Get tmp dir path (already created in bucket).
+        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
+        with self.build_dir(path=tmp_dir_path) as aws_dir:
+            # Copy file into dir.
+            src_file.transfer_to(dst=aws_dir)
+            # Confirm that file was indeed copied.
+            copy_path = join_paths(tmp_dir_path, FILE_NAME)
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                io.BytesIO() as buffer
+            ):
+                get_aws_s3_object(
+                    bucket_name=BUCKET, path=copy_path
+                ).download_fileobj(buffer)
+                self.assertEqual(
+                    file.read(),
+                    buffer.getvalue())
 
-    def test_transfer_to_on_include_metadata_to_cloud_dir(self):
-        # Set metadata for a directory's file.
-        filename, metadata = DIR_FILE_NAME, {'2': '2'}
-        with self.build_dir() as dir:
-            dir.set_metadata(file_path=filename, metadata=metadata)
-            # Copy directory contents into itself.
-            dir.transfer_to(dst=dir, overwrite=True, include_metadata=True)
-        # Assert that the object's metadata have been modified.
-        self.assertEqual(
-            get_aws_s3_object(BUCKET, REL_DIR_FILE_PATH).metadata,
-            metadata)
-        
-    def test_traverse_files(self):
-        with self.build_dir() as dir:
-            self.assertEqual(
-                ''.join(map(lambda file: file.get_path(), dir.traverse_files())),
-                ''.join(filter(lambda path: not path.endswith('/'), self.get_abs_contents(recursively=False))))
+    def test_transfer_to_as_dst_on_chunk_size(self):
+        # Get source file.
+        src_file = TestLocalFile.build_file()
+        # Get tmp dir path (already created in bucket).
+        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
+        with self.build_dir(path=tmp_dir_path) as aws_dir:
+            # Copy file into dir.
+            src_file.transfer_to(dst=aws_dir, chunk_size=1000)
+            # Confirm that file was indeed copied.
+            copy_path = join_paths(tmp_dir_path, FILE_NAME)
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                io.BytesIO() as buffer
+            ):
+                get_aws_s3_object(
+                    bucket_name=BUCKET, path=copy_path
+                ).download_fileobj(buffer)
+                self.assertEqual(
+                    file.read(),
+                    buffer.getvalue())
 
-    def test_traverse_files_on_recursively(self):
-        with self.build_dir() as dir:
+    def test_transfer_to_as_dst_on_include_metadata(self):
+        # Get source file and metadata.
+        src_file = TestLocalFile.build_file()
+        metadata = {'2': '2'}
+        src_file.set_metadata(metadata=metadata)
+        # Get tmp dir path (already created in bucket).
+        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
+        with self.build_dir(path=tmp_dir_path) as aws_dir:
+            # Copy file into dir.
+            src_file.transfer_to(dst=aws_dir, include_metadata=True)
+            # Confirm that metadata was indeed assigned.
+            copy_path = join_paths(tmp_dir_path, FILE_NAME)
             self.assertEqual(
-                ''.join(map(lambda file: file.get_path(), dir.traverse_files(recursively=True))),
-                ''.join(self.get_abs_contents(recursively=True)))
+                get_aws_s3_object(BUCKET, copy_path).metadata,
+                metadata)
         
-    def test_get_files(self):
-        with self.build_dir() as dir:
-            files = dir.get_files()
+    def test_transfer_to_as_dst_on_chunk_size_and_include_metadata(self):
+        # Get source file and metadata.
+        src_file = TestLocalFile.build_file()
+        metadata = {'2': '2'}
+        src_file.set_metadata(metadata=metadata)
+        # Get tmp dir path (already created in bucket).
+        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
+        with self.build_dir(path=tmp_dir_path) as aws_dir:
+            # Copy file into dir.
+            src_file.transfer_to(
+                dst=aws_dir,
+                include_metadata=True,
+                chunk_size=1000)
+            # Confirm that metadata was indeed assigned.
+            copy_path = join_paths(tmp_dir_path, FILE_NAME)
             self.assertEqual(
-                ''.join(map(lambda path: files[path].get_path(), files)),
-                ''.join(filter(lambda path: not path.endswith('/'),
-                    self.get_abs_contents(recursively=False))))
-
-    def test_get_files_on_recursively(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(recursively=True)
-            self.assertEqual(
-                ''.join(map(lambda path: files[path].get_path(), files)),
-                ''.join(self.get_abs_contents(recursively=True)))
-        
-    def test_get_files_on_show_abs_path(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(show_abs_path=True)
-            self.assertEqual(
-                ''.join(files),
-                ''.join(filter(lambda path: not path.endswith('/'),
-                    self.get_abs_contents(recursively=False))))
-        
-    def test_get_files_on_recursively_and_show_abs_path(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(recursively=True, show_abs_path=True)
-            self.assertEqual(
-                ''.join(files),
-                ''.join(self.get_abs_contents(recursively=True)))
+                get_aws_s3_object(BUCKET, copy_path).metadata,
+                metadata)
         
     def test_get_file(self):
         with self.build_dir() as dir:
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             self.assertEqual(file.get_path(), REL_DIR_FILE_PATH)
+
+    def test_get_file_on_invalid_path_error(self):
+        with self.build_dir() as dir:
+            self.assertRaises(InvalidPathError, dir.get_file, "NON_EXISTING_PATH")
+
+    def test_get_file_on_invalid_file_error(self):
+        with self.build_dir() as dir:
+            self.assertRaises(InvalidFileError, dir.get_file, DIR_SUBDIR_NAME)
+
+    def test_get_subdir(self):
+        with self.build_dir() as dir:
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
+            self.assertEqual(subdir.get_path(), REL_DIR_SUBDIR_PATH)
+
+    def test_get_subdir_on_invalid_path_error(self):
+        with self.build_dir() as dir:
+            self.assertRaises(InvalidPathError, dir.get_subdir, "NON_EXISTING_PATH")
 
     def test_file_shared_metadata_on_modify_from_dir(self):
         with self.build_dir() as dir:
             # Access file via dir.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             # Change metadata via "Dir" API.
-            dir.set_metadata(file_path, METADATA)
+            dir.set_metadata(DIR_FILE_NAME, METADATA)
             # Assert file metadata have been changed.
             self.assertEqual(file.get_metadata(), METADATA)
 
     def test_file_shared_metadata_on_modify_from_file(self):
         with self.build_dir() as dir:
             # Access file via dir.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             # Change metadata via "File" API.
             file.set_metadata(METADATA)
             # Assert file metadata have been changed.
-            self.assertEqual(dir.get_metadata(file_path), METADATA)
+            self.assertEqual(dir.get_metadata(DIR_FILE_NAME), METADATA)
+
+    def test_subdir_shared_metadata_on_modify_from_dir(self):
+        # Create dir and get file.
+        with self.build_dir() as dir:
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
+            # Change metadata via "Dir" API.
+            dir.set_metadata(
+                DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME, METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(
+                subdir.get_metadata(DIR_SUBDIR_FILE_NAME), METADATA)
+
+    def test_subdir_shared_metadata_on_modify_from_subdir(self):
+        # Create dir and get file.
+        with self.build_dir() as dir:
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
+            # Change metadata via "File" API.
+            subdir.set_metadata(DIR_SUBDIR_FILE_NAME, METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(
+                dir.get_metadata(DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME), METADATA)
         
     '''
     Test connection methods.
@@ -2913,9 +3480,8 @@ class TestAWSS3Dir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Access file via both dirs.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            no_cache_file = no_cache_dir.get_file(file_path)
-            cache_file = cache_dir.get_file(file_path)
+            no_cache_file = no_cache_dir.get_file(DIR_FILE_NAME)
+            cache_file = cache_dir.get_file(DIR_FILE_NAME)
             # Count total size for both dirs.
             _ = no_cache_dir.get_size()
             _ = cache_dir.get_size()
@@ -2936,11 +3502,12 @@ class TestAWSS3Dir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Count size of files via both dirs using the "File" API.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            for file in no_cache_dir.get_files().values():
-                _ = file.get_size()
-            for file in cache_dir.get_files().values():
-                _ = file.get_size()
+            for path in no_cache_dir.traverse():
+                try:
+                    _ = no_cache_dir.get_file(path).get_size()
+                    _ = cache_dir.get_file(path).get_size()
+                except:
+                    continue
             # Time no-cache-dir's "get_size"
             t = time.time()
             _ = no_cache_dir.get_size()
@@ -2948,6 +3515,47 @@ class TestAWSS3Dir(unittest.TestCase):
             # Time cache-dir's "get_size"
             t = time.time()
             _ = cache_dir.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_subdir_shared_cache_on_cache_via_dir(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Access subdir via both dirs.
+            no_cache_subdir = no_cache_dir.get_subdir(DIR_SUBDIR_NAME)
+            cache_subdir = cache_dir.get_subdir(DIR_SUBDIR_NAME)
+            # Count total size for both dirs.
+            _ = no_cache_dir.get_size(recursively=True)
+            _ = cache_dir.get_size(recursively=True)
+            # Time no-cache-subdir's "get_size"
+            t = time.time()
+            _ = no_cache_subdir.get_size()
+            normal_time = time.time() - t
+            # Time cache-subdir's "get_size"
+            t = time.time()
+            _ = cache_subdir.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_subdir_shared_cache_on_cache_via_subdir(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Count size of both subdirs.
+            _ = no_cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
+            _ = cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
+            # Time no-cache-dir's "get_size"
+            t = time.time()
+            _ = no_cache_dir.get_size(recursively=True)
+            normal_time = time.time() - t
+            # Time cache-dir's "get_size"
+            t = time.time()
+            _ = cache_dir.get_size(recursively=True)
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
@@ -3001,7 +3609,7 @@ class TestAzureBlobDir(unittest.TestCase):
 
     def test_get_path_on_none_path(self):
         with self.build_dir(path=None) as dir:
-            self.assertEqual(dir.get_path(), SEPARATOR)  
+            self.assertEqual(dir.get_path(), '')  
 
     def test_get_name(self):
         with self.build_dir() as dir:
@@ -3222,40 +3830,83 @@ class TestAzureBlobDir(unittest.TestCase):
 
     def test_transfer_to(self):
         # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, 'TMP_DIR'))
+        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
         os.mkdir(tmp_dir_path)
         # Copy the directory's contents into this tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(dst=LocalDir(path=tmp_dir_path))
-        # Assert that the two directories contain the same contents.
-        self.assertEqual(
-            ''.join(s for s in sorted(os.listdir(REL_DIR_PATH)) if s.endswith('.txt')),
-            ''.join(s for s in sorted(os.listdir(tmp_dir_path))))
+        # Assert that the two directories contains the same contents.
+        original = [s for s in sorted(os.listdir(ABS_DIR_PATH)) if s.endswith('.txt')]
+        copies = [s for s in sorted(os.listdir(tmp_dir_path))]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                open(file=join_paths(ABS_DIR_PATH, ofp), mode='rb') as of,
+                open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
+            ):
+                self.assertEqual(of.read(), cp.read())
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
     def test_transfer_to_on_recursively(self):
         # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, 'TMP_DIR'))
+        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
         os.mkdir(tmp_dir_path)
         # Copy the directory's contents into this tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
                 dst=LocalDir(path=tmp_dir_path),
                 recursively=True)
-        # Assert that the two directories contain the same contents.
-        self.assertEqual(
-            ''.join(join_paths(dp, f).removeprefix(REL_DIR_PATH)
-                for dp, _, fn in os.walk(REL_DIR_PATH) for f in fn),
-            ''.join(join_paths(dp, f).removeprefix(tmp_dir_path)
-                for dp, _, fn in os.walk(tmp_dir_path) for f in fn))
+        # Assert that the two directories contains the same contents.
+        original = [join_paths(dp, f) for dp, _, fn in 
+                    os.walk(ABS_DIR_PATH) for f in fn]
+        copies = [join_paths(dp, f) for dp, _, fn in 
+                os.walk(tmp_dir_path) for f in fn]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                open(file=ofp, mode='rb') as of,
+                open(file=cfp, mode='rb') as cp
+            ):
+                self.assertEqual(of.read(), cp.read())
+        # Remove temporary directory.
+        shutil.rmtree(tmp_dir_path)
+
+    def test_transfer_to_on_chunk_size(self):
+        # Create a temporary dictionary.
+        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
+        os.mkdir(tmp_dir_path)
+        # Copy the directory's contents into this tmp directory.
+        with self.build_dir() as dir:
+            dir.transfer_to(
+                dst=LocalDir(path=tmp_dir_path),
+                chunk_size=1)
+        # Assert that the two directories contains the same contents.
+        original = [s for s in sorted(os.listdir(ABS_DIR_PATH)) if s.endswith('.txt')]
+        copies = [s for s in sorted(os.listdir(tmp_dir_path))]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                open(file=join_paths(ABS_DIR_PATH, ofp), mode='rb') as of,
+                open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
+            ):
+                self.assertEqual(of.read(), cp.read())
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
     def test_transfer_to_on_overwrite_set_to_false(self):
         # Create a copy of the directory.
-        tmp_dir_name = 'TMP_DIR'
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name))
+        tmp_dir_name = TMP_DIR_NAME
+        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name)
         shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
         # While capturing stdout...
         with (
@@ -3276,8 +3927,8 @@ class TestAzureBlobDir(unittest.TestCase):
 
     def test_transfer_to_on_overwrite_set_to_true(self):
         # Create a copy of the directory.
-        tmp_dir_name = 'TMP_DIR'
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name))
+        tmp_dir_name = TMP_DIR_NAME
+        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name)
         shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
         # While capturing stdout...
         with (
@@ -3302,7 +3953,7 @@ class TestAzureBlobDir(unittest.TestCase):
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
             # Create a temporary dictionary.
-            tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, 'TMP_DIR'))
+            tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
             os.mkdir(tmp_dir_path)
             tmp_dir = TestLocalDir.build_dir(path=tmp_dir_path)
             # Copy the directory's contents into this
@@ -3319,7 +3970,7 @@ class TestAzureBlobDir(unittest.TestCase):
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
             # Create a temporary dictionary.
-            tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, 'TMP_DIR'))
+            tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
             os.mkdir(tmp_dir_path)
             tmp_dir = TestLocalDir.build_dir(path=tmp_dir_path)
             # Copy the directory's contents into this
@@ -3337,7 +3988,7 @@ class TestAzureBlobDir(unittest.TestCase):
         filename = DIR_FILE_NAME
         with self.build_dir() as dir:
             # Create a temporary dictionary.
-            tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, 'TMP_DIR'))
+            tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
             os.mkdir(tmp_dir_path)
             tmp_dir = TestLocalDir.build_dir(path=tmp_dir_path)
             # Copy the directory's contents into this
@@ -3350,105 +4001,141 @@ class TestAzureBlobDir(unittest.TestCase):
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_include_metadata_to_cloud_dir(self):
-        with mock_s3() as mocks3:
-            # Create AWSS3 bucket.
-            create_aws_s3_bucket(mocks3, BUCKET, METADATA)
-            # Copy directory contents including metadata
-            filename, metadata = DIR_FILE_NAME, {'2': '2'}
-            with (
-                self.build_dir() as dir,
-                TestAWSS3Dir.build_dir() as aws_dir
-            ):
-                dir.set_metadata(file_path=filename, metadata=metadata)
-                dir.transfer_to(dst=aws_dir, overwrite=True, include_metadata=True)
-                # Assert that the object's metadata have been modified.
-                self.assertEqual(
-                    get_aws_s3_object(aws_dir.get_bucket_name(), REL_DIR_FILE_PATH).metadata,
-                    metadata)
-                
-    def test_transfer_to_as_destination(self):
-        # Create a "remote" temporary dictionary.
-        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, 'TMP_DIR')
+    def test_transfer_to_as_dst(self):
+        # Get source file.
+        src_file = TestLocalFile.build_file()
+        # Create a temporary "blob" dictionary.
+        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
         os.mkdir(tmp_dir_path)
-        # Copy the local dir's contents into this
-        # "remote" tmp directory.
-        with self.build_dir(path=tmp_dir_path) as dir:
-            TestLocalDir.build_dir(REL_DIR_PATH).transfer_to(dir)
-        # Assert that the two directories contain the same contents.
-        self.assertEqual(
-            ''.join(s for s in sorted(os.listdir(REL_DIR_PATH)) if s.endswith('.txt')),
-            ''.join(s for s in sorted(os.listdir(tmp_dir_path))))
-        # Remove temporary directory.
+        with self.build_dir(path=tmp_dir_path) as azr_dir:
+            # Copy file into dir.
+            src_file.transfer_to(dst=azr_dir)
+            # Confirm that file was indeed copied.
+            copy_path = join_paths(tmp_dir_path, FILE_NAME)
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
         shutil.rmtree(tmp_dir_path)
 
-    def test_traverse_files(self):
-        with self.build_dir() as dir:
-            self.assertEqual(
-                ''.join(map(lambda file: file.get_path(), dir.traverse_files())),
-                ''.join(filter(lambda path: not path.endswith('/'), self.get_abs_contents(recursively=False))))
+    def test_transfer_to_as_dst_on_chunk_size(self):
+        # Get source file.
+        src_file = TestLocalFile.build_file()
+        # Create a temporary "blob" dictionary.
+        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
+        os.mkdir(tmp_dir_path)
+        with self.build_dir(path=tmp_dir_path) as azr_dir:
+            # Copy file into dir.
+            src_file.transfer_to(dst=azr_dir, chunk_size=1)
+            # Confirm that file was indeed copied.
+            copy_path = join_paths(tmp_dir_path, FILE_NAME)
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
+        shutil.rmtree(tmp_dir_path)
 
-    def test_traverse_files_on_recursively(self):
-        with self.build_dir() as dir:
+    def test_transfer_to_as_dst_on_include_metadata(self):
+        # Get source file and metadata.
+        src_file = TestLocalFile.build_file()
+        metadata = {'2': '2'}
+        src_file.set_metadata(metadata=metadata)
+        # Create a temporary "blob" dictionary.
+        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
+        os.mkdir(tmp_dir_path)
+        with self.build_dir(path=tmp_dir_path) as azr_dir:
+            # Copy file into dir.
+            src_file.transfer_to(dst=azr_dir, include_metadata=True)
+            # Confirm that metadata was indeed assigned.
+            copy_path = join_paths(tmp_dir_path, FILE_NAME)
             self.assertEqual(
-                ''.join(map(lambda file: file.get_path(), dir.traverse_files(recursively=True))),
-                ''.join(self.get_abs_contents(recursively=True)))
-        
-    def test_get_files(self):
-        with self.build_dir() as dir:
-            files = dir.get_files()
-            self.assertEqual(
-                ''.join(map(lambda path: files[path].get_path(), files)),
-                ''.join(filter(lambda path: not path.endswith('/'),
-                    self.get_abs_contents(recursively=False))))
+                azr_dir.get_metadata(file_path=copy_path),
+                metadata)
+        shutil.rmtree(tmp_dir_path)
 
-    def test_get_files_on_recursively(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(recursively=True)
+    def test_transfer_to_as_dst_on_chunk_size_and_include_metadata(self):
+        # Get source file and metadata.
+        src_file = TestLocalFile.build_file()
+        metadata = {'2': '2'}
+        src_file.set_metadata(metadata=metadata)
+        # Create a temporary "blob" dictionary.
+        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
+        os.mkdir(tmp_dir_path)
+        with self.build_dir(path=tmp_dir_path) as azr_dir:
+            # Copy file into dir.
+            src_file.transfer_to(
+                dst=azr_dir,
+                include_metadata=True,
+                chunk_size=1)
+            # Confirm that metadata was indeed assigned.
+            copy_path = join_paths(tmp_dir_path, FILE_NAME)
             self.assertEqual(
-                ''.join(map(lambda path: files[path].get_path(), files)),
-                ''.join(self.get_abs_contents(recursively=True)))
-        
-    def test_get_files_on_show_abs_path(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(show_abs_path=True)
-            self.assertEqual(
-                ''.join(files),
-                ''.join(filter(lambda path: not path.endswith('/'),
-                    self.get_abs_contents(recursively=False))))
-        
-    def test_get_files_on_recursively_and_show_abs_path(self):
-        with self.build_dir() as dir:
-            files = dir.get_files(recursively=True, show_abs_path=True)
-            self.assertEqual(
-                ''.join(files),
-                ''.join(self.get_abs_contents(recursively=True)))
+                azr_dir.get_metadata(file_path=copy_path),
+                metadata)
+        shutil.rmtree(tmp_dir_path)
         
     def test_get_file(self):
         with self.build_dir() as dir:
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             self.assertEqual(file.get_path(), REL_DIR_FILE_PATH)
+
+    def test_get_file_on_invalid_path_error(self):
+        with self.build_dir() as dir:
+            self.assertRaises(InvalidPathError, dir.get_file, "NON_EXISTING_PATH")
+
+    def test_get_file_on_invalid_file_error(self):
+        with self.build_dir() as dir:
+            self.assertRaises(InvalidFileError, dir.get_file, DIR_SUBDIR_NAME)
+
+    def test_get_subdir(self):
+        with self.build_dir() as dir:
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
+            self.assertEqual(subdir.get_path(), REL_DIR_SUBDIR_PATH)
+
+    def test_get_subdir_on_invalid_path_error(self):
+        with self.build_dir() as dir:
+            self.assertRaises(InvalidPathError, dir.get_subdir, "NON_EXISTING_PATH")
             
     def test_file_shared_metadata_on_modify_from_dir(self):
         with self.build_dir() as dir:
             # Access file via dir.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             # Change metadata via "Dir" API.
-            dir.set_metadata(file_path, METADATA)
+            dir.set_metadata(DIR_FILE_NAME, METADATA)
             # Assert file metadata have been changed.
             self.assertEqual(file.get_metadata(), METADATA)
 
     def test_file_shared_metadata_on_modify_from_file(self):
         with self.build_dir() as dir:
             # Access file via dir.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            file = dir.get_file(file_path)
+            file = dir.get_file(DIR_FILE_NAME)
             # Change metadata via "File" API.
             file.set_metadata(METADATA)
             # Assert file metadata have been changed.
-            self.assertEqual(dir.get_metadata(file_path), METADATA)
+            self.assertEqual(dir.get_metadata(DIR_FILE_NAME), METADATA)
+
+    def test_subdir_shared_metadata_on_modify_from_dir(self):
+        # Create dir and get file.
+        with self.build_dir() as dir:
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
+            # Change metadata via "Dir" API.
+            dir.set_metadata(
+                DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME, METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(
+                subdir.get_metadata(DIR_SUBDIR_FILE_NAME), METADATA)
+
+    def test_subdir_shared_metadata_on_modify_from_subdir(self):
+        # Create dir and get file.
+        with self.build_dir() as dir:
+            subdir = dir.get_subdir(DIR_SUBDIR_NAME)
+            # Change metadata via "File" API.
+            subdir.set_metadata(DIR_SUBDIR_FILE_NAME, METADATA)
+            # Assert file metadata have been changed.
+            self.assertEqual(
+                dir.get_metadata(DIR_SUBDIR_NAME + DIR_SUBDIR_FILE_NAME), METADATA)
         
     '''
     Test connection methods.
@@ -3538,7 +4225,6 @@ class TestAzureBlobDir(unittest.TestCase):
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
-
     def test_load_metadata_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             dir.load_metadata()
@@ -3621,9 +4307,8 @@ class TestAzureBlobDir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Access file via both dirs.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            no_cache_file = no_cache_dir.get_file(file_path)
-            cache_file = cache_dir.get_file(file_path)
+            no_cache_file = no_cache_dir.get_file(DIR_FILE_NAME)
+            cache_file = cache_dir.get_file(DIR_FILE_NAME)
             # Count total size for both dirs.
             _ = no_cache_dir.get_size()
             _ = cache_dir.get_size()
@@ -3644,11 +4329,12 @@ class TestAzureBlobDir(unittest.TestCase):
             self.build_dir(cache=True) as cache_dir
         ):
             # Count size of files via both dirs using the "File" API.
-            file_path = REL_DIR_FILE_PATH.removeprefix(REL_DIR_PATH)
-            for file in no_cache_dir.get_files().values():
-                _ = file.get_size()
-            for file in cache_dir.get_files().values():
-                _ = file.get_size()
+            for path in no_cache_dir.traverse():
+                try:
+                    _ = no_cache_dir.get_file(path).get_size()
+                    _ = cache_dir.get_file(path).get_size()
+                except:
+                    continue
             # Time no-cache-dir's "get_size"
             t = time.time()
             _ = no_cache_dir.get_size()
@@ -3656,6 +4342,47 @@ class TestAzureBlobDir(unittest.TestCase):
             # Time cache-dir's "get_size"
             t = time.time()
             _ = cache_dir.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_subdir_shared_cache_on_cache_via_dir(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Access subdir via both dirs.
+            no_cache_subdir = no_cache_dir.get_subdir(DIR_SUBDIR_NAME)
+            cache_subdir = cache_dir.get_subdir(DIR_SUBDIR_NAME)
+            # Count total size for both dirs.
+            _ = no_cache_dir.get_size(recursively=True)
+            _ = cache_dir.get_size(recursively=True)
+            # Time no-cache-subdir's "get_size"
+            t = time.time()
+            _ = no_cache_subdir.get_size()
+            normal_time = time.time() - t
+            # Time cache-subdir's "get_size"
+            t = time.time()
+            _ = cache_subdir.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_subdir_shared_cache_on_cache_via_subdir(self):
+        with (
+            self.build_dir(cache=False) as no_cache_dir,
+            self.build_dir(cache=True) as cache_dir
+        ):
+            # Count size of both subdirs.
+            _ = no_cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
+            _ = cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
+            # Time no-cache-dir's "get_size"
+            t = time.time()
+            _ = no_cache_dir.get_size(recursively=True)
+            normal_time = time.time() - t
+            # Time cache-dir's "get_size"
+            t = time.time()
+            _ = cache_dir.get_size(recursively=True)
             cache_time = time.time() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)

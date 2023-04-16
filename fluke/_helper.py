@@ -17,7 +17,9 @@ def join_paths(sep: str, *paths: str) -> str:
     path = paths[0]
 
     for i in range(1, len(paths)):
-        path = f"{path.rstrip(sep)}{sep}{paths[i].lstrip(sep)}"
+        if not path.endswith(sep):
+            path += sep
+        path += paths[i]
 
     return path
 
@@ -31,7 +33,8 @@ def relativize_path(parent: str, child: str, sep: str) -> str:
     :param str child: The child path.
     :param str sep: The path separator used.
     '''
-    return child.removeprefix(parent).lstrip(sep)
+    return child.removeprefix(parent)
+    #return child.removeprefix(parent).removeprefix(sep)
 
 
 def infer_separator(path: str) -> str:
@@ -48,6 +51,11 @@ def infer_separator(path: str) -> str:
 
     if path in seps:
         return path
+    
+    # NOTE: Replace any double occurrence of a separator
+    #       as this causes catastrophic backtracking.
+    for sep in seps:
+        path = path.replace(2 * sep, sep)
     
     seps = ''.join(seps)
     match = _re.fullmatch(

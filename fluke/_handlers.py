@@ -1,10 +1,8 @@
 import os as _os
-import io as _io
 from abc import ABC as _ABC
 from abc import abstractmethod as _absmethod
-from shutil import copyfileobj as _copyfileobj
-from typing import Optional as _Optional
 from typing import Iterator as _Iterator
+from typing import Optional as _Optional
 
 
 import boto3 as _boto3
@@ -17,6 +15,16 @@ from .auth import AWSAuth as _AWSAuth
 from .auth import AzureAuth as _AzureAuth
 from .auth import RemoteAuth as _RemoteAuth
 from ._cache import CacheManager as _CacheManager
+from ._iohandlers import _FileReader
+from ._iohandlers import _FileWriter
+from ._iohandlers import LocalFileReader as _LocalFileReader
+from ._iohandlers import LocalFileWriter as _LocalFileWriter
+from ._iohandlers import RemoteFileReader as _RemoteFileReader
+from ._iohandlers import RemoteFileWriter as _RemoteFileWriter
+from ._iohandlers import AWSS3FileReader as _AWSS3FileReader
+from ._iohandlers import AWSS3FileWriter as _AWSS3FileWriter
+from ._iohandlers import AzureBlobReader as _AzureBlobReader
+from ._iohandlers import AzureBlobWriter as _AzureBlobWriter
 from ._exceptions import UnknownKeyTypeError as _UKTE
 from ._helper import join_paths as _join_paths
 from ._helper import infer_separator as _infer_sep
@@ -26,22 +34,24 @@ from ._helper import relativize_path as _relativize
 class ClientHandler(_ABC):
     '''
     An abstract class which serves as the \
-    base class for all client-like classes.
+    base class for all client-handler-like classes.
 
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
         access. Defaults to ``False``.
     '''
 
+
     def __init__(self, cache: bool):
         '''
         An abstract class which serves as the \
-        base class for all client-like classes.
+        base class for all client-handler-like classes.
 
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
             access. Defaults to ``False``.
         '''
+
         self.__cache_manager = _CacheManager() if cache else None
 
 
@@ -61,14 +71,14 @@ class ClientHandler(_ABC):
         '''
         if self.is_cacheable():
             self.__cache_manager.purge()
-            self.__cache_manager = _CacheManager()
 
 
     def get_file_size(self, file_path: str) -> int:
         '''
         Returns the size of a file in bytes.
         
-        :param str file_path: The path of the file in question.
+        :param str file_path: The absolute path of the \
+            file in question.
 
         :note: This method will go on to fetch the requested value \
             from a remote resource only when one of the following is \
@@ -95,7 +105,8 @@ class ClientHandler(_ABC):
         '''
         Returns a dictionary containing the metadata of a file.
         
-        :param str file_path: The path of the file in question.
+        :param str file_path: The absolute path of the file \
+            in question.
         
         :note: This method will go on to fetch the requested value \
             from a remote resource only when one of the following is \
@@ -108,7 +119,9 @@ class ClientHandler(_ABC):
             after it has been retrieved.
         '''
         if self.is_cacheable():
-            if (metadata := self.__cache_manager.get_metadata(file_path=file_path)) is not None:
+            if (metadata := self.__cache_manager.get_metadata(
+                file_path=file_path)
+            ) is not None:
                 return metadata
             else:
                 metadata = self._get_file_metadata_impl(file_path)
@@ -126,8 +139,8 @@ class ClientHandler(_ABC):
         show_abs_path: bool
     ) -> _Iterator[str]:
         '''
-        Returns an iterator capable of going through the paths \
-        of the dictionary's contents as strings.
+        Returns an iterator capable of going through \
+        the directory's contents as their paths.
 
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
@@ -159,6 +172,7 @@ class ClientHandler(_ABC):
         if self.is_cacheable():
             # Grab content iterator from cache if it exists.
             if (iterator := self.__cache_manager.get_content_iterator(
+                dir_path=dir_path,
                 recursively=recursively,
                 include_dirs=include_dirs)
             ) is not None:
@@ -175,11 +189,13 @@ class ClientHandler(_ABC):
                     show_abs_path=True)
                 # Cache all contents.
                 self.__cache_manager.cache_contents(
+                    dir_path=dir_path,
                     iterator=iterator,
                     recursively=recursively,
                     is_file=self.is_file)
                 # Reset iterator by grabbing it from cache.
                 iterator = self.__cache_manager.get_content_iterator(
+                    dir_path=dir_path,
                     recursively=recursively,
                     include_dirs=include_dirs)
                 if show_abs_path:
@@ -264,46 +280,37 @@ class ClientHandler(_ABC):
 
 
     @_absmethod
-    def read(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        include_metadata: bool
-    ) -> _Optional[dict[str, str]]:
+    def get_reader(self, file_path: str) -> '_FileReader':
         '''
-        Reads the bytes of a file into the provided buffer. \
-        Returns either ``None`` or a dictionary containing \
-        file metadata, depending on the value of parameter \
-        ``include_metadata``.
+        Returns a ``_FileReader`` class instance \
+        used for reading from a file.
 
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer to download the \
-            file into.
-        :param bool include_metadata: Indicates whether \
-            to download any existing file metadata as well.
+        :param str file_path: The absolute path of \
+            the file in question.
         '''
         pass
 
 
     @_absmethod
-    def write(
+    def get_writer(
         self,
         file_path: str,
-        buffer: _io.BytesIO,
-        metadata: _Optional[dict[str, str]]
-    ) -> None:
+        metadata: _Optional[dict[str, str]],
+        in_chunks: bool
+    ) -> '_FileWriter':
         '''
-        Writes the bytes contained within the provided \
-        buffer into the specified path.
+        Returns an ``_FileWriter`` class instance \
+        used for writing to a file.
 
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer containing the \
-            file's bytes.
-        :param dict[str, str] | None: If not ``None``, \
-            then assigns the provided metadata to the file \
-            during the upload.
+        :param str file_path: The absolute path of \
+            the file in question.
+        :param dict[str, str] | None metadata: A \
+            dictionary containing the metadata that \
+            are to be assigned to the file in question. \
+            If ``None``, then no metadata are assigned.
+        :param bool in_chunks: Indicates whether to \
+            write the file in distinct chunks or \
+            all at once.
         '''
         pass
 
@@ -316,8 +323,8 @@ class ClientHandler(_ABC):
         show_abs_path: bool
     ) -> _Iterator[str]:
         '''
-        Returns an iterator capable of going through the paths \
-        of the dictionary's contents as strings.
+        Returns an iterator capable of going through \
+        the directory's contents as their paths.
 
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
@@ -365,6 +372,9 @@ class FileSystemHandler(ClientHandler):
     '''
     A class used in handling all local file \
     system operations.
+
+    :param str file_path: The absolute path of \
+        the file in question.
     '''
 
     def __init__(self):
@@ -428,54 +438,44 @@ class FileSystemHandler(ClientHandler):
             that is to be created.
         '''
         _os.makedirs(path, exist_ok=True)
-    
 
-    def read(
+
+    def get_reader(self, file_path: str) -> _LocalFileReader:
+        '''
+        Returns a ``LocalFileReader`` class instance \
+        used for reading from a file which resides \
+        within the local file system.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        return _LocalFileReader(
+            file_path=file_path,
+            file_size=self.get_file_size(file_path))
+
+
+    def get_writer(
         self,
         file_path: str,
-        buffer: _io.BytesIO,
-        include_metadata: bool
-    ) -> _Optional[dict[str, str]]:
+        metadata: _Optional[dict[str, str]],
+        in_chunks: bool
+    ) -> _LocalFileWriter:
         '''
-        Reads the bytes of a file into the provided buffer. \
-        Returns either ``None`` or a dictionary containing \
-        file metadata, depending on the value of parameter \
-        ``include_metadata``.
+        Returns an ``LocalFileWriter`` class instance \
+        used for writing to a file which resides within \
+        the local file system.
 
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer to download the \
-            file into.
-        :param bool include_metadata: Indicates whether \
-            to download any existing file metadata as well.
+        :param str file_path: The absolute path of \
+            the file in question.
+        :param dict[str, str] | None metadata: A \
+            dictionary containing the metadata that \
+            are to be assigned to the file in question. \
+            If ``None``, then no metadata are assigned.
+        :param bool in_chunks: Indicates whether to \
+            write the file in distinct chunks or \
+            all at once.
         '''
-        with open(file=file_path, mode='rb') as file:
-            _copyfileobj(fsrc=file, fdst=buffer)
-
-
-    def write(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        metadata: _Optional[dict[str, str]]
-    ) -> None:
-        '''
-        Writes the bytes contained within the provided \
-        buffer into the specified path.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer containing the \
-            file's bytes.
-        :param dict[str, str] | None: If not ``None``, \
-            then assigns the provided metadata to the file \
-            during the upload.
-        '''
-        # Create any necessary directories.
-        self.mkdir(_os.path.dirname(file_path))
-        # Write file.
-        with open(file=file_path, mode='wb') as file:
-            _copyfileobj(fsrc=buffer, fdst=file)
+        return _LocalFileWriter(file_path=file_path)
     
 
     def _get_file_size_impl(self, file_path) -> int:
@@ -504,8 +504,8 @@ class FileSystemHandler(ClientHandler):
         show_abs_path: bool
     ) -> _Iterator[str]:
         '''
-        Returns an iterator capable of going through the paths \
-        of the dictionary's contents as strings.
+        Returns an iterator capable of going through \
+        the directory's contents as their paths.
 
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
@@ -555,7 +555,7 @@ class SSHClientHandler(ClientHandler):
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
         access. Defaults to ``False``.
-    '''
+    '''        
 
     def __init__(self, auth: _RemoteAuth, cache: bool):
         '''
@@ -599,6 +599,8 @@ class SSHClientHandler(ClientHandler):
         public_key = credentials.pop('public_key')
         key_type = credentials.pop('key_type')
         verify_host = credentials.pop('verify_host')
+
+        print(f"\nEstablishing connection to '{credentials['hostname']}'...")
 
         # Load all known hosts.
         ssh.load_system_host_keys()
@@ -646,6 +648,7 @@ class SSHClientHandler(ClientHandler):
 
         self.__ssh = ssh
         self.__sftp = ssh.open_sftp()
+        print("Connection established!")
 
 
     def close_connections(self):
@@ -686,7 +689,7 @@ class SSHClientHandler(ClientHandler):
         from stat import S_ISDIR as _is_dir
         return not _is_dir(self.__sftp.stat(path=file_path).st_mode)
     
-
+    
     def mkdir(self, path: str) -> None:
         '''
         Creates a directory into the provided path.
@@ -695,75 +698,46 @@ class SSHClientHandler(ClientHandler):
             that is to be created.
         '''
         self.__sftp.mkdir(path=path)
-    
 
-    def read(
+
+    def get_reader(self, file_path: str) -> _RemoteFileReader:
+        '''
+        Returns a ``RemoteFileReader`` class instance \
+        used for reading from a file which resides \
+        within a remote file system.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        return _RemoteFileReader(
+            file_path=file_path,
+            file_size=self.get_file_size(file_path),
+            sftp=self.__sftp)
+
+
+    def get_writer(
         self,
         file_path: str,
-        buffer: _io.BytesIO,
-        include_metadata: bool
-    ) -> _Optional[dict[str, str]]:
+        metadata: _Optional[dict[str, str]],
+        in_chunks: bool
+    ) -> _RemoteFileWriter:
         '''
-        Reads the bytes of a file into the provided buffer. \
-        Returns either ``None`` or a dictionary containing \
-        file metadata, depending on the value of parameter \
-        ``include_metadata``.
+        Returns a ``RemoteFileWriter`` class instance \
+        used for writing to a file which resides within \
+        a remote file system.
 
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer to download the \
-            file into.
-        :param bool include_metadata: Indicates whether \
-            to download any existing file metadata as well.
+        :param str file_path: The absolute path of \
+            the file in question.
+        :param dict[str, str] | None metadata: A \
+            dictionary containing the metadata that \
+            are to be assigned to the file in question. \
+            If ``None``, then no metadata are assigned.
+        :param bool in_chunks: Indicates whether to \
+            write the file in distinct chunks or \
+            all at once.
         '''
-        self.__sftp.getfo(remotepath=file_path, fl=buffer)
-
-
-    def write(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        metadata: _Optional[dict[str, str]]
-    ) -> None:
-        '''
-        Writes the bytes contained within the provided \
-        buffer into the specified path.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer containing the \
-            file's bytes.
-        :param dict[str, str] | None: If not ``None``, \
-            then assigns the provided metadata to the file \
-            during the upload.
-        '''
-
-        sep = _infer_sep(file_path)
-
-        def get_parent_dir(file_path: str) -> _Optional[str]:
-            '''
-            Returns the path to the parent directory \
-            of the provided file path. Returns ``None`` \
-            if said directory is the root directory.
-
-            :param str file_path: The path of the file \
-                in question.
-            '''
-            file_path = file_path.rstrip(sep)
-            if sep in file_path:
-                return f"{sep.join(file_path.split(sep)[:-1])}{sep}"
-            return None
-
-        # Create any directories necessary.
-        parent_dir, non_existing_dirs = file_path, []
-        while (parent_dir := get_parent_dir(parent_dir)) is not None:
-            if not self.path_exists(path=parent_dir):
-                non_existing_dirs.append(parent_dir)
-        for dir in reversed(non_existing_dirs):
-            self.mkdir(path=dir)
-
-        # Write file from buffer.
-        self.__sftp.putfo(fl=buffer, remotepath=file_path)
+        return _RemoteFileWriter(
+            file_path=file_path, sftp=self.__sftp)
 
 
     def _get_file_size_impl(self, file_path) -> int:
@@ -793,8 +767,8 @@ class SSHClientHandler(ClientHandler):
         show_abs_path: bool
     ) -> _Iterator[str]:
         '''
-        Returns an iterator capable of going through the paths \
-        of the dictionary's contents as strings.
+        Returns an iterator capable of going through \
+        the directory's contents as their paths.
 
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
@@ -918,10 +892,12 @@ class AWSClientHandler(ClientHandler):
         if self.__bucket is not None:
             return
 
+        print(f"\nEstablishing connection to '{self.__bucket_name}' Amazon S3 bucket...")
         self.__bucket = _boto3.resource(
             service_name='s3',
             **self.__auth.get_credentials()
         ).Bucket(self.__bucket_name)
+        print("Connection established.")
 
 
     def close_connections(self):
@@ -973,7 +949,6 @@ class AWSClientHandler(ClientHandler):
         return False
         
     
-
     def mkdir(self, path: str) -> None:
         '''
         Creates a directory into the provided path.
@@ -984,57 +959,50 @@ class AWSClientHandler(ClientHandler):
         self.__bucket.put_object(
             Key=path,
             ContentType='application/x-directory; charset=UTF-8')
+        
+
+    def get_reader(self, file_path: str) -> _AWSS3FileReader:
+        '''
+        Returns an ``AWSS3FileReader`` class instance \
+        used for reading from a file which resides within \
+        an Amazon S3 bucket.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        return _AWSS3FileReader(
+            file_path=file_path,
+            file_size=self.get_file_size(file_path),
+            bucket=self.__bucket)
+
+
+    def get_writer(
+        self,
+        file_path: str,
+        metadata: _Optional[dict[str, str]],
+        in_chunks: bool
+    ) -> _AWSS3FileWriter:
+        '''
+        Returns an ``AWSS3FileWriter`` class instance \
+        used for writing to a file which resides within \
+        an Amazon S3 bucket.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        :param dict[str, str] | None metadata: A \
+            dictionary containing the metadata that \
+            are to be assigned to the file in question. \
+            If ``None``, then no metadata are assigned.
+        :param bool in_chunks: Indicates whether to \
+            write the file in distinct chunks or \
+            all at once.
+        '''
+        return _AWSS3FileWriter(
+            file_path=file_path,
+            metadata=metadata,
+            in_chunks=in_chunks,
+            bucket=self.__bucket)
     
-
-    def read(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        include_metadata: bool
-    ) -> _Optional[dict[str, str]]:
-        '''
-        Reads the bytes of a file into the provided buffer. \
-        Returns either ``None`` or a dictionary containing \
-        file metadata, depending on the value of parameter \
-        ``include_metadata``.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer to download the \
-            file into.
-        :param bool include_metadata: Indicates whether \
-            to download any existing file metadata as well.
-        '''
-        obj = self.__bucket.Object(key=file_path)
-        obj.download_fileobj(Fileobj=buffer)
-        if include_metadata:
-            return obj.metadata
-        
-
-    def write(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        metadata: _Optional[dict[str, str]]
-    ) -> None:
-        '''
-        Writes the bytes contained within the provided \
-        buffer into the specified path.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer containing the \
-            file's bytes.
-        :param dict[str, str] | None: If not ``None``, \
-            then assigns the provided metadata to the file \
-            during the upload.
-        '''
-        self.__bucket.upload_fileobj(
-            Key=file_path,
-            Fileobj=buffer,
-            ExtraArgs={ "Metadata": metadata }
-                if metadata is not None else None)
-        
 
     def _get_file_size_impl(self, file_path) -> int:
         '''
@@ -1062,8 +1030,8 @@ class AWSClientHandler(ClientHandler):
         show_abs_path: bool
     ) -> _Iterator[str]:
         '''
-        Returns an iterator capable of going through the paths \
-        of the dictionary's contents as strings.
+        Returns an iterator capable of going through \
+        the directory's contents as their paths.
 
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.
@@ -1083,9 +1051,9 @@ class AWSClientHandler(ClientHandler):
         '''
         paginator = self.__bucket.meta.client.get_paginator('list_objects')
 
-        delimiter = '' if recursively else '/'
-
         sep = _infer_sep(dir_path)
+
+        delimiter = '' if recursively else sep
 
         def page_iterator():
             yield from paginator.paginate(
@@ -1203,6 +1171,7 @@ class AzureClientHandler(ClientHandler):
 
         credentials = self.__auth.get_credentials()
 
+        print(f"\nEstablishing connection to '{self.__container_name}' Azure blob container...")
         if 'conn_string' in credentials:
             self.__container = _ContainerClient.from_connection_string(
                 conn_str=credentials['conn_string'],
@@ -1212,7 +1181,7 @@ class AzureClientHandler(ClientHandler):
                 account_url=credentials.pop('account_url'),
                 container_name=self.__container_name,
                 credential=_CSC(**credentials))
-
+        print("Connection established!")
 
     def close_connections(self):
         '''
@@ -1256,57 +1225,50 @@ class AzureClientHandler(ClientHandler):
         with self.__container.get_blob_client(blob=f"{path}DUMMY") as blob:
             blob.create_append_blob()
             blob.delete_blob()
-    
 
-    def read(
+
+    def get_reader(self, file_path: str) -> _AzureBlobReader:
+        '''
+        Returns an ``AzureBlobReader`` class instance \
+        used for reading from a file which resides within \
+        an Azure blob container.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        return _AzureBlobReader(
+            file_path=file_path,
+            file_size=self.get_file_size(file_path),
+            container=self.__container)
+
+
+    def get_writer(
         self,
         file_path: str,
-        buffer: _io.BytesIO,
-        include_metadata: bool
-    ) -> _Optional[dict[str, str]]:
+        metadata: _Optional[dict[str, str]],
+        in_chunks: bool
+    ) -> _AzureBlobWriter:
         '''
-        Reads the bytes of a file into the provided buffer. \
-        Returns either ``None`` or a dictionary containing \
-        file metadata, depending on the value of parameter \
-        ``include_metadata``.
+        Returns an ``AzureBlobWriter`` class instance \
+        used for writing to a file which resides within \
+        an Azure blob container.
 
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer to download the \
-            file into.
-        :param bool include_metadata: Indicates whether \
-            to download any existing file metadata as well.
+        :param str file_path: The absolute path of \
+            the file in question.
+        :param dict[str, str] | None metadata: A \
+            dictionary containing the metadata that \
+            are to be assigned to the file in question. \
+            If ``None``, then no metadata are assigned.
+        :param bool in_chunks: Indicates whether to \
+            write the file in distinct chunks or \
+            all at once.
         '''
-        blob = self.__container.download_blob(blob=file_path)
-        blob.readinto(stream=buffer)
-        if include_metadata:
-            return blob.properties.metadata
-        
-
-    def write(
-        self,
-        file_path: str,
-        buffer: _io.BytesIO,
-        metadata: _Optional[dict[str, str]]
-    ) -> None:
-        '''
-        Writes the bytes contained within the provided \
-        buffer into the specified path.
-
-        :param str file_path: The absolute path of the \
-            file in question.
-        :param BytesIO buffer: A buffer containing the \
-            file's bytes.
-        :param dict[str, str] | None: If not ``None``, \
-            then assigns the provided metadata to the file \
-            during the upload.
-        '''
-        self.__container.upload_blob(
-            name=file_path,
-            data=buffer,
-            metadata=metadata if metadata is not None else None,
-            overwrite=True)
-        
+        return _AzureBlobWriter(
+            file_path=file_path,
+            metadata=metadata,
+            in_chunks=in_chunks,
+            container=self.__container)
+     
 
     def _get_file_size_impl(self, file_path) -> int:
         '''
@@ -1337,8 +1299,8 @@ class AzureClientHandler(ClientHandler):
         show_abs_path: bool
     ) -> _Iterator[str]:
         '''
-        Returns an iterator capable of going through the paths \
-        of the dictionary's contents as strings.
+        Returns an iterator capable of going through \
+        the directory's contents as their paths.
 
         :param str dir_path: The absolute path of the directory \
             whose contents are to be iterated.

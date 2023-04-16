@@ -2,6 +2,72 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2023/04/16
+
+### Added
+
+- *File* API now provides a *read_range* method in order
+  to be able to partially read a file.
+  (https://github.com/manoss96/fluke/issues/20)
+
+- *File* API now provides a *read_chunks* method in order
+  to be able to read files in chunks of bytes.
+  (https://github.com/manoss96/fluke/issues/20)
+
+- *File* API now provides a *read_text* method in order
+  to be able to read files as text.
+  (https://github.com/manoss96/fluke/issues/21)
+
+- *File* API now provides a *read_lines* method in order
+  to be able to read a text file line-by-line.
+  (https://github.com/manoss96/fluke/issues/21)
+
+- *Dir* API now provides a *get_subdir* method in order
+  to be able to access any subdirectory of a directory
+  as a *Dir* instance. (https://github.com/manoss96/fluke/issues/25)
+   
+### Changed
+
+- *File/Dir* API method *transfer_to* now returns ``bool`` instead 
+  of ``None`` depending on whether the transfer was successful or not.
+  (https://github.com/manoss96/fluke/issues/20)
+
+- *File/Dir* API *transfer_to* now receives a *chunk_size*
+  parameter in order to specify the size of the file chunk
+  that is transfered at a given time.
+  (https://github.com/manoss96/fluke/issues/20)
+
+- *Dir* API method *transfer_to* now receives a *suppress_output*
+  parameter in place of *show_progress*. (https://github.com/manoss96/fluke/issues/20)
+
+- *File* API method *get_file* method now throws an *InvalidPathError*
+  exception if the specified file path does not exist.
+  (https://github.com/manoss96/fluke/issues/25)
+
+- *File* API method *get_file* method now throws an *InvalidFileError*
+  exception if the specified path exists, but points to a directory.
+  (https://github.com/manoss96/fluke/issues/25)
+
+- *File* API method *get_file* method's *file_path* param
+  has been renamed to *path*.
+  (https://github.com/manoss96/fluke/issues/25)
+
+- Removed *Dir* API methods *get_files* and *traverse_files*.
+  (https://github.com/manoss96/fluke/issues/25)
+
+- Method *AzureBlobDir.get_path* now returns the
+  empty string when no path (or a ``None`` path)
+  has been provided via the class constructor.
+  (https://github.com/manoss96/fluke/issues/25)
+ 
+### Fixed
+
+- Fixed bug where listing the contents of a cacheable directory
+  after having fetched either the size or metadata of one of its
+  files, would result in only listing said file.
+  (https://github.com/manoss96/fluke/issues/25)
+
+
 ## [0.2.0] - 2023/03/25
 
 ### Added

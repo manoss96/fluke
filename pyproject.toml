@@ -1,6 +1,6 @@
 [project]
 name = "fluke-api"
-version = "0.2.0"
+version = "0.3.0"
 authors = [
   {email = "manosstoumpos@gmail.com"},
   {name = "Manos Stoumpos"}

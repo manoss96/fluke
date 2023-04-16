@@ -32,7 +32,7 @@ jobs:
 
       - name: Run tests
         run: |
-          python -m coverage run --rcfile=tests/.coveragerc -m unittest discover tests
+          python -m coverage run -m unittest discover tests
           python -m coverage lcov
 
       - name: Python ${{ matrix.python-version }} Coveralls
