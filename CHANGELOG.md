@@ -2,7 +2,7 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
-## [0.3.0] - UNRELEASED
+## [0.3.0] - 2023/04/16
 
 ### Added
 

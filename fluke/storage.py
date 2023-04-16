@@ -2028,8 +2028,8 @@ class AWSS3Dir(_CloudDir):
     :note: The provided path must not begin with \
         a separator.
             
-            * Wrong: ``/path/to/file.txt``
-            * Right: ``path/to/file.txt``
+            * Wrong: ``/path/to/dir``
+            * Right: ``path/to/dir``
     '''
     def __init__(
         self,
@@ -2064,8 +2064,8 @@ class AWSS3Dir(_CloudDir):
         :note: The provided path must not begin with \
             a separator.
                 
-                * Wrong: ``/path/to/file.txt``
-                * Right: ``path/to/file.txt``
+                * Wrong: ``/path/to/dir``
+                * Right: ``path/to/dir``
         '''
         # Validate path.
         if path is None:
@@ -2124,6 +2124,12 @@ class AWSS3Dir(_CloudDir):
             does not exist.
         :raises InvalidFileError: The provided path does \
             not point to a file within the directory.
+
+        :note: The provided path, if absolute, must not \
+            begin with a separator.
+
+                * Wrong: ``/path/to/file.txt``
+                * Right: ``path/to/file.txt``
         '''
         if not self.path_exists(path):
             if self._get_handler().dir_exists(
@@ -2154,8 +2160,8 @@ class AWSS3Dir(_CloudDir):
         :note: The provided path, if absolute, must not \
             begin with a separator.
 
-                * Wrong: ``/path/to/file.txt``
-                * Right: ``path/to/file.txt``
+                * Wrong: ``/path/to/dir``
+                * Right: ``path/to/dir``
         '''
         sep = self._get_separator()
         path = f"{path.removesuffix(sep)}{sep}"
@@ -2247,8 +2253,8 @@ class AzureBlobDir(_CloudDir):
     :note: The provided path must not begin with \
         a separator.
             
-            * Wrong: ``/path/to/file.txt``
-            * Right: ``path/to/file.txt``
+            * Wrong: ``/path/to/dir``
+            * Right: ``path/to/dir``
     '''
     def __init__(
         self,
@@ -2285,8 +2291,8 @@ class AzureBlobDir(_CloudDir):
         :note: The provided path must not begin with \
             a separator.
                 
-                * Wrong: ``/path/to/file.txt``
-                * Right: ``path/to/file.txt``
+                * Wrong: ``/path/to/dir``
+                * Right: ``path/to/dir``
         '''        
         # Validate path.
         if path is None:
@@ -2355,6 +2361,12 @@ class AzureBlobDir(_CloudDir):
             does not exist.
         :raises InvalidFileError: The provided path does \
             not point to a file within the directory.
+
+        :note: The provided path, if absolute, must not \
+            begin with a separator.
+
+                * Wrong: ``/path/to/file.txt``
+                * Right: ``path/to/file.txt``
         '''
 
         if not self.path_exists(path):
@@ -2385,8 +2397,8 @@ class AzureBlobDir(_CloudDir):
         :note: The provided path, if absolute, must not \
             begin with a separator.
 
-                * Wrong: ``/path/to/file.txt``
-                * Right: ``path/to/file.txt``
+                * Wrong: ``/path/to/dir``
+                * Right: ``path/to/dir``
         '''
         sep = self._get_separator()
         path = f"{path.removesuffix(sep)}{sep}"
