@@ -17,7 +17,7 @@ def join_paths(sep: str, *paths: str) -> str:
     path = paths[0]
 
     for i in range(1, len(paths)):
-        path = f"{path.rstrip(sep)}{sep}{paths[i].lstrip(sep)}"
+        path = f"{path.removesuffix(sep)}{sep}{paths[i].removeprefix(sep)}"
 
     return path
 
@@ -31,7 +31,8 @@ def relativize_path(parent: str, child: str, sep: str) -> str:
     :param str child: The child path.
     :param str sep: The path separator used.
     '''
-    return child.removeprefix(parent).lstrip(sep)
+    return child.removeprefix(parent)
+    #return child.removeprefix(parent).removeprefix(sep)
 
 
 def infer_separator(path: str) -> str:

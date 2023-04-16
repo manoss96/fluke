@@ -263,7 +263,7 @@ class CacheManager():
                 for i, dir in enumerate(parent_dirs):
                     if dir == '':
                         continue
-                    subdirs.add(f"{sep.join(parent_dirs[:i])}{sep+dir+sep}".lstrip(sep))
+                    subdirs.add(f"{sep.join(parent_dirs[:i])}{sep+dir+sep}".removeprefix(sep))
             # Mark every subdir as recursively traversed as well.
             for subdir in subdirs:
                 self.__get_dir_cache_ref(
@@ -300,8 +300,11 @@ class CacheManager():
         :param bool create_if_missing: Read description.
         '''
 
-        # Remove any left separator.
-        *parent_dirs, file_name = file_path.lstrip(sep).split(sep)
+        # Remove any separator existing at the start
+        # of the path and split by said separator
+        *parent_dirs, file_name = (file_path
+            .removeprefix(sep)
+            .split(sep))
 
         cache = self.__cache[1]
 
@@ -343,7 +346,9 @@ class CacheManager():
         '''
 
         # Remove any left/right separator.
-        dir_path = dir_path.strip(sep)
+        dir_path = (dir_path
+            .removeprefix(sep)
+            .removesuffix(sep))
 
         *parent_dirs, dir_name = map(
             lambda name: name + sep,

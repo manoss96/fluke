@@ -420,7 +420,7 @@ class LocalFile(_File):
         '''
         Returns the file's URI.
         '''
-        return f"file:///{self.get_path().lstrip(self._get_separator())}"
+        return f"file:///{self.get_path().removeprefix(self._get_separator())}"
 
 
     @classmethod
@@ -618,7 +618,7 @@ class RemoteFile(_NonLocalFile):
         '''
         Returns the file's URI.
         '''
-        return f"sftp://{self.__host}/{self.get_path().lstrip(self._get_separator())}"
+        return f"sftp://{self.__host}/{self.get_path().removeprefix(self._get_separator())}"
     
 
     @classmethod
@@ -992,9 +992,11 @@ class _Directory(_ABC):
             destructor is called.
         '''
         sep = _infer_sep(path)
-        self.__path = f"{path.rstrip(sep)}{sep}" if path != '' else path
+        self.__path = (
+            f"{path.removesuffix(sep)}{sep}"
+            if path != '' else path)
         self.__name = name if (
-                name := self.__path.rstrip(sep).split(sep)[-1]
+                name := self.__path.removesuffix(sep).split(sep)[-1]
             ) != '' else None
         self.__separator = sep
         self.__handler = handler
@@ -1390,7 +1392,7 @@ class _Directory(_ABC):
         if replace_sep:
             sep = _infer_sep(path)
             path = path.replace(sep, self._get_separator())
-        return path.removeprefix(self.__path).lstrip(self._get_separator())
+        return path.removeprefix(self.__path).removeprefix(self._get_separator())
     
 
     def _to_absolute(self, path: str, replace_sep: bool) -> str:
@@ -1562,7 +1564,7 @@ class LocalDir(_Directory):
         sep = _infer_sep(path=path)
 
         super().__init__(
-            path=f"{_os.path.abspath(path).replace(_os.sep, sep).rstrip(sep)}{sep}",
+            path=f"{_os.path.abspath(path).replace(_os.sep, sep).removesuffix(sep)}{sep}",
             metadata=dict(),
             handler=_FileSystemHandler())
 
@@ -1572,7 +1574,7 @@ class LocalDir(_Directory):
         Returns the directory's URI.
         '''
         sep = self._get_separator()
-        return f"file:///{self.get_path().lstrip(sep)}"
+        return f"file:///{self.get_path().removeprefix(sep)}"
 
 
     def get_file(self, path: str) -> LocalFile:
@@ -1662,7 +1664,7 @@ class LocalDir(_Directory):
             subdirectory in question.
         '''        
         sep = self._get_separator()
-        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        dir_path = f"{dir_path.removesuffix(sep)}{sep}"
         dir_path = self._to_absolute(
             path=dir_path, replace_sep=False)
         
@@ -1849,7 +1851,7 @@ class RemoteDir(_NonLocalDir):
         '''
         Returns the directory's URI.
         '''
-        return f"sftp://{self.__host}/{self.get_path().lstrip(self._get_separator())}"
+        return f"sftp://{self.__host}/{self.get_path().removeprefix(self._get_separator())}"
     
 
     def get_file(self, path: str) -> RemoteFile:
@@ -1942,7 +1944,7 @@ class RemoteDir(_NonLocalDir):
             subdirectory in question.
         '''        
         sep = self._get_separator()
-        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        dir_path = f"{dir_path.removesuffix(sep)}{sep}"
         dir_path = self._to_absolute(
             path=dir_path, replace_sep=False)
         
@@ -2150,7 +2152,7 @@ class AWSS3Dir(_CloudDir):
             does not exist.
         '''
         sep = self._get_separator()
-        path = f"{path.rstrip(sep)}{sep}"
+        path = f"{path.removesuffix(sep)}{sep}"
         abs_path = self._to_absolute(
             path=path, replace_sep=False)
 
@@ -2196,7 +2198,7 @@ class AWSS3Dir(_CloudDir):
             subdirectory in question.
         '''
         sep = self._get_separator()
-        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        dir_path = f"{dir_path.removesuffix(sep)}{sep}"
         abs_dir_path = self._to_absolute(
             path=dir_path, replace_sep=False)
         
@@ -2375,7 +2377,7 @@ class AzureBlobDir(_CloudDir):
             does not exist.
         '''
         sep = self._get_separator()
-        path = f"{path.rstrip(sep)}{sep}"
+        path = f"{path.removesuffix(sep)}{sep}"
 
         if not self.path_exists(path):
             raise _IPE(path=path)
@@ -2424,7 +2426,7 @@ class AzureBlobDir(_CloudDir):
             subdirectory in question.
         '''
         sep = self._get_separator()
-        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        dir_path = f"{dir_path.removesuffix(sep)}{sep}"
         
         dir_path = self._to_absolute(
             path=dir_path, replace_sep=False)

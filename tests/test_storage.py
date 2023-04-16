@@ -526,7 +526,7 @@ class TestLocalFile(unittest.TestCase):
 
     def test_get_uri(self):
         file = self.build_file()
-        self.assertEqual(file.get_uri(), f"file:///{ABS_FILE_PATH.lstrip(SEPARATOR)}")
+        self.assertEqual(file.get_uri(), f"file:///{ABS_FILE_PATH.removeprefix(SEPARATOR)}")
 
     def test_get_metadata(self):
         file = self.build_file()
@@ -689,7 +689,7 @@ class TestRemoteFile(unittest.TestCase):
 
     def test_get_uri(self):
         with self.build_file() as file:
-            self.assertEqual(file.get_uri(), f"sftp://{HOST}/{ABS_FILE_PATH.lstrip(os.sep)}")
+            self.assertEqual(file.get_uri(), f"sftp://{HOST}/{ABS_FILE_PATH.removeprefix(os.sep)}")
 
     def test_get_metadata(self):
         with self.build_file() as file:
@@ -1601,11 +1601,11 @@ class TestLocalDir(unittest.TestCase):
 
     def test_get_name(self):
         dir = self.build_dir(path=ABS_DIR_PATH)
-        self.assertEqual(dir.get_name(), DIR_NAME.rstrip(SEPARATOR))
+        self.assertEqual(dir.get_name(), DIR_NAME.removesuffix(SEPARATOR))
 
     def test_get_uri(self):
         dir = self.build_dir(path=ABS_DIR_PATH)
-        self.assertEqual(dir.get_uri(), f"file:///{ABS_DIR_PATH.lstrip(SEPARATOR)}")
+        self.assertEqual(dir.get_uri(), f"file:///{ABS_DIR_PATH.removeprefix(SEPARATOR)}")
 
     def test_get_metadata_on_invalid_file_error(self):
         dir = self.build_dir()
@@ -2056,7 +2056,7 @@ class TestRemoteDir(unittest.TestCase):
 
     def test_get_uri(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_uri(), f"sftp://{HOST}/{ABS_DIR_PATH.lstrip(os.sep)}")
+            self.assertEqual(dir.get_uri(), f"sftp://{HOST}/{ABS_DIR_PATH.removeprefix(os.sep)}")
             
     def test_set_and_get_metadata(self):
         with self.build_dir() as dir:
