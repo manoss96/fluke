@@ -52,6 +52,11 @@ def infer_separator(path: str) -> str:
     if path in seps:
         return path
     
+    # NOTE: Replace any double occurrence of a separator
+    #       as this causes catastrophic backtracking.
+    for sep in seps:
+        path = path.replace(2 * sep, sep)
+    
     seps = ''.join(seps)
     match = _re.fullmatch(
         pattern=fr"({4 * bs}|[{seps}])?(?:[^{seps}])+((?(1)\1|(?:{4 * bs}|[{seps}])))?(?:[^{seps}]+(?(1)\1|\2)?)*",
