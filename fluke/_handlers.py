@@ -600,7 +600,7 @@ class SSHClientHandler(ClientHandler):
         key_type = credentials.pop('key_type')
         verify_host = credentials.pop('verify_host')
 
-        print(f"\nEstablishing connection to {credentials['hostname']}...")
+        print(f"\nEstablishing connection to '{credentials['hostname']}'...")
 
         # Load all known hosts.
         ssh.load_system_host_keys()

@@ -17,7 +17,9 @@ def join_paths(sep: str, *paths: str) -> str:
     path = paths[0]
 
     for i in range(1, len(paths)):
-        path = f"{path.removesuffix(sep)}{sep}{paths[i].removeprefix(sep)}"
+        if not path.endswith(sep):
+            path += sep
+        path += paths[i]
 
     return path
 

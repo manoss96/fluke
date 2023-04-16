@@ -1392,7 +1392,7 @@ class _Directory(_ABC):
         if replace_sep:
             sep = _infer_sep(path)
             path = path.replace(sep, self._get_separator())
-        return path.removeprefix(self.__path).removeprefix(self._get_separator())
+        return path.removeprefix(self.__path)
     
 
     def _to_absolute(self, path: str, replace_sep: bool) -> str:
@@ -2150,6 +2150,12 @@ class AWSS3Dir(_CloudDir):
 
         :raises InvalidPathError: The provided path \
             does not exist.
+
+        :note: The provided path, if absolute, must not \
+            begin with a separator.
+
+                * Wrong: ``/path/to/file.txt``
+                * Right: ``path/to/file.txt``
         '''
         sep = self._get_separator()
         path = f"{path.removesuffix(sep)}{sep}"
@@ -2375,6 +2381,12 @@ class AzureBlobDir(_CloudDir):
 
         :raises InvalidPathError: The provided path \
             does not exist.
+
+        :note: The provided path, if absolute, must not \
+            begin with a separator.
+
+                * Wrong: ``/path/to/file.txt``
+                * Right: ``path/to/file.txt``
         '''
         sep = self._get_separator()
         path = f"{path.removesuffix(sep)}{sep}"
