@@ -256,7 +256,7 @@ class _File(_ABC):
             existing metadata are to be assigned to the resulting \
             file. Defaults to ``False``.
         :param int | None chunk_size: If not ``None``, then files are \
-            transfered in chunks, whose size are equal to this parameter \
+            transferred in chunks, whose size are equal to this parameter \
             value. Defaults to ``None``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
@@ -270,7 +270,7 @@ class _File(_ABC):
             else dst.get_path()
         
         if not suppress_output:
-            print(f'\nTransfering file "{source}" into "{destination}".')
+            print(f'\nTransferring file "{source}" into "{destination}".')
 
         dst_fp = dst._to_absolute(self.get_name(), replace_sep=True)
 
@@ -1244,7 +1244,7 @@ class _Directory(_ABC):
         '''
         Copies all files within this directory into \
         the destination directory. Returns ``True`` if \
-        all files were successfully transfered, else returns \
+        all files were successfully transferred, else returns \
         ``False``.
 
         :param _Directory dst: A ``_Directory`` class instance, \
@@ -1262,7 +1262,7 @@ class _Directory(_ABC):
             existing metadata are to be assigned to the resulting \
             files. Defaults to ``False``.
         :param int | None chunk_size: If not ``None``, then files are \
-            transfered in chunks, whose size are equal to this parameter \
+            transferred in chunks, whose size are equal to this parameter \
             value. Defaults to ``None``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
@@ -1278,7 +1278,7 @@ class _Directory(_ABC):
         failures = 0
         dst_dirs = dict()
 
-        # Iterate through all files that are to be transfered.
+        # Iterate through all files that are to be transferred.
         for i, fp in enumerate(file_paths):
 
             # Define src and dst paths.
@@ -1312,7 +1312,7 @@ class _Directory(_ABC):
 
         if failures == 0:
             if not suppress_output:
-                print(f'\nOperation successful: All {total_num_files} files were transfered!')
+                print(f'\nOperation successful: All {total_num_files} files were transferred!')
             return True
         else:
             if not suppress_output:
