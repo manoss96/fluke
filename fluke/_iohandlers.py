@@ -473,7 +473,7 @@ class RemoteFileWriter(_FileWriter):
             :param str file_path: The path of the file \
                 in question.
             '''
-            file_path = file_path.rstrip(sep)
+            file_path = file_path.removesuffix(sep)
             if sep in file_path:
                 return f"{sep.join(file_path.split(sep)[:-1])}{sep}"
             return None

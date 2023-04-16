@@ -256,7 +256,7 @@ class _File(_ABC):
             existing metadata are to be assigned to the resulting \
             file. Defaults to ``False``.
         :param int | None chunk_size: If not ``None``, then files are \
-            transfered in chunks, whose size are equal to this parameter \
+            transferred in chunks, whose size are equal to this parameter \
             value. Defaults to ``None``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
@@ -270,7 +270,7 @@ class _File(_ABC):
             else dst.get_path()
         
         if not suppress_output:
-            print(f'\nTransfering file "{source}" into "{destination}".')
+            print(f'\nTransferring file "{source}" into "{destination}".')
 
         dst_fp = dst._to_absolute(self.get_name(), replace_sep=True)
 
@@ -420,7 +420,7 @@ class LocalFile(_File):
         '''
         Returns the file's URI.
         '''
-        return f"file:///{self.get_path().lstrip(self._get_separator())}"
+        return f"file:///{self.get_path().removeprefix(self._get_separator())}"
 
 
     @classmethod
@@ -618,7 +618,7 @@ class RemoteFile(_NonLocalFile):
         '''
         Returns the file's URI.
         '''
-        return f"sftp://{self.__host}/{self.get_path().lstrip(self._get_separator())}"
+        return f"sftp://{self.__host}/{self.get_path().removeprefix(self._get_separator())}"
     
 
     @classmethod
@@ -992,9 +992,11 @@ class _Directory(_ABC):
             destructor is called.
         '''
         sep = _infer_sep(path)
-        self.__path = f"{path.rstrip(sep)}{sep}" if path != '' else path
+        self.__path = (
+            f"{path.removesuffix(sep)}{sep}"
+            if path != '' else path)
         self.__name = name if (
-                name := self.__path.rstrip(sep).split(sep)[-1]
+                name := self.__path.removesuffix(sep).split(sep)[-1]
             ) != '' else None
         self.__separator = sep
         self.__handler = handler
@@ -1242,7 +1244,7 @@ class _Directory(_ABC):
         '''
         Copies all files within this directory into \
         the destination directory. Returns ``True`` if \
-        all files were successfully transfered, else returns \
+        all files were successfully transferred, else returns \
         ``False``.
 
         :param _Directory dst: A ``_Directory`` class instance, \
@@ -1260,7 +1262,7 @@ class _Directory(_ABC):
             existing metadata are to be assigned to the resulting \
             files. Defaults to ``False``.
         :param int | None chunk_size: If not ``None``, then files are \
-            transfered in chunks, whose size are equal to this parameter \
+            transferred in chunks, whose size are equal to this parameter \
             value. Defaults to ``None``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
@@ -1276,7 +1278,7 @@ class _Directory(_ABC):
         failures = 0
         dst_dirs = dict()
 
-        # Iterate through all files that are to be transfered.
+        # Iterate through all files that are to be transferred.
         for i, fp in enumerate(file_paths):
 
             # Define src and dst paths.
@@ -1310,7 +1312,7 @@ class _Directory(_ABC):
 
         if failures == 0:
             if not suppress_output:
-                print(f'\nOperation successful: All {total_num_files} files were transfered!')
+                print(f'\nOperation successful: All {total_num_files} files were transferred!')
             return True
         else:
             if not suppress_output:
@@ -1390,7 +1392,7 @@ class _Directory(_ABC):
         if replace_sep:
             sep = _infer_sep(path)
             path = path.replace(sep, self._get_separator())
-        return path.removeprefix(self.__path).lstrip(self._get_separator())
+        return path.removeprefix(self.__path)
     
 
     def _to_absolute(self, path: str, replace_sep: bool) -> str:
@@ -1562,7 +1564,7 @@ class LocalDir(_Directory):
         sep = _infer_sep(path=path)
 
         super().__init__(
-            path=f"{_os.path.abspath(path).replace(_os.sep, sep).rstrip(sep)}{sep}",
+            path=f"{_os.path.abspath(path).replace(_os.sep, sep).removesuffix(sep)}{sep}",
             metadata=dict(),
             handler=_FileSystemHandler())
 
@@ -1572,7 +1574,7 @@ class LocalDir(_Directory):
         Returns the directory's URI.
         '''
         sep = self._get_separator()
-        return f"file:///{self.get_path().lstrip(sep)}"
+        return f"file:///{self.get_path().removeprefix(sep)}"
 
 
     def get_file(self, path: str) -> LocalFile:
@@ -1662,7 +1664,7 @@ class LocalDir(_Directory):
             subdirectory in question.
         '''        
         sep = self._get_separator()
-        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        dir_path = f"{dir_path.removesuffix(sep)}{sep}"
         dir_path = self._to_absolute(
             path=dir_path, replace_sep=False)
         
@@ -1849,7 +1851,7 @@ class RemoteDir(_NonLocalDir):
         '''
         Returns the directory's URI.
         '''
-        return f"sftp://{self.__host}/{self.get_path().lstrip(self._get_separator())}"
+        return f"sftp://{self.__host}/{self.get_path().removeprefix(self._get_separator())}"
     
 
     def get_file(self, path: str) -> RemoteFile:
@@ -1942,7 +1944,7 @@ class RemoteDir(_NonLocalDir):
             subdirectory in question.
         '''        
         sep = self._get_separator()
-        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        dir_path = f"{dir_path.removesuffix(sep)}{sep}"
         dir_path = self._to_absolute(
             path=dir_path, replace_sep=False)
         
@@ -2148,9 +2150,15 @@ class AWSS3Dir(_CloudDir):
 
         :raises InvalidPathError: The provided path \
             does not exist.
+
+        :note: The provided path, if absolute, must not \
+            begin with a separator.
+
+                * Wrong: ``/path/to/file.txt``
+                * Right: ``path/to/file.txt``
         '''
         sep = self._get_separator()
-        path = f"{path.rstrip(sep)}{sep}"
+        path = f"{path.removesuffix(sep)}{sep}"
         abs_path = self._to_absolute(
             path=path, replace_sep=False)
 
@@ -2196,7 +2204,7 @@ class AWSS3Dir(_CloudDir):
             subdirectory in question.
         '''
         sep = self._get_separator()
-        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        dir_path = f"{dir_path.removesuffix(sep)}{sep}"
         abs_dir_path = self._to_absolute(
             path=dir_path, replace_sep=False)
         
@@ -2373,9 +2381,15 @@ class AzureBlobDir(_CloudDir):
 
         :raises InvalidPathError: The provided path \
             does not exist.
+
+        :note: The provided path, if absolute, must not \
+            begin with a separator.
+
+                * Wrong: ``/path/to/file.txt``
+                * Right: ``path/to/file.txt``
         '''
         sep = self._get_separator()
-        path = f"{path.rstrip(sep)}{sep}"
+        path = f"{path.removesuffix(sep)}{sep}"
 
         if not self.path_exists(path):
             raise _IPE(path=path)
@@ -2424,7 +2438,7 @@ class AzureBlobDir(_CloudDir):
             subdirectory in question.
         '''
         sep = self._get_separator()
-        dir_path = f"{dir_path.rstrip(sep)}{sep}"
+        dir_path = f"{dir_path.removesuffix(sep)}{sep}"
         
         dir_path = self._to_absolute(
             path=dir_path, replace_sep=False)
