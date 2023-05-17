@@ -157,7 +157,7 @@ class AWSSQSQueue(Queue):
         self.__queue = _boto3.resource(
             service_name='sqs',
             **self.__auth.get_credentials()
-        ).get_queue_by_name(self.__queue_name)
+        ).get_queue_by_name(QueueName=self.__queue_name)
 
 
     def close(self):
@@ -204,7 +204,8 @@ class AWSSQSQueue(Queue):
         '''
         return [
             msg.body for msg in self.__queue.receive_messages(
-                AttibuteNames=['All'],
+                AttributeNames=['QueueUrl'],
+                VisibilityTimeout=0,
                 MaxNumberOfMessages=10)
         ]
 
@@ -233,13 +234,15 @@ class AWSSQSQueue(Queue):
 
         num_messages_fetched = 0
 
-        while num_messages_fetched < num_messages:
+        while num_messages is None or num_messages_fetched < num_messages:
 
             batch = self.__queue.receive_messages(
-                AttibuteNames=['All'],
+                AttributeNames=['QueueUrl'],
+                VisibilityTimeout=0,
                 MaxNumberOfMessages=min(
                     batch_size,
-                    num_messages-num_messages_fetched,
+                    10 if num_messages is None
+                    else num_messages-num_messages_fetched,
                     10))
 
             if len(batch) == 0:
