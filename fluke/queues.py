@@ -1,3 +1,5 @@
+import random as _rand
+import warnings as _warn
 from abc import ABC as _ABC
 from abc import abstractmethod as _absmethod
 from typing import Iterator as _Iterator
@@ -13,11 +15,40 @@ from .auth import AWSAuth as _AWSAuth
 from .auth import AzureAuth as _AzureAuth
 
 
-class Queue(_ABC):
+class _Queue(_ABC):
     '''
     An abstract class which serves as the \
     base class for all queue classes.
     '''
+
+    def __enter__(self) -> '_Queue':
+        '''
+        Enter the runtime context related to this instance.
+        '''
+        return self
+
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        '''
+        Exit the runtime context related to this object. 
+        '''
+        self.close()
+
+
+    def __del__(self) -> None:
+        '''
+        The class destructor method.
+        '''
+        if self.is_open():
+            # Display warning.
+            msg = f'You might want to consider instantiating class "{self.__class__.__name__}"'
+            msg += " through the use of a context manager by utilizing Python's"
+            msg += ' "with" statement, or by simply invoking an instance\'s'
+            msg += ' "close" method after being done using it.'
+            _warn.warn(msg, ResourceWarning)
+            # Close connections.
+            self.close()
+
 
     @_absmethod
     def get_queue_name(self) -> str:
@@ -75,15 +106,25 @@ class Queue(_ABC):
     @_absmethod
     def peek(self) -> list[str]:
         '''
-        Returns a list containing at most 10 messages \
+        Returns a list containing at most ten messages \
         currently residing within the queue.
+
+        :note: This method does not go on to explicitly \
+            remove messages from the queue. However, any \
+            message returned by this method will have its \
+            "receive count" increased, which in turn might \
+            result in said message being removed from the \
+            queue in case the queue's maximum receive count \
+            threshold is exceeded.
         '''
+        pass
 
     @_absmethod
     def pull(
         self,
         num_messages: _Optional[int] = None,
-        batch_size: int = 10
+        batch_size: int = 10,
+        suppress_output: bool = False
     ) -> _Iterator[list[str]]:
         '''
         Iterates through the messages available in the queue \
@@ -94,17 +135,18 @@ class Queue(_ABC):
             is constantly querried for new messages until there \
             are none. Defaults to ``None``.
         :param int batch_size: The maximum number of messages \
-            a single batch may contain. Cannot be greater than \
-            ``10``. Deafults to ``10``.
+            a single batch may contain. Deafults to ``10``.
+        :param bool suppress_output: If set to ``True``, then \
+            suppresses all output. Defaults to ``False``.
 
         :note: As soon as a batch of messages is received, all \
-            messages within the batch are considered to have been \
-            deleted from the queue.
+            messages within the batch are considered to have \
+            been deleted from the queue.
         '''
         pass
 
 
-class AWSSQSQueue(Queue):
+class AWSSQSQueue(_Queue):
     '''
     This class represents an Amazon SQS queue.
 
@@ -126,6 +168,7 @@ class AWSSQSQueue(Queue):
         self.__auth = auth
         self.__queue_name = queue
         self.__queue = None
+        self.open()
 
 
     def get_queue_name(self) -> str:
@@ -199,21 +242,30 @@ class AWSSQSQueue(Queue):
 
     def peek(self) -> list[str]:
         '''
-        Returns a list containing at most 10 messages \
+        Returns a list containing at most ten messages \
         currently residing within the queue.
+
+        :note: This method does not go on to explicitly \
+            remove messages from the queue. However, any \
+            message returned by this method will have its \
+            "receive count" increased, which in turn might \
+            result in said message being removed from the \
+            queue in case the queue's maximum receive count \
+            threshold is exceeded.
         '''
         return [
             msg.body for msg in self.__queue.receive_messages(
                 AttributeNames=['QueueUrl'],
-                VisibilityTimeout=0,
-                MaxNumberOfMessages=10)
+                VisibilityTimeout=1,
+                MaxNumberOfMessages=_rand.randint(1, 10))
         ]
 
     
     def pull(
         self,
         num_messages: _Optional[int] = None,
-        batch_size: int = 10
+        batch_size: int = 10,
+        suppress_output: bool = False
     ) -> _Iterator[list[str]]:
         '''
         Iterates through the messages available in the queue \
@@ -224,44 +276,68 @@ class AWSSQSQueue(Queue):
             is constantly querried for new messages until there \
             are none. Defaults to ``None``.
         :param int batch_size: The maximum number of messages \
-            a single batch may contain. Cannot be greater than \
-            ``10``. Deafults to ``10``.
+            a single batch may contain. Deafults to ``10``.
+        :param bool suppress_output: If set to ``True``, then \
+            suppresses all output. Defaults to ``False``.
 
         :note: As soon as a batch of messages is received, all \
-            messages within the batch are considered to have been \
-            deleted from the queue.
+            messages within the batch are considered to have \
+            been deleted from the queue.
         '''
+
+        if not suppress_output:
+            print(f"Pulling messages from queue '{self.get_queue_name()}'.")
 
         num_messages_fetched = 0
 
         while num_messages is None or num_messages_fetched < num_messages:
 
-            batch = self.__queue.receive_messages(
-                AttributeNames=['QueueUrl'],
-                VisibilityTimeout=0,
-                MaxNumberOfMessages=min(
-                    batch_size,
-                    10 if num_messages is None
-                    else num_messages-num_messages_fetched,
-                    10))
+            batch = []
+            while len(batch) < batch_size:
+                microbatch = self.__queue.receive_messages(
+                    AttributeNames=['QueueUrl'],
+                    VisibilityTimeout=30,
+                    MaxNumberOfMessages=min(
+                        batch_size,
+                        10 if num_messages is None
+                        else num_messages-num_messages_fetched,
+                        10))
+                
+                if len(microbatch) == 0:
+                    break
+
+                batch += microbatch
 
             if len(batch) == 0:
                 return
 
-            resp = self.__queue.delete_messages(Entries=[
-                {'Id': str(i),
-                 'ReceiptHandle': msg.receipt_handle
-                } for i, msg in enumerate(batch)])
-
             messages = []
-            for i in (int(d['Id']) for d in resp['Successful']):
-                num_messages_fetched += 1
-                messages.append(batch[i].body)
+            for i in range(0, len(batch), 10):
+
+                resp = self.__queue.delete_messages(Entries=[
+                    {'Id': str(i+j),
+                    'ReceiptHandle': msg.receipt_handle
+                    } for j, msg in enumerate(batch[i:i+10])])
+
+                for j in map(lambda d: int(d['Id']), resp['Successful']):
+                    num_messages_fetched += 1
+                    messages.append(batch[j].body)
+
+                if not suppress_output:
+                    for msg in map(lambda d: d['Message'], resp['Failed']):
+                        print(f"Failed to delete message '{msg}'.")
 
             yield messages
 
 
-class AzureStorageQueue(Queue):
+    def __enter__(self) -> 'AWSSQSQueue':
+        '''
+        Enter the runtime context related to this instance.
+        '''
+        return super().__enter__()
+
+
+class AzureStorageQueue(_Queue):
     '''
     A class used in handling the HTTP \
     connection to an Azure Queue Storage \
@@ -287,6 +363,7 @@ class AzureStorageQueue(Queue):
         self.__auth = auth
         self.__queue_name = queue
         self.__queue = None
+        self.open()
 
 
     def get_queue_name(self) -> str:
@@ -365,23 +442,29 @@ class AzureStorageQueue(Queue):
 
     def peek(self) -> list[str]:
         '''
-        Returns a list containing at most 10 messages \
+        Returns a list containing at most ten messages \
         currently residing within the queue.
+
+        :note: This method does not go on to explicitly \
+            remove messages from the queue. However, any \
+            message returned by this method will have its \
+            "receive count" increased, which in turn might \
+            result in said message being removed from the \
+            queue in case the queue's maximum receive count \
+            threshold is exceeded.
         '''
         return [
-            msg.content
-            for batch in self.__queue.receive_messages(
-                messages_per_page=10,
-                max_messages=10,
-                visibility_timeout=1).by_page()
-            for msg in batch
+            msg.content for msg in
+            self.__queue.peek_messages(
+                max_messages=_rand.randint(1, 10))
         ]
 
     
     def pull(
         self,
         num_messages: _Optional[int] = None,
-        batch_size: int = 10
+        batch_size: int = 10,
+        suppress_output: bool = False
     ) -> _Iterator[list[str]]:
         '''
         Iterates through the messages available in the queue \
@@ -392,18 +475,22 @@ class AzureStorageQueue(Queue):
             is constantly querried for new messages until there \
             are none. Defaults to ``None``.
         :param int batch_size: The maximum number of messages \
-            a single batch may contain. Cannot be greater than \
-            ``10``. Deafults to ``10``.
+            a single batch may contain. Deafults to ``10``.
+        :param bool suppress_output: If set to ``True``, then \
+            suppresses all output. Defaults to ``False``.
 
         :note: As soon as a batch of messages is received, all \
-            messages within the batch are considered to have been \
-            deleted from the queue.
+            messages within the batch are considered to have \
+            been deleted from the queue.
         '''
+
+        if not suppress_output:
+            print(f"Pulling messages from queue '{self.get_queue_name()}'.")
 
         for batch in self.__queue.receive_messages(
                 messages_per_page=min(batch_size, 10),
                 max_messages=num_messages,
-                visibility_timeout=1
+                visibility_timeout=30
         ).by_page():
             messages = []
             for msg in batch:
@@ -411,5 +498,13 @@ class AzureStorageQueue(Queue):
                     self.__queue.delete_message(msg.id, msg.pop_receipt)
                     messages.append(msg.content)
                 except:
-                    continue
+                    if not suppress_output:
+                        print(f"Failed to delete message '{msg.content}'.")
             yield messages
+
+
+    def __enter__(self) -> 'AzureStorageQueue':
+        '''
+        Enter the runtime context related to this instance.
+        '''
+        return super().__enter__()
