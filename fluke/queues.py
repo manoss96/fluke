@@ -199,10 +199,14 @@ class AWSSQSQueue(_Queue):
 
         if self.is_open():
             return
+        
+        # Fix deprecated endpoint.
+        creds = self.__auth.get_credentials()
+        if (region := creds['region_name']) is not None:
+            creds.update({'region': f"https://sqs.{region}.amazonaws.com"})
 
         self.__queue = _boto3.resource(
-            service_name='sqs',
-            **self.__auth.get_credentials()
+            service_name='sqs', **creds
         ).get_queue_by_name(QueueName=self.__queue_name)
 
 
@@ -231,7 +235,7 @@ class AWSSQSQueue(_Queue):
             suppresses all output. Defaults to ``False``.
         '''
         if not suppress_output:
-            print(f'\nPushing "{message}" to queue "{self.get_queue_name()}".')
+            print(f'\nPushing message "{message}" to queue "{self.get_queue_name()}".')
         
         try:
             self.__queue.send_message(
@@ -441,7 +445,7 @@ class AzureStorageQueue(_Queue):
             suppresses all output. Defaults to ``False``.
         '''
         if not suppress_output:
-            print(f'\nPushing "{message}" to queue "{self.get_queue_name()}".')
+            print(f'\nPushing message "{message}" to queue "{self.get_queue_name()}".')
 
         try:
             self.__queue.send_message(content=message)
