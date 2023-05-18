@@ -203,7 +203,7 @@ class AWSSQSQueue(_Queue):
         # Fix deprecated endpoint.
         creds = self.__auth.get_credentials()
         if (region := creds['region_name']) is not None:
-            creds.update({'region': f"https://sqs.{region}.amazonaws.com"})
+            creds.update({'endpoint_url': f"https://sqs.{region}.amazonaws.com"})
 
         self.__queue = _boto3.resource(
             service_name='sqs', **creds
