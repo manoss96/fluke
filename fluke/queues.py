@@ -104,10 +104,13 @@ class _Queue(_ABC):
 
 
     @_absmethod
-    def peek(self) -> list[str]:
+    def peek(self, suppress_output: bool = False) -> list[str]:
         '''
         Returns a list containing at most ten messages \
         currently residing within the queue.
+
+        :param bool suppress_output: If set to ``True``, then \
+            suppresses all output. Defaults to ``False``.
 
         :note: This method does not go on to explicitly \
             remove messages from the queue. However, any \
@@ -227,6 +230,9 @@ class AWSSQSQueue(_Queue):
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
         '''
+        if not suppress_output:
+            print(f'\nPushing "{message}" to queue "{self.get_queue_name()}".')
+        
         try:
             self.__queue.send_message(
                 MessageBody=message,
@@ -240,10 +246,13 @@ class AWSSQSQueue(_Queue):
             return False
     
 
-    def peek(self) -> list[str]:
+    def peek(self, suppress_output: bool = False) -> list[str]:
         '''
         Returns a list containing at most ten messages \
         currently residing within the queue.
+
+        :param bool suppress_output: If set to ``True``, then \
+            suppresses all output. Defaults to ``False``.
 
         :note: This method does not go on to explicitly \
             remove messages from the queue. However, any \
@@ -253,6 +262,9 @@ class AWSSQSQueue(_Queue):
             queue in case the queue's maximum receive count \
             threshold is exceeded.
         '''
+        if not suppress_output:
+            print(f'\nPeeking messages from queue "{self.get_queue_name()}".')
+
         return [
             msg.body for msg in self.__queue.receive_messages(
                 AttributeNames=['QueueUrl'],
@@ -284,9 +296,8 @@ class AWSSQSQueue(_Queue):
             messages within the batch are considered to have \
             been deleted from the queue.
         '''
-
         if not suppress_output:
-            print(f"Pulling messages from queue '{self.get_queue_name()}'.")
+            print(f'\nPulling messages from queue "{self.get_queue_name()}".')
 
         num_messages_fetched = 0
 
@@ -298,7 +309,7 @@ class AWSSQSQueue(_Queue):
                     AttributeNames=['QueueUrl'],
                     VisibilityTimeout=30,
                     MaxNumberOfMessages=min(
-                        batch_size,
+                        batch_size - len(batch),
                         10 if num_messages is None
                         else num_messages-num_messages_fetched,
                         10))
@@ -323,9 +334,9 @@ class AWSSQSQueue(_Queue):
                     num_messages_fetched += 1
                     messages.append(batch[j].body)
 
-                if not suppress_output:
+                if not suppress_output and 'Failed' in resp:
                     for msg in map(lambda d: d['Message'], resp['Failed']):
-                        print(f"Failed to delete message '{msg}'.")
+                        print(f'Failed to delete message "{msg}".')
 
             yield messages
 
@@ -429,6 +440,9 @@ class AzureStorageQueue(_Queue):
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
         '''
+        if not suppress_output:
+            print(f'\nPushing "{message}" to queue "{self.get_queue_name()}".')
+
         try:
             self.__queue.send_message(content=message)
             if not suppress_output:
@@ -440,10 +454,13 @@ class AzureStorageQueue(_Queue):
             return False
     
 
-    def peek(self) -> list[str]:
+    def peek(self, suppress_output: bool = False) -> list[str]:
         '''
         Returns a list containing at most ten messages \
         currently residing within the queue.
+
+        :param bool suppress_output: If set to ``True``, then \
+            suppresses all output. Defaults to ``False``.
 
         :note: This method does not go on to explicitly \
             remove messages from the queue. However, any \
@@ -453,6 +470,9 @@ class AzureStorageQueue(_Queue):
             queue in case the queue's maximum receive count \
             threshold is exceeded.
         '''
+        if not suppress_output:
+            print(f'\nPeeking messages from queue "{self.get_queue_name()}".')
+
         return [
             msg.content for msg in
             self.__queue.peek_messages(
@@ -483,9 +503,8 @@ class AzureStorageQueue(_Queue):
             messages within the batch are considered to have \
             been deleted from the queue.
         '''
-
         if not suppress_output:
-            print(f"Pulling messages from queue '{self.get_queue_name()}'.")
+            print(f'\nPulling messages from queue "{self.get_queue_name()}".')
 
         for batch in self.__queue.receive_messages(
                 messages_per_page=min(batch_size, 10),
@@ -499,7 +518,7 @@ class AzureStorageQueue(_Queue):
                     messages.append(msg.content)
                 except:
                     if not suppress_output:
-                        print(f"Failed to delete message '{msg.content}'.")
+                        print(f'Failed to delete message "{msg}".')
             yield messages
 
 
