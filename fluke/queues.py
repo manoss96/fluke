@@ -51,7 +51,7 @@ class _Queue(_ABC):
 
 
     @_absmethod
-    def get_queue_name(self) -> str:
+    def get_name(self) -> str:
         '''
         Returns the name of the queue to which \
         a connection has been established.
@@ -174,7 +174,7 @@ class AWSSQSQueue(_Queue):
         self.open()
 
 
-    def get_queue_name(self) -> str:
+    def get_name(self) -> str:
         '''
         Returns the name of the queue to which \
         a connection has been established.
@@ -235,7 +235,7 @@ class AWSSQSQueue(_Queue):
             suppresses all output. Defaults to ``False``.
         '''
         if not suppress_output:
-            print(f'\nPushing message "{message}" to queue "{self.get_queue_name()}".')
+            print(f'\nPushing message "{message}" to queue "{self.get_name()}".')
         
         try:
             self.__queue.send_message(
@@ -267,7 +267,7 @@ class AWSSQSQueue(_Queue):
             threshold is exceeded.
         '''
         if not suppress_output:
-            print(f'\nPeeking messages from queue "{self.get_queue_name()}".')
+            print(f'\nPeeking messages from queue "{self.get_name()}".')
 
         return [
             msg.body for msg in self.__queue.receive_messages(
@@ -301,7 +301,7 @@ class AWSSQSQueue(_Queue):
             been deleted from the queue.
         '''
         if not suppress_output:
-            print(f'\nPulling messages from queue "{self.get_queue_name()}".')
+            print(f'\nPulling messages from queue "{self.get_name()}".')
 
         num_messages_fetched = 0
 
@@ -381,7 +381,7 @@ class AzureStorageQueue(_Queue):
         self.open()
 
 
-    def get_queue_name(self) -> str:
+    def get_name(self) -> str:
         '''
         Returns the name of the queue to which \
         a connection has been established.
@@ -445,7 +445,7 @@ class AzureStorageQueue(_Queue):
             suppresses all output. Defaults to ``False``.
         '''
         if not suppress_output:
-            print(f'\nPushing message "{message}" to queue "{self.get_queue_name()}".')
+            print(f'\nPushing message "{message}" to queue "{self.get_name()}".')
 
         try:
             self.__queue.send_message(content=message)
@@ -475,7 +475,7 @@ class AzureStorageQueue(_Queue):
             threshold is exceeded.
         '''
         if not suppress_output:
-            print(f'\nPeeking messages from queue "{self.get_queue_name()}".')
+            print(f'\nPeeking messages from queue "{self.get_name()}".')
 
         return [
             msg.content for msg in
@@ -508,7 +508,7 @@ class AzureStorageQueue(_Queue):
             been deleted from the queue.
         '''
         if not suppress_output:
-            print(f'\nPulling messages from queue "{self.get_queue_name()}".')
+            print(f'\nPulling messages from queue "{self.get_name()}".')
 
         for batch in self.__queue.receive_messages(
                 messages_per_page=min(batch_size, 10),
