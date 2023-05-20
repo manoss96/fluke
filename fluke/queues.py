@@ -232,7 +232,7 @@ class AWSSQSQueue(_Queue):
 
         self.__queue = _boto3.resource(
             service_name='sqs', **creds
-        ).get_queue_by_name(QueueName=self.__queue_name)
+        ).get_queue_by_name(QueueName=self.get_name())
 
 
     def close(self):
@@ -252,7 +252,7 @@ class AWSSQSQueue(_Queue):
         of this request.
         '''
         self.__queue.reload()
-        print(self.__queue.attributes)
+        return int(self.__queue.attributes['ApproximateNumberOfMessages'])
 
 
     def push(
@@ -302,7 +302,7 @@ class AWSSQSQueue(_Queue):
             threshold is exceeded.
         '''
         if not suppress_output:
-            print(f'\nPeeking messages from queue "{self.get_name()}".')
+            print(f'\nPeeking messages in queue "{self.get_name()}".')
 
         return [
             msg.body for msg in self.__queue.receive_messages(
@@ -339,6 +339,7 @@ class AWSSQSQueue(_Queue):
             print(f'\nPulling messages from queue "{self.get_name()}".')
 
         num_messages_fetched = 0
+        num_messages_deleted = 0
 
         while num_messages is None or num_messages_fetched < num_messages:
 
@@ -355,8 +356,12 @@ class AWSSQSQueue(_Queue):
                 
                 if len(microbatch) == 0:
                     break
-
+                
                 batch += microbatch
+                num_messages_fetched += len(microbatch)
+
+                if num_messages_fetched == num_messages:
+                    break
 
             if len(batch) == 0:
                 return
@@ -370,12 +375,14 @@ class AWSSQSQueue(_Queue):
                     } for j, msg in enumerate(batch[i:i+10])])
 
                 for j in map(lambda d: int(d['Id']), resp['Successful']):
-                    num_messages_fetched += 1
+                    num_messages_deleted += 1
                     messages.append(batch[j].body)
 
                 if not suppress_output and 'Failed' in resp:
                     for msg in map(lambda d: d['Message'], resp['Failed']):
                         print(f'Failed to delete message "{msg}".')
+
+            num_messages_fetched = num_messages_deleted
 
             yield messages
 
@@ -450,11 +457,11 @@ class AzureStorageQueue(_Queue):
         if 'conn_string' in credentials:
             self.__queue = _QueueClient.from_connection_string(
                 conn_str=credentials['conn_string'],
-                queue_name=self.__queue_name)
+                queue_name=self.get_name())
         else:
             self.__queue = _QueueClient(
                 account_url=credentials.pop('account_url'),
-                queue_name=self.__queue_name,
+                queue_name=self.get_name(),
                 credential=_CSC(**credentials))
 
 
@@ -524,11 +531,10 @@ class AzureStorageQueue(_Queue):
             threshold is exceeded.
         '''
         if not suppress_output:
-            print(f'\nPeeking messages from queue "{self.get_name()}".')
+            print(f'\nPeeking messages in queue "{self.get_name()}".')
 
         return [
-            msg.content for msg in
-            self.__queue.peek_messages(
+            msg.content for msg in self.__queue.peek_messages(
                 max_messages=_rand.randint(1, 10))
         ]
 
