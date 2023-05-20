@@ -19,7 +19,20 @@ class _Queue(_ABC):
     '''
     An abstract class which serves as the \
     base class for all queue classes.
+
+    :param str name: The name of the queue.
     '''
+
+    def __init__(self, name: str) -> None:
+        '''
+        An abstract class which serves as the \
+        base class for all queue classes.
+
+        :param str name: The name of the queue.
+        '''
+        self.__name = name
+        self.open()
+
 
     def __enter__(self) -> '_Queue':
         '''
@@ -50,13 +63,12 @@ class _Queue(_ABC):
             self.close()
 
 
-    @_absmethod
     def get_name(self) -> str:
         '''
         Returns the name of the queue to which \
         a connection has been established.
         '''
-        pass
+        return self.__name
 
 
     @_absmethod
@@ -81,6 +93,16 @@ class _Queue(_ABC):
     def close(self) -> None:
         '''
         Close all open connections.
+        '''
+        pass
+
+
+    @_absmethod
+    def count(self) -> int:
+        '''
+        Returns the total number of messages that \
+        are residing within the queue at the time \
+        of this request.
         '''
         pass
 
@@ -122,6 +144,7 @@ class _Queue(_ABC):
         '''
         pass
 
+
     @_absmethod
     def pull(
         self,
@@ -149,6 +172,17 @@ class _Queue(_ABC):
         pass
 
 
+    @_absmethod
+    def clear(self, suppress_output: bool = False) -> None:
+        '''
+        Empties the queue by deleting all messages.
+
+        :param bool suppress_output: If set to ``True``, then \
+            suppresses all output. Defaults to ``False``.
+        '''
+        pass
+
+
 class AWSSQSQueue(_Queue):
     '''
     This class represents an Amazon SQS queue.
@@ -169,17 +203,8 @@ class AWSSQSQueue(_Queue):
             to which a connection is to be established.
         '''
         self.__auth = auth
-        self.__queue_name = queue
         self.__queue = None
-        self.open()
-
-
-    def get_name(self) -> str:
-        '''
-        Returns the name of the queue to which \
-        a connection has been established.
-        '''
-        return self.__queue_name
+        super().__init__(name=queue)
     
 
     def is_open(self) -> bool:
@@ -218,6 +243,16 @@ class AWSSQSQueue(_Queue):
         if self.__queue is not None:
             self.__queue.meta.client.close()
             self.__queue = None
+
+
+    def count(self) -> int:
+        '''
+        Returns the total number of messages that \
+        are residing within the queue at the time \
+        of this request.
+        '''
+        self.__queue.reload()
+        print(self.__queue.attributes)
 
 
     def push(
@@ -345,6 +380,18 @@ class AWSSQSQueue(_Queue):
             yield messages
 
 
+    def clear(self, suppress_output: bool = False) -> None:
+        '''
+        Empties the queue by deleting all messages.
+
+        :param bool suppress_output: If set to ``True``, then \
+            suppresses all output. Defaults to ``False``.
+        '''
+        if not suppress_output:
+            print(f"Deleting all messages from queue '{self.get_name()}'.")
+        self.__queue.purge()
+
+
     def __enter__(self) -> 'AWSSQSQueue':
         '''
         Enter the runtime context related to this instance.
@@ -376,17 +423,8 @@ class AzureStorageQueue(_Queue):
             queue to which a connection is to be established.
         '''
         self.__auth = auth
-        self.__queue_name = queue
         self.__queue = None
-        self.open()
-
-
-    def get_name(self) -> str:
-        '''
-        Returns the name of the queue to which \
-        a connection has been established.
-        '''
-        return self.__queue_name
+        super().__init__(name=queue)
     
 
     def is_open(self) -> bool:
@@ -428,6 +466,17 @@ class AzureStorageQueue(_Queue):
         if self.__queue is not None:
             self.__queue.close()
             self.__queue = None
+
+
+    def count(self) -> int:
+        '''
+        Returns the total number of messages that \
+        are residing within the queue at the time \
+        of this request.
+        '''
+        return (self.__queue
+            .get_queue_properties()
+            .approximate_message_count)
 
 
     def push(
@@ -524,6 +573,18 @@ class AzureStorageQueue(_Queue):
                     if not suppress_output:
                         print(f'Failed to delete message "{msg}".')
             yield messages
+
+
+    def clear(self, suppress_output: bool = False) -> None:
+        '''
+        Empties the queue by deleting all messages.
+
+        :param bool suppress_output: If set to ``True``, then \
+            suppresses all output. Defaults to ``False``.
+        '''
+        if not suppress_output:
+            print(f"Deleting all messages from queue '{self.get_name()}'.")
+        self.__queue.clear_messages()
 
 
     def __enter__(self) -> 'AzureStorageQueue':
