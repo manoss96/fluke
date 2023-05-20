@@ -2,6 +2,19 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [UNRELEASED] - DATE
+
+### Added
+
+- *Dir* API *transfer_to* method now receives a *filter*
+  param in order to filter out files during the transfer.
+  (https://github.com/manoss96/fluke/issues/30)
+
+### Changed
+
+### Fixed
+
+
 ## [0.3.0] - 2023/04/16
 
 ### Added
