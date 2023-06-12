@@ -621,11 +621,11 @@ class AzureStorageQueue(_Queue):
             ).by_page():
                 if post_delivery_delete:
                     # First deliver messages.
-                    messages = [msg.content for msg in batch]
-                    yield messages
+                    messages = list(batch)
+                    yield [msg.content for msg in messages]
                     num_messages_fetched += len(messages)
                     # Then attempt to remove messages from queue.
-                    for msg in batch:
+                    for msg in messages:
                         try:
                             self.__queue.delete_message(msg.id, msg.pop_receipt)
                         except:
