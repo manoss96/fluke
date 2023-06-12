@@ -238,9 +238,11 @@ class AWSSQSQueue(_Queue):
         if (region := creds['region_name']) is not None:
             creds.update({'endpoint_url': f"https://sqs.{region}.amazonaws.com"})
 
+        print(f"\nEstablishing connection to '{self.get_name()}' Amazon SQS queue...")
         self.__queue = _boto3.resource(
             service_name='sqs', **creds
         ).get_queue_by_name(QueueName=self.get_name())
+        print("Connection established.")
 
 
     def close(self):
@@ -479,6 +481,7 @@ class AzureStorageQueue(_Queue):
 
         credentials = self.__auth.get_credentials()
 
+        print(f"\nEstablishing connection to '{self.get_name()}' Azure Queue Storage queue...")
         if 'conn_string' in credentials:
             self.__queue = _QueueClient.from_connection_string(
                 conn_str=credentials['conn_string'],
@@ -488,6 +491,7 @@ class AzureStorageQueue(_Queue):
                 account_url=credentials.pop('account_url'),
                 queue_name=self.get_name(),
                 credential=_CSC(**credentials))
+        print("Connection established.")
 
 
     def close(self):
@@ -602,13 +606,17 @@ class AzureStorageQueue(_Queue):
 
         while num_messages is None or num_messages_fetched < num_messages:
 
+            no_messages_left = True
+
             for batch in self.__queue.receive_messages(
                     messages_per_page=min(
                         batch_size,
                         10 if num_messages is None
                         else num_messages-num_messages_fetched,
                         10),
-                    max_messages=num_messages - num_messages_fetched,
+                    max_messages=
+                        None if num_messages is None
+                        else num_messages - num_messages_fetched,
                     visibility_timeout=30
             ).by_page():
                 if post_delivery_delete:
@@ -624,8 +632,8 @@ class AzureStorageQueue(_Queue):
                             if not suppress_output:
                                 print(f'Failed to delete message "{msg}".')
                 else:
-                    messages = []
                     # First attempt to remove messages from queue.
+                    messages = []
                     for msg in batch:
                         try:
                             self.__queue.delete_message(msg.id, msg.pop_receipt)
@@ -636,6 +644,12 @@ class AzureStorageQueue(_Queue):
                     # Then deliver messages.
                     yield messages
                     num_messages_fetched += len(messages)
+                # Indicate there are still messages left.
+                no_messages_left = False
+
+            if no_messages_left:
+                return
+
 
 
     def clear(self, suppress_output: bool = False) -> None:
