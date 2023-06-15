@@ -651,7 +651,6 @@ class AzureStorageQueue(_Queue):
                 return
 
 
-
     def clear(self, suppress_output: bool = False) -> None:
         '''
         Empties the queue by deleting all messages.
