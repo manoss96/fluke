@@ -108,7 +108,7 @@ class MockQueueClient():
             'azure.identity.ClientSecretCredential.__init__': Mock(return_value=None),
             'azure.storage.queue.QueueClient.__init__': Mock(return_value=None),
             'azure.storage.queue.QueueClient.from_connection_string': Mock(
-                return_value=MockQueueClient(QUEUE)
+                return_value=TestAzureStorageQueue.queue
             )
         }
 
@@ -242,6 +242,7 @@ class TestAWSSQSQueue(unittest.TestCase):
         self.send_messages([str(i) for i in range(num_messages)])
         with self.build_queue() as queue:
             self.assertEqual(queue.count(), num_messages)
+        self.purge()
 
     def test_push(self):
         message = "Hello"
@@ -297,6 +298,37 @@ class TestAWSSQSQueue(unittest.TestCase):
 
 class TestAzureStorageQueue(unittest.TestCase):
 
+    queue = MockQueueClient(queue_name=QUEUE)
+
+    def get_num_messages(self) -> int:
+        return len(self.queue.messages)
+    
+    def fetch_messages(self) -> list[str]:
+        messages = []
+        while len(batch := self.queue.receive_messages(
+            messages_per_page=10,
+            max_messages=None,
+            visibility_timeout=60)
+        ) > 0:
+            for msg in batch:
+                try:
+                    self.queue.delete_message(msg.id, msg.pop_recipt)
+                    messages.append(msg.content)
+                except:
+                    continue
+            
+        return messages
+    
+    def send_message(self, message: str) -> None:
+        self.queue.send_message(message)
+
+    def send_messages(self, messages: list[str]) -> None:
+        for msg in messages:
+            self.queue.send_message(msg)
+
+    def purge(self) -> None:
+        self.queue.clear_messages()
+
     def setUp(self):
         for k, v in MockQueueClient.get_mock_methods().items():
             patch(k, v).start()
@@ -327,59 +359,63 @@ class TestAzureStorageQueue(unittest.TestCase):
             self.assertEqual(queue.get_name(), QUEUE)
 
     def test_count(self):
+        num_messages = 5
+        self.send_messages([str(i) for i in range(num_messages)])
         with self.build_queue() as queue:
-            self.assertEqual(queue.count(), 0)
+            self.assertEqual(queue.count(), num_messages)
+        self.purge()
 
     def test_push(self):
         message = "Hello"
         with self.build_queue() as queue:
             self.assertTrue(queue.push(message))
             self.assertEqual(queue.peek()[0], message)
+        self.purge()
 
     def test_peek(self):
         messages = set(str(i) for i in range(5))
+        self.send_messages(messages)
         with self.build_queue() as queue:
-            for msg in messages:
-                queue.push(msg)
             self.assertTrue(set(queue.peek()).issubset(messages))
+        self.purge()
 
     def test_pull(self):
         messages = set(str(i) for i in range(5))
+        self.send_messages(messages)
         with self.build_queue() as queue:
-            for msg in messages:
-                queue.push(msg)
             fetched = set(msg for batch in queue.pull() for msg in batch)
             self.assertSetEqual(fetched, messages)
             self.assertEqual(queue.count(), 0)
+        self.purge()
 
     def test_pull_on_num_messages(self):
         messages = set(str(i) for i in range(5))
         num_messages = 3
+        self.send_messages(messages)
         with self.build_queue() as queue:
-            for msg in messages:
-                queue.push(msg)
             fetched = set(msg for batch in queue.pull(num_messages=num_messages) for msg in batch)
             self.assertTrue(fetched.issubset(messages))
             self.assertEqual(queue.count(), len(messages) - num_messages)
+        self.purge()
 
     def test_pull_on_batch_size(self):
         messages = set(str(i) for i in range(29))
         batch_size = 10
         batch_sizes = [10, 10, 9]
+        self.send_messages(messages)
         counter = 0
         with self.build_queue() as queue:
-            for msg in messages:
-                queue.push(msg)
             for batch in queue.pull(batch_size=batch_size):
                 self.assertEqual(len(batch), batch_sizes[counter])
                 counter += 1
+        self.purge()
 
     def test_pull_on_clear(self):
+        self.send_messages(set(str(i) for i in range(50)))
         with self.build_queue() as queue:
-            for i in range(50):
-                queue.push(i)
             queue.clear()
             self.assertEqual(queue.count(), 0)
+        self.purge()
 
 
 if __name__=="__main__":
