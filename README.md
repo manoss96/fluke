@@ -38,7 +38,7 @@ First things first, we need to be able to authenticate with both AWS
 and the remote server. In order to achieve this, we will be importing from ``fluke.auth``:
 
 ```python
-from fluke.auth import RemoteAuth, AWSAuth
+from fluke.auth import AWSAuth, RemoteAuth
 
 # This object will be used to authenticate
 # with AWS.
@@ -68,8 +68,8 @@ with (
     RemoteDir(auth=rmt_auth, path='/home/user/dir', create_if_missing=True) as rmt_dir
 ):
     for batch in queue.pull():
-    for msg in batch:
-        bucket.get_file(path=msg).transfer_to(dst=rmt_dir)
+        for msg in batch:
+            bucket.get_file(path=msg).transfer_to(dst=rmt_dir)
 ```
 
 And that's basically it!
