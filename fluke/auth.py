@@ -213,29 +213,28 @@ class AWSAuth():
 class AzureAuth():
     '''
     This class is used for authenticating with Microsoft Azure.
-
-    :param str account_url: The URI to the storage account.
-    :param str tenant_id: ID of the service principal's tenant.
-    :param str client_id: The service principal's client ID.
-    :param str client_secret: One of the service principal's client secrets.
     '''
 
-    def __init__(
-        self,
+    @classmethod
+    def from_service_principal(
+        cls,
         account_url: str,
         tenant_id: str,
         client_id: str,
         client_secret: str
-    ):
+    ) -> 'AzureAuth':
         '''
-        This class is used for authenticating with Microsoft Azure.
+        Returns an ``AzureAuth`` instance used for \
+        authenticating with Microsoft Azure via a, \
+        Azure service principal.
 
         :param str account_url: The URI to the storage account.
         :param str tenant_id: ID of the service principal's tenant.
         :param str client_id: The service principal's client ID.
         :param str client_secret: One of the service principal's client secrets.
         '''
-        self.__credentials = {
+        auth = cls()
+        auth.__credentials = {
             'account_url': account_url,
             'tenant_id': tenant_id,
             'client_id': client_id,
@@ -246,9 +245,10 @@ class AzureAuth():
                 pattern=r"https?://([^.]+).blob.core.windows.net/?",
                 string=account_url)
             if match is not None:
-                self.__storage_account = match.group(1)
+                auth.__storage_account = match.group(1)
         else:
-            self.__storage_account = None
+            auth.__storage_account = None
+        return auth
 
 
     @classmethod
@@ -258,7 +258,7 @@ class AzureAuth():
         authenticating with Microsoft Azure via a \
         connection string.
         '''
-        auth = cls(None, None, None, None)
+        auth = cls()
         auth.__credentials = {
             'conn_string': conn_string
         }

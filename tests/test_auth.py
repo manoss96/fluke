@@ -95,8 +95,8 @@ class TestAzureAuth(unittest.TestCase):
     CLIENT_ID = "CLIENT_ID"
     CLIENT_SECRET = "CLIENT_SECRET"
     CONNECTION_STRING = "CONNECTION_STRING"
-
-    def test_get_credentials(self):
+        
+    def test_get_credentials_from_service_principal(self):
         credentials = {
             'account_url': self.ACCOUNT_URL,
             'tenant_id': self.TENANT_ID,
@@ -104,10 +104,10 @@ class TestAzureAuth(unittest.TestCase):
             'client_secret': self.CLIENT_SECRET
         }
         self.assertEqual(
-            AzureAuth(**credentials).get_credentials(),
+            AzureAuth.from_service_principal(**credentials).get_credentials(),
             credentials)
         
-    def test_from_connection_string(self):
+    def test_get_credentials_from_connection_string(self):
         credentials = { 'conn_string': self.CONNECTION_STRING }
         self.assertEqual(
             AzureAuth.from_conn_string(**credentials).get_credentials(),

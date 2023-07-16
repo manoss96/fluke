@@ -59,6 +59,12 @@ All notable changes to this project will be documented in this file.
   empty string when no path (or a ``None`` path)
   has been provided via the class constructor.
   (https://github.com/manoss96/fluke/issues/25)
+
+- *fluke.auth.AzureAuth* no longer has a constructor
+  for creating an *AzureAuth* instance via an Azure
+  service principal. Instead, this is now achieved
+  via an *AzureAuth.from_service_principal* method.
+  (https://github.com/manoss96/fluke/issues/31)
  
 ### Fixed
 

@@ -2368,7 +2368,6 @@ class AzureBlobDir(_CloudDir):
                 * Wrong: ``/path/to/file.txt``
                 * Right: ``path/to/file.txt``
         '''
-
         if not self.path_exists(path):
             raise _IPE(path=path)
         if not self.is_file(path):

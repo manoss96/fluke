@@ -33,7 +33,7 @@ def get_azure_auth_instance(from_conn_string: bool) -> AzureAuth:
     return (
         AzureAuth.from_conn_string(conn_string=STORAGE_ACCOUNT_CONN_STRING)
         if from_conn_string else 
-        AzureAuth(
+        AzureAuth.from_service_principal(
             account_url=STORAGE_ACCOUNT_URL,
             tenant_id='',
             client_id='',

@@ -136,9 +136,9 @@ class _Queue(_ABC):
 
         :note: This method does not go on to explicitly \
             remove messages from the queue. However, any \
-            message returned by this method will have its \
+            messages returned by this method will have their \
             "receive count" increased, which in turn might \
-            result in said message being removed from the \
+            result in said messages being removed from the \
             queue in case the queue's maximum receive count \
             threshold is exceeded.
         '''
@@ -160,19 +160,19 @@ class _Queue(_ABC):
         :param int | None num_messages: The number of messages to \
             iterate through. If set to ``None``, then the queue \
             is constantly querried for new messages until there \
-            are none. Defaults to ``None``.
+            are none left. Defaults to ``None``.
         :param int batch_size: The maximum number of messages \
             a single batch may contain. Deafults to ``10``.
         :param bool post_delivery_delete: Indicates whether a \
             batch of messages is to be removed from the queue \
             before or after its delivery. If set to ``False``, \
-            then it is guaranteed that any delivered messages \
+            then it is guaranteed that any delivered messages  will \
             have already been removed from the queue, thus reducing \
             the likelihood of fetching the same message twice. If set \
             to ``True``, then any delivered messages are only deleted \
             just before the delivery of the next batch of messages, \
             thus preventing from any messages being lost in case \
-            something goes wrong during their processing. Defaults \
+            an error occurs during their processing. Defaults \
             to ``True``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
@@ -305,9 +305,9 @@ class AWSSQSQueue(_Queue):
 
         :note: This method does not go on to explicitly \
             remove messages from the queue. However, any \
-            message returned by this method will have its \
+            messages returned by this method will have their \
             "receive count" increased, which in turn might \
-            result in said message being removed from the \
+            result in said messages being removed from the \
             queue in case the queue's maximum receive count \
             threshold is exceeded.
         '''
@@ -336,19 +336,19 @@ class AWSSQSQueue(_Queue):
         :param int | None num_messages: The number of messages to \
             iterate through. If set to ``None``, then the queue \
             is constantly querried for new messages until there \
-            are none. Defaults to ``None``.
+            are none left. Defaults to ``None``.
         :param int batch_size: The maximum number of messages \
             a single batch may contain. Deafults to ``10``.
         :param bool post_delivery_delete: Indicates whether a \
             batch of messages is to be removed from the queue \
             before or after its delivery. If set to ``False``, \
-            then it is guaranteed that any delivered messages \
+            then it is guaranteed that any delivered messages will \
             have already been removed from the queue, thus reducing \
             the likelihood of fetching the same message twice. If set \
             to ``True``, then any delivered messages are only deleted \
             just before the delivery of the next batch of messages, \
             thus preventing from any messages being lost in case \
-            something goes wrong during their processing. Defaults \
+            an error occurs during their processing. Defaults \
             to ``True``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
@@ -553,9 +553,9 @@ class AzureStorageQueue(_Queue):
 
         :note: This method does not go on to explicitly \
             remove messages from the queue. However, any \
-            message returned by this method will have its \
+            messages returned by this method will have their \
             "receive count" increased, which in turn might \
-            result in said message being removed from the \
+            result in said messages being removed from the \
             queue in case the queue's maximum receive count \
             threshold is exceeded.
         '''
@@ -582,19 +582,19 @@ class AzureStorageQueue(_Queue):
         :param int | None num_messages: The number of messages to \
             iterate through. If set to ``None``, then the queue \
             is constantly querried for new messages until there \
-            are none. Defaults to ``None``.
+            are none left. Defaults to ``None``.
         :param int batch_size: The maximum number of messages \
             a single batch may contain. Deafults to ``10``.
         :param bool post_delivery_delete: Indicates whether a \
             batch of messages is to be removed from the queue \
             before or after its delivery. If set to ``False``, \
-            then it is guaranteed that any delivered messages \
+            then it is guaranteed that any delivered messages will \
             have already been removed from the queue, thus reducing \
             the likelihood of fetching the same message twice. If set \
             to ``True``, then any delivered messages are only deleted \
             just before the delivery of the next batch of messages, \
             thus preventing from any messages being lost in case \
-            something goes wrong during their processing. Defaults \
+            an error occurs during their processing. Defaults \
             to ``True``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.

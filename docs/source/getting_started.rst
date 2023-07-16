@@ -4,9 +4,10 @@
 What is Fluke?
 *******************
 
-Fluke is a Python package that is primarily to be used as a data transfer tool.
-By utilizing Fluke, moving your data between two remote locations can be
-done in just a matter of seconds from the comfort of your own machine!
+Fluke is a Python package that is primarily to be used as a higher-level API
+to cloud services that relate to data storage and transfer. Fluke hides always
+much of the complexity of said services, aiding you in achieving your task fast
+and hassle-free!
 
 *******************
 Installation
@@ -19,28 +20,24 @@ Note that *fluke* requires Python >= 3.9.
 
     pip install fluke-api
 
+
 *******************
 Usage example
 *******************
 
+In this example, we will be using Fluke in order to:
 
-In this example, we are going to transfer an entire directory residing
-within a remote machine to the cloud, more specifically, to an Amazon S3 bucket.
+1. Fetch messages from an Amazon SQS queue. Each of these messages contains the path of a newly uploaded file to an Amazon bucket.
+2. Use these messages in order to access said files within the bucket.
+3. Transfer these files to a remote server.
 
-First things first, we need to be able to authenticate with both the remote
-machine and AWS. In order to achieve this, we will be importing from
+First things first, we need to be able to authenticate with both AWS
+and the remote server. In order to achieve this, we will be importing from
 `fluke.auth <documentation/auth.html>`_:
 
 .. code-block:: python
 
-  from fluke.auth import RemoteAuth, AWSAuth
-
-  # This object will be used to authenticate
-  # with the remote machine.
-  rmt_auth = RemoteAuth.from_password(
-      hostname="host",
-      username="user",
-      password="password")
+  from fluke.auth import AWSAuth, RemoteAuth
 
   # This object will be used to authenticate
   # with AWS.
@@ -48,19 +45,31 @@ machine and AWS. In order to achieve this, we will be importing from
       aws_access_key_id="aws_access_key",
       aws_secret_access_key="aws_secret_key")
 
+  # This object will be used to authenticate
+  # with the remote server.
+  rmt_auth = RemoteAuth.from_password(
+      hostname="host",
+      username="user",
+      password="password")
 
-Next, we just need to import from `fluke.storage <documentation/storage.html>`_
-so that we gain access to any necessary resources and perform the data transfer:
+
+Next, we just need to import from `fluke.queues <documentation/queues.html>`_
+and `fluke.storage <documentation/storage.html>`_ so that we gain access to any
+necessary resources in order to perform the data transfer:
 
 .. code-block:: python
 
-  from fluke.storage import RemoteDir, AWSS3Dir
+  from fluke.queues import AWSQueue
+  from fluke.storage import AWSS3Dir, RemoteDir
 
   with (
-      RemoteDir(auth=rmt_auth, path='/home/user/dir') as rmt_dir,
-      AWSS3Dir(auth=aws_auth, bucket="bucket", path='dir', create_if_missing=True) as aws_dir
+      AWSQueue(auth=aws_auth, queue='queue') as queue,
+      AWSS3Dir(auth=aws_auth, bucket='bucket') as bucket,
+      RemoteDir(auth=rmt_auth, path='/home/user/dir', create_if_missing=True) as rmt_dir
   ):
-      rmt_dir.transfer_to(dst=aws_dir, recursively=True)
+      for batch in queue.pull():
+        for msg in batch:
+            bucket.get_file(path=msg).transfer_to(dst=rmt_dir)
 
 And that's basically it!
 
