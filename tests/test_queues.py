@@ -83,7 +83,7 @@ class MockQueueClient():
         def by_page(self) -> Iterator[MockQueueMessage]:
             k = 0
             for i in range(0, self.__max_messages, self.__messages_per_page):
-                # This means that messages are being pulled, therefore deleted.
+                # This means that messages are being polled, therefore deleted.
                 if len(self.__messages[i*self.__messages_per_page:(i+1)*self.__messages_per_page]) == 0:
                     k += self.__messages_per_page
                 idx = i-k
@@ -180,7 +180,10 @@ class TestAWSSQSQueue(unittest.TestCase):
     
     def get_num_messages(self) -> int:
         self.QUEUE.load()
-        return int(self.QUEUE.attributes['ApproximateNumberOfMessages'])
+        return (
+            int(self.QUEUE.attributes['ApproximateNumberOfMessages']) +
+            int(self.QUEUE.attributes['ApproximateNumberOfMessagesNotVisible'])
+        )
 
     def fetch_messages(self) -> list[str]:
         messages = []
@@ -257,38 +260,58 @@ class TestAWSSQSQueue(unittest.TestCase):
             self.assertTrue(set(queue.peek()).issubset(messages))
         self.purge()
 
-    def test_pull(self):
+    def test_poll(self):
         messages = set(str(i) for i in range(5))
         self.send_messages(messages)
         with self.build_queue() as queue:
-            fetched = set(msg for batch in queue.pull() for msg in batch)
+            fetched = set(msg for batch in queue.poll() for msg in batch)
             self.assertSetEqual(fetched, messages)
             self.assertEqual(self.get_num_messages(), 0)
         self.purge()
 
-    def test_pull_on_num_messages(self):
+    def test_poll_on_num_messages(self):
         messages = set(str(i) for i in range(5))
         num_messages = 3
         self.send_messages(messages)
         with self.build_queue() as queue:
-            fetched = set(msg for batch in queue.pull(num_messages=num_messages) for msg in batch)
+            fetched = set(msg for batch in queue.poll(num_messages=num_messages) for msg in batch)
             self.assertTrue(fetched.issubset(messages))
             self.assertEqual(self.get_num_messages(), len(messages) - num_messages)
         self.purge()
 
-    def test_pull_on_batch_size(self):
+    def test_poll_on_batch_size(self):
         messages = set(str(i) for i in range(29))
         batch_size = 10
         batch_sizes = [10, 10, 9]
         self.send_messages(messages)
         counter = 0
         with self.build_queue() as queue:
-            for batch in queue.pull(batch_size=batch_size):
+            for batch in queue.poll(batch_size=batch_size):
                 self.assertEqual(len(batch), batch_sizes[counter])
                 counter += 1
         self.purge()
 
-    def test_pull_on_clear(self):
+    def test_poll_on_pre_delivery_delete_set_to_False(self):
+        num_messages = 5
+        messages = set(str(i) for i in range(num_messages))
+        self.send_messages(messages)
+        with self.build_queue() as queue:
+            for _ in queue.poll(pre_delivery_delete=False):
+                # Assert that messages have not been deleted yet.
+                self.assertEqual(self.get_num_messages(), num_messages)
+        self.purge()
+
+    def test_poll_on_pre_delivery_delete_set_to_True(self):
+        num_messages = 5
+        messages = set(str(i) for i in range(num_messages))
+        self.send_messages(messages)
+        with self.build_queue() as queue:
+            for _ in queue.poll(pre_delivery_delete=True):
+                # Assert that messages have already been deleted.
+                self.assertEqual(self.get_num_messages(), 0)
+        self.purge()
+
+    def test_clear(self):
         self.send_messages(set(str(i) for i in range(50)))
         with self.build_queue() as queue:
             queue.clear()
@@ -379,38 +402,58 @@ class TestAzureStorageQueue(unittest.TestCase):
             self.assertTrue(set(queue.peek()).issubset(messages))
         self.purge()
 
-    def test_pull(self):
+    def test_poll(self):
         messages = set(str(i) for i in range(5))
         self.send_messages(messages)
         with self.build_queue() as queue:
-            fetched = set(msg for batch in queue.pull() for msg in batch)
+            fetched = set(msg for batch in queue.poll() for msg in batch)
             self.assertSetEqual(fetched, messages)
             self.assertEqual(queue.count(), 0)
         self.purge()
 
-    def test_pull_on_num_messages(self):
+    def test_poll_on_num_messages(self):
         messages = set(str(i) for i in range(5))
         num_messages = 3
         self.send_messages(messages)
         with self.build_queue() as queue:
-            fetched = set(msg for batch in queue.pull(num_messages=num_messages) for msg in batch)
+            fetched = set(msg for batch in queue.poll(num_messages=num_messages) for msg in batch)
             self.assertTrue(fetched.issubset(messages))
             self.assertEqual(queue.count(), len(messages) - num_messages)
         self.purge()
 
-    def test_pull_on_batch_size(self):
+    def test_poll_on_batch_size(self):
         messages = set(str(i) for i in range(29))
         batch_size = 10
         batch_sizes = [10, 10, 9]
         self.send_messages(messages)
         counter = 0
         with self.build_queue() as queue:
-            for batch in queue.pull(batch_size=batch_size):
+            for batch in queue.poll(batch_size=batch_size):
                 self.assertEqual(len(batch), batch_sizes[counter])
                 counter += 1
         self.purge()
 
-    def test_pull_on_clear(self):
+    def test_poll_on_pre_delivery_delete_set_to_False(self):
+        num_messages = 5
+        messages = set(str(i) for i in range(num_messages))
+        self.send_messages(messages)
+        with self.build_queue() as queue:
+            for _ in queue.poll(pre_delivery_delete=False):
+                # Assert that messages have not been deleted yet.
+                self.assertEqual(queue.count(), num_messages)
+        self.purge()
+
+    def test_poll_on_pre_delivery_delete_set_to_True(self):
+        num_messages = 5
+        messages = set(str(i) for i in range(num_messages))
+        self.send_messages(messages)
+        with self.build_queue() as queue:
+            for _ in queue.poll(pre_delivery_delete=True):
+                # Assert that messages have already been deleted.
+                self.assertEqual(queue.count(), 0)
+        self.purge()
+
+    def test_clear(self):
         self.send_messages(set(str(i) for i in range(50)))
         with self.build_queue() as queue:
             queue.clear()

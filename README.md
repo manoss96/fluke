@@ -21,7 +21,7 @@ Fluke achieves this by:
 
 * Greatly reducing the intricacies of interacting with message queues
   by thinking of them as mere data structures that support three elementary
-  operations, that is, push/peek/pull.
+  operations, that is, push/peek/poll.
 
 
 <!-- Installation -->
@@ -77,7 +77,7 @@ with (
     AWSS3Dir(auth=aws_auth, bucket='bucket') as bucket,
     RemoteDir(auth=rmt_auth, path='/home/user/dir', create_if_missing=True) as rmt_dir
 ):
-    for batch in queue.pull():
+    for batch in queue.poll():
         for msg in batch:
             file = bucket.get_file(path=msg)
             file.load_metadata()

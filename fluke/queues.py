@@ -146,16 +146,18 @@ class _Queue(_ABC):
 
 
     @_absmethod
-    def pull(
+    def poll(
         self,
         num_messages: _Optional[int] = None,
         batch_size: int = 10,
-        post_delivery_delete: bool = True,
+        polling_frequency: _Optional[int] = None,
+        pre_delivery_delete: bool = False,
         suppress_output: bool = False
     ) -> _Iterator[list[str]]:
         '''
         Iterates through the messages available in the queue \
-        in distinct batches, deleting them in the process.
+        in distinct batches, deleting them in the process of \
+        doing so.
 
         :param int | None num_messages: The number of messages to \
             iterate through. If set to ``None``, then the queue \
@@ -163,17 +165,22 @@ class _Queue(_ABC):
             are none left. Defaults to ``None``.
         :param int batch_size: The maximum number of messages \
             a single batch may contain. Deafults to ``10``.
-        :param bool post_delivery_delete: Indicates whether a \
+        :param int | None polling_frequency: If set to an integer \
+            value, then the queue will be being polled indefinitely
+            at regular time intervals equal to said value in seconds. \
+            If set to ``None``, then the queue is only polled once. \
+            Defaults to ``None``.
+        :param bool pre_delivery_delete: Indicates whether a \
             batch of messages is to be removed from the queue \
-            before or after its delivery. If set to ``False``, \
-            then it is guaranteed that any delivered messages  will \
+            before or after its delivery. If set to ``True``, \
+            then it is guaranteed that any delivered messages will \
             have already been removed from the queue, thus reducing \
             the likelihood of fetching the same message twice. If set \
-            to ``True``, then any delivered messages are only deleted \
+            to ``False``, then any delivered messages are only deleted \
             just before the delivery of the next batch of messages, \
             thus preventing from any messages being lost in case \
             an error occurs during their processing. Defaults \
-            to ``True``.
+            to ``False``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
         '''
@@ -322,16 +329,18 @@ class AWSSQSQueue(_Queue):
         ]
 
     
-    def pull(
+    def poll(
         self,
         num_messages: _Optional[int] = None,
         batch_size: int = 10,
-        post_delivery_delete: bool = True,
+        polling_frequency: _Optional[int] = None,
+        pre_delivery_delete: bool = False,
         suppress_output: bool = False
     ) -> _Iterator[list[str]]:
         '''
         Iterates through the messages available in the queue \
-        in distinct batches, deleting them in the process.
+        in distinct batches, deleting them in the process of \
+        doing so.
 
         :param int | None num_messages: The number of messages to \
             iterate through. If set to ``None``, then the queue \
@@ -339,17 +348,22 @@ class AWSSQSQueue(_Queue):
             are none left. Defaults to ``None``.
         :param int batch_size: The maximum number of messages \
             a single batch may contain. Deafults to ``10``.
-        :param bool post_delivery_delete: Indicates whether a \
+        :param int | None polling_frequency: If set to an integer \
+            value, then the queue will be being polled indefinitely
+            at regular time intervals equal to said value in seconds. \
+            If set to ``None``, then the queue is only polled once. \
+            Defaults to ``None``.
+        :param bool pre_delivery_delete: Indicates whether a \
             batch of messages is to be removed from the queue \
-            before or after its delivery. If set to ``False``, \
+            before or after its delivery. If set to ``True``, \
             then it is guaranteed that any delivered messages will \
             have already been removed from the queue, thus reducing \
             the likelihood of fetching the same message twice. If set \
-            to ``True``, then any delivered messages are only deleted \
+            to ``False``, then any delivered messages are only deleted \
             just before the delivery of the next batch of messages, \
             thus preventing from any messages being lost in case \
             an error occurs during their processing. Defaults \
-            to ``True``.
+            to ``False``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
         '''
@@ -390,16 +404,7 @@ class AWSSQSQueue(_Queue):
                     entries.append({'Id': str(i+j), 'ReceiptHandle': msg.receipt_handle})
                     messages.append(msg.body)
 
-            if post_delivery_delete:
-                # First deliver messages.
-                yield messages
-                num_messages_fetched += len(messages)
-                # Then attempt to remove them from queue.
-                resp = self.__queue.delete_messages(Entries=entries)
-                if not suppress_output and 'Failed' in resp:
-                    for msg in map(lambda d: d['Message'], resp['Failed']):
-                        print(f'Failed to delete message "{msg}".')
-            else:
+            if pre_delivery_delete:
                 # First remove messages from queue.
                 resp = self.__queue.delete_messages(Entries=entries)
                 if not suppress_output and 'Failed' in resp:
@@ -412,6 +417,15 @@ class AWSSQSQueue(_Queue):
                 # Only deliver successfully deleted messages.
                 yield deleted_messages
                 num_messages_fetched += len(deleted_messages)
+            else:
+                # First deliver messages.
+                yield messages
+                num_messages_fetched += len(messages)
+                # Then attempt to remove them from queue.
+                resp = self.__queue.delete_messages(Entries=entries)
+                if not suppress_output and 'Failed' in resp:
+                    for msg in map(lambda d: d['Message'], resp['Failed']):
+                        print(f'Failed to delete message "{msg}".')
 
 
     def clear(self, suppress_output: bool = False) -> None:
@@ -568,16 +582,18 @@ class AzureStorageQueue(_Queue):
         ]
 
     
-    def pull(
+    def poll(
         self,
         num_messages: _Optional[int] = None,
         batch_size: int = 10,
-        post_delivery_delete: bool = True,
+        polling_frequency: _Optional[int] = None,
+        pre_delivery_delete: bool = False,
         suppress_output: bool = False
     ) -> _Iterator[list[str]]:
         '''
         Iterates through the messages available in the queue \
-        in distinct batches, deleting them in the process.
+        in distinct batches, deleting them in the process of \
+        doing so.
 
         :param int | None num_messages: The number of messages to \
             iterate through. If set to ``None``, then the queue \
@@ -585,17 +601,22 @@ class AzureStorageQueue(_Queue):
             are none left. Defaults to ``None``.
         :param int batch_size: The maximum number of messages \
             a single batch may contain. Deafults to ``10``.
-        :param bool post_delivery_delete: Indicates whether a \
+        :param int | None polling_frequency: If set to an integer \
+            value, then the queue will be being polled indefinitely
+            at regular time intervals equal to said value in seconds. \
+            If set to ``None``, then the queue is only polled once. \
+            Defaults to ``None``.
+        :param bool pre_delivery_delete: Indicates whether a \
             batch of messages is to be removed from the queue \
-            before or after its delivery. If set to ``False``, \
+            before or after its delivery. If set to ``True``, \
             then it is guaranteed that any delivered messages will \
             have already been removed from the queue, thus reducing \
             the likelihood of fetching the same message twice. If set \
-            to ``True``, then any delivered messages are only deleted \
+            to ``False``, then any delivered messages are only deleted \
             just before the delivery of the next batch of messages, \
             thus preventing from any messages being lost in case \
             an error occurs during their processing. Defaults \
-            to ``True``.
+            to ``False``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
         '''
@@ -619,19 +640,7 @@ class AzureStorageQueue(_Queue):
                         else num_messages - num_messages_fetched,
                     visibility_timeout=30
             ).by_page():
-                if post_delivery_delete:
-                    # First deliver messages.
-                    messages = list(batch)
-                    yield [msg.content for msg in messages]
-                    num_messages_fetched += len(messages)
-                    # Then attempt to remove messages from queue.
-                    for msg in messages:
-                        try:
-                            self.__queue.delete_message(msg.id, msg.pop_receipt)
-                        except:
-                            if not suppress_output:
-                                print(f'Failed to delete message "{msg}".')
-                else:
+                if pre_delivery_delete:
                     # First attempt to remove messages from queue.
                     messages = []
                     for msg in batch:
@@ -644,6 +653,18 @@ class AzureStorageQueue(_Queue):
                     # Then deliver messages.
                     yield messages
                     num_messages_fetched += len(messages)
+                else:
+                    # First deliver messages.
+                    messages = list(batch)
+                    yield [msg.content for msg in messages]
+                    num_messages_fetched += len(messages)
+                    # Then attempt to remove messages from queue.
+                    for msg in messages:
+                        try:
+                            self.__queue.delete_message(msg.id, msg.pop_receipt)
+                        except:
+                            if not suppress_output:
+                                print(f'Failed to delete message "{msg}".')
                 # Indicate there are still messages left.
                 no_messages_left = False
 
