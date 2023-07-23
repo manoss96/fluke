@@ -8,10 +8,20 @@
 <!-- What is Fluke? -->
 ## What is Fluke?
 
-Fluke is a Python package that is primarily to be used as a higher-level API
-to cloud services that relate to data storage and transfer. Fluke hides always
-much of the complexity of said services, aiding you in achieving your task fast
-and hassle-free!
+Fluke is a Python package that is to be used as a higher-level API to
+cloud services that primarily relate to object storage and message queues.
+Fluke manages to hide away much of the complexity that derives from working
+with said services, aiding you in completing your tasks fast and hassle-free!
+Fluke achieves this by:
+
+* Treating object storage services as traditional file systems,
+  unifying the two under a single *File/Dir* API, through which
+  you are able to manage your data no matter where they reside,
+  be it a local/remote file system or a bucket in the cloud.
+
+* Greatly reducing the intricacies of interacting with message queues
+  by thinking of them as mere data structures that support three elementary
+  operations, that is, push/peek/pull.
 
 
 <!-- Installation -->
@@ -31,8 +41,8 @@ pip install fluke-api
 In this example, we will be using Fluke in order to:
 
 1. Fetch messages from an Amazon SQS queue. Each of these messages contains the path of a newly uploaded file to an Amazon bucket.
-2. Use these messages in order to access said files within the bucket.
-3. Transfer these files to a remote server.
+2. Use the content of these messages in order to locate and access said files within the bucket.
+3. If a file's metadata field ``transfer`` has been set to ``True``, then transfer it to a remote server.
 
 First things first, we need to be able to authenticate with both AWS
 and the remote server. In order to achieve this, we will be importing from ``fluke.auth``:
@@ -59,17 +69,21 @@ so that we gain access to any necessary resources in order to perform
 the data transfer:
 
 ```python
-from fluke.queues import AWSQueue
+from fluke.queues import AWSSQSQueue
 from fluke.storage import AWSS3Dir, RemoteDir
 
 with (
-    AWSQueue(auth=aws_auth, queue='queue') as queue,
+    AWSSQSQueue(auth=aws_auth, queue='queue') as queue,
     AWSS3Dir(auth=aws_auth, bucket='bucket') as bucket,
     RemoteDir(auth=rmt_auth, path='/home/user/dir', create_if_missing=True) as rmt_dir
 ):
     for batch in queue.pull():
         for msg in batch:
-            bucket.get_file(path=msg).transfer_to(dst=rmt_dir)
+            file = bucket.get_file(path=msg)
+            file.load_metadata()
+            metadata = file.get_metadata()
+            if bool(metadata['transfer']):
+                file.transfer_to(dst=rmt_dir)
 ```
 
 And that's basically it!

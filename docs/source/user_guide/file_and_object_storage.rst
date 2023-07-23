@@ -9,7 +9,7 @@ where they reside! In this section, we will look at all
 aspects of working with data through Fluke.
 
 ========================================
-Acquiring access to data
+Accessing data
 ========================================
 
 Fluke treats object storage in the cloud as if it were an
@@ -199,7 +199,7 @@ multiple connections:
 
 
 ========================================
-Exploring data
+Interacting with data
 ========================================
 
 After having gained access to an entity, you are then
@@ -556,7 +556,7 @@ has not been invoked:
 ..  _speeding-things-up-with-caching:
 
 ========================================
-Speeding things up with caching
+Catching data
 ========================================
 
 Whenever you request some piece of information about a remote entity,
