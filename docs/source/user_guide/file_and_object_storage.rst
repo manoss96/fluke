@@ -1,19 +1,22 @@
 .. _ug_storage:
 
 ***********************
-Interacting with data
+File & Object Storage
 ***********************
 
 Fluke makes it easy to interact with your data no matter
-where they currently reside or where they are going! In
-this section, we will look at all aspects of working with
-data through Fluke.
+where they reside! In this section, we will look at all
+aspects of working with data through Fluke.
 
 ========================================
-Acquiring access to data
+Accessing data
 ========================================
 
-Fluke offers two distinct APIs in order to interact with data:
+Fluke treats object storage in the cloud as if it were an
+ordinary file system where files are organized in directories,
+which is the type of storage most people are familiar with.
+Therefore, Fluke offers two distinct, yet interconnected, APIs
+in order to interact with data:
 
 #. **File API**: Used for handling either individual files in a file system,
    be it local or remote, or objects in the cloud. This API includes:
@@ -196,7 +199,7 @@ multiple connections:
 
 
 ========================================
-Exploring data
+Interacting with data
 ========================================
 
 After having gained access to an entity, you are then
@@ -336,7 +339,7 @@ all in just a few lines of code:
   aws_auth = AWSAuth(**aws_credentials)
 
   # This object will be used to authenticate with Azure.
-  azr_auth = AzureAuth(**azr_credentials)
+  azr_auth = AzureAuth.from_service_principal(**azr_credentials)
 
   with (
       AWSS3Dir(auth=aws_auth, bucket='bucket', path='dir') as aws_dir,
@@ -546,14 +549,14 @@ has not been invoked:
 
   with (
       AWSS3File(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir/file.txt') as aws_obj,
-      AzureBlobDir(auth=AzureAuth(**azr_credentials), container='container', path='file.txt') as azr_dir
+      AzureBlobDir(auth=AzureAuth.from_service_principal(**azr_credentials), container='container', path='file.txt') as azr_dir
   ):
       aws_obj.transfer_to(dst=azr_dir, include_metadata=True)
 
 ..  _speeding-things-up-with-caching:
 
 ========================================
-Speeding things up with caching
+Catching data
 ========================================
 
 Whenever you request some piece of information about a remote entity,
