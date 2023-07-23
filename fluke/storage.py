@@ -1239,6 +1239,7 @@ class _Directory(_ABC):
         overwrite: bool = False,
         include_metadata: bool = False,
         chunk_size: _typ.Optional[int] = None,
+        filter: _typ.Optional[_typ.Callable[[str], bool]] = None,
         suppress_output: bool = False,
     ) -> bool:
         '''
@@ -1264,15 +1265,31 @@ class _Directory(_ABC):
         :param int | None chunk_size: If not ``None``, then files are \
             transferred in chunks, whose size are equal to this parameter \
             value. Defaults to ``None``.
+        :param Callable[[str], bool] | None filter: A filter function \
+            to be used in order to exclude certain files from being \
+            transferred. This function is considered to receive a single \
+            parameter, namely the file's absolute path within the source \
+            directory, and to return a boolean value, based on which it is \
+            determined whether the file is to be filtered out during the \
+            transfer (``True``) or not (``False``). Defaults to ``None``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
         '''
+        if filter is None:
+            filter = lambda _: True
+
         # Store the directory's files in a list.
-        file_paths = [fp for fp in self.__handler.traverse_dir(
-            dir_path = self.get_path(),
-            recursively=recursively,
-            include_dirs=False,
-            show_abs_path=True)]
+        if not suppress_output:
+            print("\nListing files to be transferred...")
+        file_paths = [
+            fp for fp in self.__handler.traverse_dir(
+                dir_path = self.get_path(),
+                recursively=recursively,
+                include_dirs=False,
+                show_abs_path=True)
+            if filter(fp)]
+        if not suppress_output:
+            print("Listing operation completed.")
 
         total_num_files = len(file_paths)
         failures = 0
@@ -1291,6 +1308,7 @@ class _Directory(_ABC):
             
             # Fetch src file and dst directory.
             src_file = self.get_file(path=fp)
+
             if dst_fp in dst_dirs:
                 dst_dir = dst_dirs[dst_fp]
             else:

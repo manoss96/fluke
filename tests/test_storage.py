@@ -1847,6 +1847,31 @@ class TestLocalDir(unittest.TestCase):
         # Remove temporary directory.
         shutil.rmtree(tmp_dir_path)
 
+    def test_transfer_to_on_filter(self):
+        # Create a temporary dictionary.
+        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
+        os.mkdir(tmp_dir_path)
+        # Copy the directory's contents into this tmp directory.
+        self.build_dir(path=ABS_DIR_PATH).transfer_to(
+            dst=self.build_dir(path=tmp_dir_path),
+            filter=lambda x: not x.endswith('.txt'))
+        # Assert that the two directories contain the same files.
+        original = [s for s in sorted(os.listdir(ABS_DIR_PATH))
+                    if os.path.isfile(s) and not s.endswith('.txt')]
+        copies = [s for s in sorted(os.listdir(tmp_dir_path))]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                open(file=join_paths(ABS_DIR_PATH, ofp), mode='rb') as of,
+                open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
+            ):
+                self.assertEqual(of.read(), cp.read())
+        # Remove temporary directory.
+        shutil.rmtree(tmp_dir_path)
+
     def test_transfer_to_on_overwrite_set_to_false(self):
         # Create a copy of the directory.
         tmp_dir_name = TMP_DIR_NAME
@@ -2283,6 +2308,32 @@ class TestRemoteDir(unittest.TestCase):
                 chunk_size=1)
         # Assert that the two directories contains the same contents.
         original = [s for s in sorted(os.listdir(ABS_DIR_PATH)) if s.endswith('.txt')]
+        copies = [s for s in sorted(os.listdir(tmp_dir_path))]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                open(file=join_paths(ABS_DIR_PATH, ofp), mode='rb') as of,
+                open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
+            ):
+                self.assertEqual(of.read(), cp.read())
+        # Remove temporary directory.
+        shutil.rmtree(tmp_dir_path)
+
+    def test_transfer_to_on_filter(self):
+        # Create a temporary dictionary.
+        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
+        os.mkdir(tmp_dir_path)
+        # Copy the directory's contents into this tmp directory.
+        with self.build_dir() as dir:
+            dir.transfer_to(
+                dst=LocalDir(path=tmp_dir_path),
+                filter=lambda x: not x.endswith('.txt'))
+        # Assert that the two directories contain the same files.
+        original = [s for s in sorted(os.listdir(ABS_DIR_PATH))
+                    if os.path.isfile(s) and not s.endswith('.txt')]
         copies = [s for s in sorted(os.listdir(tmp_dir_path))]
         # 1. Assert number of copied files are the same.
         self.assertEqual(len(original), len(copies))
@@ -3060,6 +3111,33 @@ class TestAWSS3Dir(unittest.TestCase):
                 chunk_size=1)
         # Assert that the two directories contains the same contents.
         original = [s for s in sorted(self.iterate_aws_s3_dir_objects(show_abs_path=True))]
+        copies = [s for s in sorted(os.listdir(tmp_dir_path))]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                io.BytesIO() as buffer,
+                open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
+            ):
+                get_aws_s3_object(BUCKET, ofp).download_fileobj(buffer)
+                self.assertEqual(buffer.getvalue(), cp.read())
+        # Remove temporary directory.
+        shutil.rmtree(tmp_dir_path)
+
+    def test_transfer_to_on_filter(self):
+        # Create a temporary dictionary.
+        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
+        os.mkdir(tmp_dir_path)
+        # Copy the directory's contents into this tmp directory.
+        with self.build_dir() as dir:
+            dir.transfer_to(
+                dst=LocalDir(path=tmp_dir_path),
+                filter=lambda x: not x.endswith('.txt'))
+        # Assert that the two directories contain the same files.
+        original = [s for s in sorted(os.listdir(ABS_DIR_PATH))
+                    if os.path.isfile(s) and not s.endswith('.txt')]
         copies = [s for s in sorted(os.listdir(tmp_dir_path))]
         # 1. Assert number of copied files are the same.
         self.assertEqual(len(original), len(copies))
@@ -3889,6 +3967,33 @@ class TestAzureBlobDir(unittest.TestCase):
                 chunk_size=1)
         # Assert that the two directories contains the same contents.
         original = [s for s in sorted(os.listdir(ABS_DIR_PATH)) if s.endswith('.txt')]
+        copies = [s for s in sorted(os.listdir(tmp_dir_path))]
+        # 1. Assert number of copied files are the same.
+        self.assertEqual(len(original), len(copies))
+        # 2. Iterate over all files.
+        for ofp, cfp in zip(original, copies):
+            # Assert their contents are the same.
+            with (
+                open(file=join_paths(ABS_DIR_PATH, ofp), mode='rb') as of,
+                open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
+            ):
+                self.assertEqual(of.read(), cp.read())
+        # Remove temporary directory.
+        shutil.rmtree(tmp_dir_path)
+
+
+    def test_transfer_to_on_filter(self):
+        # Create a temporary dictionary.
+        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
+        os.mkdir(tmp_dir_path)
+        # Copy the directory's contents into this tmp directory.
+        with self.build_dir() as dir:
+            dir.transfer_to(
+                dst=LocalDir(path=tmp_dir_path),
+                filter=lambda x: not x.endswith('.txt'))
+        # Assert that the two directories contain the same files.
+        original = [s for s in sorted(os.listdir(ABS_DIR_PATH))
+                    if os.path.isfile(s) and not s.endswith('.txt')]
         copies = [s for s in sorted(os.listdir(tmp_dir_path))]
         # 1. Assert number of copied files are the same.
         self.assertEqual(len(original), len(copies))
