@@ -1,3 +1,4 @@
+import time as _time
 import random as _rand
 import warnings as _warn
 from abc import ABC as _ABC
@@ -287,7 +288,7 @@ class AWSSQSQueue(_Queue):
             suppresses all output. Defaults to ``False``.
         '''
         if not suppress_output:
-            print(f'\nPushing message "{message}" to queue "{self.get_name()}".')
+            print(f'\nPushing message "{message}" into queue "{self.get_name()}".')
         
         try:
             self.__queue.send_message(
@@ -367,65 +368,72 @@ class AWSSQSQueue(_Queue):
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
         '''
-        if not suppress_output:
-            print(f'\nPulling messages from queue "{self.get_name()}".')
+        while True:
 
-        num_messages_fetched = 0
+            if not suppress_output:
+                print(f'\nPolling messages from queue "{self.get_name()}".')
 
-        while num_messages is None or num_messages_fetched < num_messages:
+            num_messages_fetched = 0
 
-            batch = []
-            while len(batch) < batch_size:
-                microbatch = self.__queue.receive_messages(
-                    AttributeNames=['QueueUrl'],
-                    VisibilityTimeout=30,
-                    MaxNumberOfMessages=min(
-                        batch_size - len(batch),
-                        10 if num_messages is None
-                        else num_messages-num_messages_fetched,
-                        10))
-                
-                if len(microbatch) == 0:
+            while num_messages is None or num_messages_fetched < num_messages:
+
+                batch = []
+                while len(batch) < batch_size:
+                    microbatch = self.__queue.receive_messages(
+                        AttributeNames=['QueueUrl'],
+                        VisibilityTimeout=30,
+                        MaxNumberOfMessages=min(
+                            batch_size - len(batch),
+                            10 if num_messages is None
+                            else num_messages-num_messages_fetched,
+                            10))
+                    
+                    if len(microbatch) == 0:
+                        break
+                    
+                    batch += microbatch
+                    num_messages_fetched += len(microbatch)
+
+                    if num_messages_fetched == num_messages:
+                        break
+
+                if len(batch) == 0:
                     break
                 
-                batch += microbatch
-                num_messages_fetched += len(microbatch)
+                entries, messages = [], []
 
-                if num_messages_fetched == num_messages:
-                    break
+                for i in range(0, len(batch), 10):
+                    for j, msg in enumerate(batch[i:i+10]):
+                        entries.append({'Id': str(i+j), 'ReceiptHandle': msg.receipt_handle})
+                        messages.append(msg.body)
 
-            if len(batch) == 0:
-                return
-            
-            entries, messages = [], []
+                if pre_delivery_delete:
+                    # First remove messages from queue.
+                    resp = self.__queue.delete_messages(Entries=entries)
+                    if not suppress_output and 'Failed' in resp:
+                        for msg in map(lambda d: d['Message'], resp['Failed']):
+                            print(f'Failed to delete message "{msg}".')
+                    # Filter out any messages that failed to be removed.
+                    deleted_messages = []
+                    for j in map(lambda d: int(d['Id']), resp['Successful']):
+                        deleted_messages.append(messages[j])
+                    # Only deliver successfully deleted messages.
+                    yield deleted_messages
+                    num_messages_fetched += len(deleted_messages)
+                else:
+                    # First deliver messages.
+                    yield messages
+                    num_messages_fetched += len(messages)
+                    # Then attempt to remove them from queue.
+                    resp = self.__queue.delete_messages(Entries=entries)
+                    if not suppress_output and 'Failed' in resp:
+                        for msg in map(lambda d: d['Message'], resp['Failed']):
+                            print(f'Failed to delete message "{msg}".')
 
-            for i in range(0, len(batch), 10):
-                for j, msg in enumerate(batch[i:i+10]):
-                    entries.append({'Id': str(i+j), 'ReceiptHandle': msg.receipt_handle})
-                    messages.append(msg.body)
-
-            if pre_delivery_delete:
-                # First remove messages from queue.
-                resp = self.__queue.delete_messages(Entries=entries)
-                if not suppress_output and 'Failed' in resp:
-                    for msg in map(lambda d: d['Message'], resp['Failed']):
-                        print(f'Failed to delete message "{msg}".')
-                # Filter out any messages that failed to be removed.
-                deleted_messages = []
-                for j in map(lambda d: int(d['Id']), resp['Successful']):
-                    deleted_messages.append(messages[j])
-                # Only deliver successfully deleted messages.
-                yield deleted_messages
-                num_messages_fetched += len(deleted_messages)
+            if polling_frequency is None:
+                break
             else:
-                # First deliver messages.
-                yield messages
-                num_messages_fetched += len(messages)
-                # Then attempt to remove them from queue.
-                resp = self.__queue.delete_messages(Entries=entries)
-                if not suppress_output and 'Failed' in resp:
-                    for msg in map(lambda d: d['Message'], resp['Failed']):
-                        print(f'Failed to delete message "{msg}".')
+                _time.sleep(polling_frequency)
 
 
     def clear(self, suppress_output: bool = False) -> None:
@@ -544,7 +552,7 @@ class AzureStorageQueue(_Queue):
             suppresses all output. Defaults to ``False``.
         '''
         if not suppress_output:
-            print(f'\nPushing message "{message}" to queue "{self.get_name()}".')
+            print(f'\nPushing message "{message}" into queue "{self.get_name()}".')
 
         try:
             self.__queue.send_message(content=message)
@@ -620,56 +628,64 @@ class AzureStorageQueue(_Queue):
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
         '''
-        if not suppress_output:
-            print(f'\nPulling messages from queue "{self.get_name()}".')
+        while True:
 
-        num_messages_fetched = 0
+            if not suppress_output:
+                print(f'\nPolling messages from queue "{self.get_name()}".')
 
-        while num_messages is None or num_messages_fetched < num_messages:
+            num_messages_fetched = 0
 
-            no_messages_left = True
+            while num_messages is None or num_messages_fetched < num_messages:
 
-            for batch in self.__queue.receive_messages(
-                    messages_per_page=min(
-                        batch_size,
-                        10 if num_messages is None
-                        else num_messages-num_messages_fetched,
-                        10),
-                    max_messages=
-                        None if num_messages is None
-                        else num_messages - num_messages_fetched,
-                    visibility_timeout=30
-            ).by_page():
-                if pre_delivery_delete:
-                    # First attempt to remove messages from queue.
-                    messages = []
-                    for msg in batch:
-                        try:
-                            self.__queue.delete_message(msg.id, msg.pop_receipt)
-                            messages.append(msg.content)
-                        except:
-                            if not suppress_output:
-                                print(f'Failed to delete message "{msg}".')
-                    # Then deliver messages.
-                    yield messages
-                    num_messages_fetched += len(messages)
-                else:
-                    # First deliver messages.
-                    messages = list(batch)
-                    yield [msg.content for msg in messages]
-                    num_messages_fetched += len(messages)
-                    # Then attempt to remove messages from queue.
-                    for msg in messages:
-                        try:
-                            self.__queue.delete_message(msg.id, msg.pop_receipt)
-                        except:
-                            if not suppress_output:
-                                print(f'Failed to delete message "{msg}".')
-                # Indicate there are still messages left.
-                no_messages_left = False
+                no_messages_left = True
 
-            if no_messages_left:
-                return
+                for batch in self.__queue.receive_messages(
+                        messages_per_page=min(
+                            batch_size,
+                            10 if num_messages is None
+                            else num_messages-num_messages_fetched,
+                            10),
+                        max_messages=
+                            None if num_messages is None
+                            else num_messages - num_messages_fetched,
+                        visibility_timeout=30
+                ).by_page():
+                    if pre_delivery_delete:
+                        # First attempt to remove messages from queue.
+                        messages = []
+                        for msg in batch:
+                            try:
+                                self.__queue.delete_message(msg.id, msg.pop_receipt)
+                                messages.append(msg.content)
+                            except:
+                                if not suppress_output:
+                                    print(f'Failed to delete message "{msg}".')
+                        # Then deliver messages.
+                        yield messages
+                        num_messages_fetched += len(messages)
+                    else:
+                        # First deliver messages.
+                        messages = list(batch)
+                        yield [msg.content for msg in messages]
+                        num_messages_fetched += len(messages)
+                        # Then attempt to remove messages from queue.
+                        for msg in messages:
+                            try:
+                                self.__queue.delete_message(msg.id, msg.pop_receipt)
+                            except:
+                                if not suppress_output:
+                                    print(f'Failed to delete message "{msg}".')
+                    # Indicate there are still messages left.
+                    no_messages_left = False
+
+                if no_messages_left:
+                    break
+
+            if polling_frequency is None:
+                break
+            else:
+                _time.sleep(polling_frequency)
+
 
 
     def clear(self, suppress_output: bool = False) -> None:
