@@ -167,8 +167,8 @@ class _Queue(_ABC):
         :param int batch_size: The maximum number of messages \
             a single batch may contain. Deafults to ``10``.
         :param int | None polling_frequency: If set to an integer \
-            value, then the queue will be being polled indefinitely
-            at regular time intervals equal to said value in seconds. \
+            value, then the queue is going to be being polled at \
+            regular time intervals equal to said value in seconds. \
             If set to ``None``, then the queue is only polled once. \
             Defaults to ``None``.
         :param bool pre_delivery_delete: Indicates whether a \
@@ -350,8 +350,8 @@ class AWSSQSQueue(_Queue):
         :param int batch_size: The maximum number of messages \
             a single batch may contain. Deafults to ``10``.
         :param int | None polling_frequency: If set to an integer \
-            value, then the queue will be being polled indefinitely
-            at regular time intervals equal to said value in seconds. \
+            value, then the queue is going to be being polled at \
+            regular time intervals equal to said value in seconds. \
             If set to ``None``, then the queue is only polled once. \
             Defaults to ``None``.
         :param bool pre_delivery_delete: Indicates whether a \
@@ -610,8 +610,8 @@ class AzureStorageQueue(_Queue):
         :param int batch_size: The maximum number of messages \
             a single batch may contain. Deafults to ``10``.
         :param int | None polling_frequency: If set to an integer \
-            value, then the queue will be being polled indefinitely
-            at regular time intervals equal to said value in seconds. \
+            value, then the queue is going to be being polled at \
+            regular time intervals equal to said value in seconds. \
             If set to ``None``, then the queue is only polled once. \
             Defaults to ``None``.
         :param bool pre_delivery_delete: Indicates whether a \

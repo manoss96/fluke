@@ -159,3 +159,97 @@ either an unhandled exception occurs or the process is explicitly killed.
 -----------------------------
 Pre- vs post-delivery delete
 -----------------------------
+
+Whenever a batch of messages is delivered, the messages within
+the batch have not yet actually been deleted from the queue,
+and will only be deleted just before the next batch of messages arrives,
+after all messages within the current batch have already been processed.
+This is the queue's default behaviour when polling messages, as defined
+by the default value of parameter ``pre_delivery_delete``, and it guarantees
+that no batch of messages will be lost in case something goes wrong during
+their processing:
+
+.. code-block:: python
+
+  from fluke.auth import AWSAuth
+  from fluke.queues import AWSSQSQueue
+
+  aws_auth = AWSAuth(
+      aws_access_key_id="aws_access_key",
+      aws_secret_access_key="aws_secret_key")
+
+  with AWSSQSQueue(auth=aws_auth, queue='queue') as queue:
+    for batch in queue.poll():
+        # Although an exception is raised, no messages will be lost
+        # as, at this point, the messages within the batch have yet
+        # to be deleted.
+        raise Exception()
+
+Nevertheless, if something goes wrong after we have already processed
+one or more messages within the batch, then there is always the danger
+of reprocessing the exact same messages as they may be included in any
+one of the subsequent batches:
+
+.. code-block:: python
+
+  from fluke.auth import AWSAuth
+  from fluke.queues import AWSSQSQueue
+
+  aws_auth = AWSAuth(
+      aws_access_key_id="aws_access_key",
+      aws_secret_access_key="aws_secret_key")
+
+  with AWSSQSQueue(auth=aws_auth, queue='queue') as queue:
+    for batch in queue.poll(num_messages=2, batch_size=2):
+        for i, msg in enumerate(batch):
+            if i == 0:
+                # Process message...
+            else:
+                raise Exception()
+
+In the example above, the first message of the batch will be processed
+as expected. However, during the processing of the second message, an
+exception will be thrown, causing the program to exit. This means that
+despite the second message being the only one that was not processed,
+the queue still contains both messages, as the next batch of messages
+never arrived.
+
+If you want to avoid this, you can set ``pre_delivery_delete`` to ``True``.
+This results in any batch of messages being removed from the queue before
+they are actually delivered to you:
+
+.. code-block:: python
+
+  from fluke.auth import AWSAuth
+  from fluke.queues import AWSSQSQueue
+
+  aws_auth = AWSAuth(
+      aws_access_key_id="aws_access_key",
+      aws_secret_access_key="aws_secret_key")
+
+  with AWSSQSQueue(auth=aws_auth, queue='queue') as queue:
+    for batch in queue.poll(pre_delivery_delete=True):
+        # At this point, all messages within the batch
+        # have already been removed from the queue.
+
+As a general rule of thumb, set ``pre_delivery_delete`` to ``False``
+if you don't mind processing the same message twice and are more concerned
+in losing a message without processing it first, whereas set ``pre_delivery_delete``
+to ``True`` if you cannot afford to process the same message more than once.
+
+.. warning::
+
+    Pre- and post-delivery are concepts related to Fluke and do not
+    apply to the underlying message queue services. Note that you
+    should always enforce your own rules in order to check for duplicate
+    messages if this is a matter of concern to you, as such messages
+    can still arrive regardless of the value of ``pre_delivery_delete``.
+    For instance, the default *standard* queues offered by Amazon SQS
+    support *at-least-once delivery* which dictates that any messages
+    pushed to the queue will be delivered to you at least once, but there
+    is always the chance that a message be re-delivered due to the distributed
+    nature of the queues. In order to avoid any suprises, be sure to read the
+    specifications of the type of queue you are working with and take any
+    necessary precautions, no matter whether you are accessing said queue
+    through its standard API or through the API provided by Fluke.
+
