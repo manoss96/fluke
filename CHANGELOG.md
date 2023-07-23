@@ -2,6 +2,30 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2023/??/??
+
+### Added
+
+- Dir API transfer_to method now receives a filter param in
+  order to filter out files during the transfer.
+  (https://github.com/manoss96/fluke/issues/30)
+
+- There is now a *fluke.queues* which contains a number
+  of classes used in order to access message queues provided
+  by various message queue services in the cloud.
+  (https://github.com/manoss96/fluke/issues/31)
+
+### Changed
+
+- *fluke.auth.AzureAuth* no longer has a constructor
+  for creating an *AzureAuth* instance via an Azure
+  service principal. Instead, this is now achieved
+  via an *AzureAuth.from_service_principal* method.
+  (https://github.com/manoss96/fluke/issues/31)
+
+### Fixed
+
+
 ## [0.3.0] - 2023/04/16
 
 ### Added
@@ -59,12 +83,6 @@ All notable changes to this project will be documented in this file.
   empty string when no path (or a ``None`` path)
   has been provided via the class constructor.
   (https://github.com/manoss96/fluke/issues/25)
-
-- *fluke.auth.AzureAuth* no longer has a constructor
-  for creating an *AzureAuth* instance via an Azure
-  service principal. Instead, this is now achieved
-  via an *AzureAuth.from_service_principal* method.
-  (https://github.com/manoss96/fluke/issues/31)
  
 ### Fixed
 
