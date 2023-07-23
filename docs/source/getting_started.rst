@@ -37,7 +37,8 @@ Usage example
 
 In this example, we will be using Fluke in order to:
 
-1. Fetch messages from an Amazon SQS queue. Each of these messages contains the path of a newly uploaded file to an Amazon bucket.
+1. Poll an Amazon SQS queue every minute for new messages. Each of these messages contains the
+   path of a newly uploaded file to an Amazon bucket.
 2. Use the content of these messages in order to locate and access said files within the bucket.
 3. If a file's metadata field ``transfer`` has been set to ``True``, then transfer it to a remote server.
 
@@ -77,7 +78,7 @@ necessary resources in order to perform the data transfer:
       AWSS3Dir(auth=aws_auth, bucket='bucket') as bucket,
       RemoteDir(auth=rmt_auth, path='/home/user/dir', create_if_missing=True) as rmt_dir
   ):
-    for batch in queue.poll():
+    for batch in queue.poll(polling_frequency=60):
         for msg in batch:
             file = bucket.get_file(path=msg)
             file.load_metadata()
