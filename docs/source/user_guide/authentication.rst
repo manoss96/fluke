@@ -1,7 +1,7 @@
 .. _ug_authentication:
 
 ***********************
-Handling authentication
+Authentication
 ***********************
 
 Authentication is the process by which a user verifies their identity. All remote
@@ -9,20 +9,26 @@ resources require some form of authentication during which a user must identify
 themselves so that they are granted access to said resources. Fluke itself
 manages authentication through the `fluke.auth <../documentation/auth.html>`_ module.
 The general idea is that you must first initialize some *Auth* instance,
-which is then provided to the resource with which you wish to interact:
+which is then provided to the resource with which you wish to interact.
+For instance, in the code snippet below we use the
+`RemoteAuth <../documentation/auth.html#fluke.auth.RemoteAuth>`_
+class in order to access a file that resides within a remote server.
 
 .. code-block:: python
 
-  from fluke.auth import SomeAuthClass
+  from fluke.auth import RemoteAuth
+  from fluke.storage import RemoteFile
 
-  # Create an "Auth" class instance.
-  auth = SomeAuthClass(**credentials)
+  # Create a "RemoteAuth" class instance.
+  auth = RemoteAuth.from_password(
+      hostname='host',
+      username='user',
+      password='pwd')
 
   # Provide it to the resource.
-  resource = SomeResourceClass(auth=auth, **params)
-
-  # You can now interact with the resource!
-  # ...
+  with RemoteFile(auth=auth, path='/home/user/file.txt') as file:
+    # You can now interact with the resource!
+    file_bytes = file.read()
 
 Below, we are going to take a look at all different types of authentication.
 
@@ -87,17 +93,17 @@ Authenticating with Azure
 ==========================================
 
 Authentication with Azure resources can happen
-in two ways: either with an Azure service principal
-or with a connection string. Below, we'll take a
-look at both.
+in two ways: either with an Azure Active Directory
+(AD) service principal or with a connection string.
+Below, we'll take a look at both.
 
-----------------------------------------------
-Authenticating via an Azure service principal
-----------------------------------------------
+---------------------------------------
+Authenticating via a service principal
+---------------------------------------
 
-In order to authenticate via an Azure service principal,
-you may use the ordinary `AzureAuth <../documentation/auth.html#fluke.auth.AzureAuth>`_
-class constructor, providing it with the storage account's URL, as well as
+In order to authenticate via a service principal, you may use the
+`AzureAuth.from_service_principal <../documentation/auth.html#fluke.auth.AzureAuth.from_service_principal>`_
+method, providing it with the storage account's URL, as well as
 all information relevant to the service principal, that is,
 the *tenant ID*, *client ID* and finally the *client secret*:
 
@@ -105,7 +111,7 @@ the *tenant ID*, *client ID* and finally the *client secret*:
 
   from fluke.auth import AzureAuth
 
-  auth = AzureAuth(
+  auth = AzureAuth.from_service_principal(
       account_url = 'https://ACCOUNT.blob.core.windows.net'
       tenant_id = 'TENANT_ID',
       client_id = 'CLIENT_ID',
@@ -119,10 +125,10 @@ Authenticating via a connection string
 
 Alternatively, you are able to use
 `AzureAuth.from_conn_string <../documentation/auth.html#fluke.auth.AzureAuth.from_conn_string>`_
-so as to authenticate with a resource by using a connection string,
+so as to gain access to a specific set of Azure resources by using a connection string,
 which must typically include the account's name and key, as well
-as all necessary endpoints regarding the resources to which we request
-access to:
+as all necessary endpoints regarding the resources to which you
+request access to:
 
 .. code-block:: python
 

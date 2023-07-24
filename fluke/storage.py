@@ -1,8 +1,8 @@
 
 
 __all__ = [
-    'AWSS3Dir',
-    'AWSS3File',
+    'AmazonS3Dir',
+    'AmazonS3File',
     'AzureBlobDir',
     'AzureBlobFile',
     'LocalFile',
@@ -353,11 +353,7 @@ class _File(_ABC):
         return self.__handler
     
 
-    def __new__(
-        cls,
-        *args,
-        **kwargs
-    ) -> 'LocalFile':
+    def __new__(cls, *args, **kwargs):
         '''
         Creates an instance of this class.
 
@@ -679,7 +675,7 @@ class _CloudFile(_NonLocalFile, _ABC):
         self.set_metadata(metadata=metadata)
 
 
-class AWSS3File(_CloudFile):
+class AmazonS3File(_CloudFile):
     '''
     This class represents an object which resides \
     within an Amazon S3 bucket.
@@ -783,9 +779,9 @@ class AWSS3File(_CloudFile):
         path: str,
         handler: _AWSClientHandler,
         metadata: dict[str, str]
-    ) -> 'AWSS3File':
+    ) -> 'AmazonS3File':
         '''
-        Creates and returns an ``AWSS3File`` instance.
+        Creates and returns an ``AmazonS3File`` instance.
 
         :param str path: The path pointing to the file.
         :param AWSClientHandler handler: An ``AWSClientHandler`` \
@@ -803,7 +799,7 @@ class AWSS3File(_CloudFile):
         return instance
     
 
-    def __enter__(self) -> 'AWSS3File':
+    def __enter__(self) -> 'AmazonS3File':
         '''
         Enter the runtime context related to this instance.
         '''
@@ -1239,6 +1235,7 @@ class _Directory(_ABC):
         overwrite: bool = False,
         include_metadata: bool = False,
         chunk_size: _typ.Optional[int] = None,
+        filter: _typ.Optional[_typ.Callable[[str], bool]] = None,
         suppress_output: bool = False,
     ) -> bool:
         '''
@@ -1264,15 +1261,31 @@ class _Directory(_ABC):
         :param int | None chunk_size: If not ``None``, then files are \
             transferred in chunks, whose size are equal to this parameter \
             value. Defaults to ``None``.
+        :param Callable[[str], bool] | None filter: A filter function \
+            to be used in order to exclude certain files from being \
+            transferred. This function is considered to receive a single \
+            parameter, namely the file's absolute path within the source \
+            directory, and to return a boolean value, based on which it is \
+            determined whether the file is to be filtered out during the \
+            transfer (``True``) or not (``False``). Defaults to ``None``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
         '''
+        if filter is None:
+            filter = lambda _: True
+
         # Store the directory's files in a list.
-        file_paths = [fp for fp in self.__handler.traverse_dir(
-            dir_path = self.get_path(),
-            recursively=recursively,
-            include_dirs=False,
-            show_abs_path=True)]
+        if not suppress_output:
+            print("\nListing files to be transferred...")
+        file_paths = [
+            fp for fp in self.__handler.traverse_dir(
+                dir_path = self.get_path(),
+                recursively=recursively,
+                include_dirs=False,
+                show_abs_path=True)
+            if filter(fp)]
+        if not suppress_output:
+            print("Listing operation completed.")
 
         total_num_files = len(file_paths)
         failures = 0
@@ -1291,6 +1304,7 @@ class _Directory(_ABC):
             
             # Fetch src file and dst directory.
             src_file = self.get_file(path=fp)
+
             if dst_fp in dst_dirs:
                 dst_dir = dst_dirs[dst_fp]
             else:
@@ -1438,7 +1452,7 @@ class _Directory(_ABC):
             self.__metadata[abs_path].update({ key: val })
     
 
-    def __new__(cls, *args, **kwargs) -> '_Directory':
+    def __new__(cls, *args, **kwargs):
         '''
         Creates an instance of this class.
 
@@ -2002,7 +2016,7 @@ class _CloudDir(_NonLocalDir, _ABC):
             self.set_metadata(file_path, metadata)
 
 
-class AWSS3Dir(_CloudDir):
+class AmazonS3Dir(_CloudDir):
     '''
     This class represents a virtual directory which resides \
     within an Amazon S3 bucket.
@@ -2111,10 +2125,10 @@ class AWSS3Dir(_CloudDir):
         return f"s3://{self.get_bucket_name()}/{self.get_path()}"
     
 
-    def get_file(self, path: str) -> AWSS3File:
+    def get_file(self, path: str) -> AmazonS3File:
         '''
         Returns the file residing in the specified \
-        path as a ``AWSS3File`` instance.
+        path as a ``AmazonS3File`` instance.
 
         :param str path: Either the absolute path or the \
             path relative to the directory of the file in \
@@ -2139,16 +2153,16 @@ class AWSS3Dir(_CloudDir):
             raise _IPE(path=path)
         
         path = self._to_absolute(path, replace_sep=False)
-        return AWSS3File._create_file(
+        return AmazonS3File._create_file(
             path=path,
             handler=self._get_handler(),
             metadata=self._get_file_metadata_ref(path))
     
 
-    def get_subdir(self, path: str) -> 'AWSS3Dir':
+    def get_subdir(self, path: str) -> 'AmazonS3Dir':
         '''
         Returns the directory residing in the specified \
-        path as an ``AWSS3Dir`` instance.
+        path as an ``AmazonS3Dir`` instance.
 
         :param str path: Either the absolute path or the \
             path relative to the directory of the subdirectory \
@@ -2180,9 +2194,9 @@ class AWSS3Dir(_CloudDir):
         path: str,
         handler: _AWSClientHandler,
         metadata: dict[str, str]
-    ) -> 'AWSS3Dir':
+    ) -> 'AmazonS3Dir':
         '''
-        Creates and returns an ``AWSS3Dir`` instance.
+        Creates and returns an ``AmazonS3Dir`` instance.
 
         :param str path: The path pointing to the directory.
         :param AWSClientHandler handler: An ``AWSClientHandler`` \
@@ -2200,10 +2214,10 @@ class AWSS3Dir(_CloudDir):
         return instance
     
 
-    def _get_subdir_impl(self, dir_path: str) -> 'AWSS3Dir':
+    def _get_subdir_impl(self, dir_path: str) -> 'AmazonS3Dir':
         '''
         Returns the directory residing in the specified \
-        path as an ``AWSS3Dir`` instance.
+        path as an ``AmazonS3Dir`` instance.
 
         :param str dir_path: Either the absolute path \
             or the path relative to the directory of the \
@@ -2220,7 +2234,7 @@ class AWSS3Dir(_CloudDir):
             metadata=self._get_metadata_ref())
     
 
-    def __enter__(self) -> 'AWSS3Dir':
+    def __enter__(self) -> 'AmazonS3Dir':
         '''
         Enter the runtime context related to this instance.
         '''
@@ -2368,7 +2382,6 @@ class AzureBlobDir(_CloudDir):
                 * Wrong: ``/path/to/file.txt``
                 * Right: ``path/to/file.txt``
         '''
-
         if not self.path_exists(path):
             raise _IPE(path=path)
         if not self.is_file(path):
