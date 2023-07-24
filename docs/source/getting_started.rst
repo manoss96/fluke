@@ -38,7 +38,7 @@ Usage example
 In this example, we will be using Fluke in order to:
 
 1. Poll an Amazon SQS queue every minute for new messages. Each of these messages contains the
-   path of a newly uploaded file to an Amazon bucket.
+   path of a newly uploaded file to an Amazon S3 bucket.
 2. Use the content of these messages in order to locate and access said files within the bucket.
 3. If a file's metadata field ``transfer`` has been set to ``True``, then transfer it to a remote server.
 
@@ -70,12 +70,12 @@ necessary resources in order to perform the data transfer:
 
 .. code-block:: python
 
-  from fluke.queues import AWSSQSQueue
-  from fluke.storage import AWSS3Dir, RemoteDir
+  from fluke.queues import AmazonSQSQueue
+  from fluke.storage import AmazonS3Dir, RemoteDir
 
   with (
-      AWSSQSQueue(auth=aws_auth, queue='queue') as queue,
-      AWSS3Dir(auth=aws_auth, bucket='bucket') as bucket,
+      AmazonSQSQueue(auth=aws_auth, queue='queue') as queue,
+      AmazonS3Dir(auth=aws_auth, bucket='bucket') as bucket,
       RemoteDir(auth=rmt_auth, path='/home/user/dir', create_if_missing=True) as rmt_dir
   ):
     for batch in queue.poll(polling_frequency=60):

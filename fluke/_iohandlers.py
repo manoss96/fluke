@@ -512,7 +512,7 @@ class RemoteFileWriter(_FileWriter):
         return len(chunk)
     
 
-class AWSS3FileReader(_FileReader):
+class AmazonS3FileReader(_FileReader):
     '''
     A class used in reading from files which \
     reside within an Amazon S3 bucket.
@@ -573,7 +573,7 @@ class AWSS3FileReader(_FileReader):
         return self.__file.get(Range=range)['Body'].read()
 
             
-class AWSS3FileWriter(_FileWriter):
+class AmazonS3FileWriter(_FileWriter):
     '''
     A class used in writing to files which \
     reside within an Amazon S3 bucket.

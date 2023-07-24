@@ -15,7 +15,7 @@ from moto import mock_s3
 
 from fluke.auth import RemoteAuth, AWSAuth, AzureAuth
 from fluke.storage import LocalFile, LocalDir, \
-    RemoteFile, RemoteDir, AWSS3File, AWSS3Dir, \
+    RemoteFile, RemoteDir, AmazonS3File, AmazonS3Dir, \
     AzureBlobFile, AzureBlobDir
 from fluke._exceptions import OverwriteError
 from fluke._exceptions import InvalidPathError
@@ -820,12 +820,12 @@ class TestRemoteFile(unittest.TestCase):
            # Copy file into dir, including its metadata.
             file.set_metadata(metadata=METADATA)
             dir_path = REL_DIR_PATH
-            with (AWSS3Dir(
+            with (AmazonS3Dir(
                     auth=get_aws_auth_instance(),
                     bucket=BUCKET,
-                    path=dir_path) as aws_dir
+                    path=dir_path) as s3_dir
             ):
-                file.transfer_to(dst=aws_dir, include_metadata=False)
+                file.transfer_to(dst=s3_dir, include_metadata=False)
             # Gain access to the uploaded object.
             file_path = join_paths(dir_path, FILE_NAME)
             obj = get_aws_s3_object(BUCKET, file_path)
@@ -848,12 +848,12 @@ class TestRemoteFile(unittest.TestCase):
             new_metadata = {'2': '2'}
             file.set_metadata(metadata=new_metadata)
             dir_path = REL_DIR_PATH
-            with (AWSS3Dir(
+            with (AmazonS3Dir(
                     auth=get_aws_auth_instance(),
                     bucket=BUCKET,
-                    path=dir_path) as aws_dir
+                    path=dir_path) as s3_dir
             ):
-                file.transfer_to(dst=aws_dir, include_metadata=True)
+                file.transfer_to(dst=s3_dir, include_metadata=True)
             # Gain access to the uploaded object.
             file_path = join_paths(dir_path, FILE_NAME)
             obj = get_aws_s3_object(BUCKET, file_path)
@@ -924,7 +924,7 @@ class TestRemoteFile(unittest.TestCase):
             self.assertGreater(normal_time, cache_time)
 
 
-class TestAWSS3File(unittest.TestCase):
+class TestAmazonS3File(unittest.TestCase):
 
     MOCK_S3 = mock_s3()
 
@@ -959,8 +959,8 @@ class TestAWSS3File(unittest.TestCase):
         patch.stopall()
     
     @staticmethod
-    def build_file(path: str = REL_FILE_PATH, cache: bool = False) -> AWSS3File:
-        return AWSS3File(**{
+    def build_file(path: str = REL_FILE_PATH, cache: bool = False) -> AmazonS3File:
+        return AmazonS3File(**{
             'auth': get_aws_auth_instance(),
             'bucket': BUCKET,
             'path': path,
@@ -1128,12 +1128,12 @@ class TestAWSS3File(unittest.TestCase):
             dir_path = REL_DIR_PATH
             file_path = join_paths(dir_path, FILE_NAME)
             # Copy file into dir, including its metadata.
-            with (AWSS3Dir(
+            with (AmazonS3Dir(
                     auth=get_aws_auth_instance(),
                     bucket=BUCKET,
                     path=dir_path)
-            as aws_dir):
-                file.transfer_to(dst=aws_dir, include_metadata=False)
+            as s3_dir):
+                file.transfer_to(dst=s3_dir, include_metadata=False)
             # Gain access to the uploaded object.
             obj = get_aws_s3_object(BUCKET, file_path)
             # Assert that metadata were copied to the object.
@@ -1146,14 +1146,14 @@ class TestAWSS3File(unittest.TestCase):
             dir_path = REL_DIR_PATH
             file_path = join_paths(dir_path, FILE_NAME)
             # Copy file into dir, including its metadata.
-            with (AWSS3Dir(
+            with (AmazonS3Dir(
                     auth=get_aws_auth_instance(),
                     bucket=BUCKET,
                     path=dir_path)
-            as aws_dir):
+            as s3_dir):
                 new_metadata = {'2': '2'}
                 file.set_metadata(new_metadata)
-                file.transfer_to(dst=aws_dir, include_metadata=True)
+                file.transfer_to(dst=s3_dir, include_metadata=True)
             # Gain access to the uploaded object.
             obj = get_aws_s3_object(BUCKET, file_path)
             # Assert that metadata were copied to the object.
@@ -1440,12 +1440,12 @@ class TestAzureBlobFile(unittest.TestCase):
            # Copy file into dir, including its metadata.
             file.set_metadata(metadata=METADATA)
             dir_path = REL_DIR_PATH
-            with (AWSS3Dir(
+            with (AmazonS3Dir(
                     auth=get_aws_auth_instance(),
                     bucket=BUCKET,
-                    path=dir_path) as aws_dir
+                    path=dir_path) as s3_dir
             ):
-                file.transfer_to(dst=aws_dir, include_metadata=False)
+                file.transfer_to(dst=s3_dir, include_metadata=False)
             # Gain access to the uploaded object.
             file_path = join_paths(dir_path, FILE_NAME)
             obj = get_aws_s3_object(BUCKET, file_path)
@@ -1468,12 +1468,12 @@ class TestAzureBlobFile(unittest.TestCase):
             new_metadata = {'2': '2'}
             file.set_metadata(metadata=new_metadata)
             dir_path = REL_DIR_PATH
-            with (AWSS3Dir(
+            with (AmazonS3Dir(
                     auth=get_aws_auth_instance(),
                     bucket=BUCKET,
-                    path=dir_path) as aws_dir
+                    path=dir_path) as s3_dir
             ):
-                file.transfer_to(dst=aws_dir, include_metadata=True)
+                file.transfer_to(dst=s3_dir, include_metadata=True)
             # Gain access to the uploaded object.
             file_path = join_paths(dir_path, FILE_NAME)
             obj = get_aws_s3_object(BUCKET, file_path)
@@ -1954,13 +1954,13 @@ class TestLocalDir(unittest.TestCase):
             # Copy directory contents including metadata
             filename, metadata = DIR_FILE_NAME, {'2': '2'}
             dir = self.build_dir(path=ABS_DIR_PATH)
-            with (TestAWSS3Dir.build_dir() as aws_dir):
+            with (TestAmazonS3Dir.build_dir() as s3_dir):
                 dir.set_metadata(file_path=filename, metadata=metadata)
-                dir.transfer_to(dst=aws_dir, overwrite=True, include_metadata=True)
+                dir.transfer_to(dst=s3_dir, overwrite=True, include_metadata=True)
                 # Assert that the object's metadata have been modified.
                 self.assertEqual(
                     get_aws_s3_object(
-                        aws_dir.get_bucket_name(),
+                        s3_dir.get_bucket_name(),
                         REL_DIR_FILE_PATH).metadata,
                     metadata)
         
@@ -2744,7 +2744,7 @@ class TestRemoteDir(unittest.TestCase):
             self.assertGreater(normal_time, cache_time)
 
 
-class TestAWSS3Dir(unittest.TestCase):
+class TestAmazonS3Dir(unittest.TestCase):
 
     MOCK_S3 = mock_s3()
 
@@ -2800,8 +2800,8 @@ class TestAWSS3Dir(unittest.TestCase):
         path: str = REL_DIR_PATH,
         cache: bool = False,
         create_if_missing: bool = False
-    ) -> AWSS3Dir:
-        return AWSS3Dir(**{
+    ) -> AmazonS3Dir:
+        return AmazonS3Dir(**{
             'auth': get_aws_auth_instance(),
             'bucket': BUCKET,
             'path': path,
@@ -3256,9 +3256,9 @@ class TestAWSS3Dir(unittest.TestCase):
         src_file = TestLocalFile.build_file()
         # Get tmp dir path (already created in bucket).
         tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
-        with self.build_dir(path=tmp_dir_path) as aws_dir:
+        with self.build_dir(path=tmp_dir_path) as s3_dir:
             # Copy file into dir.
-            src_file.transfer_to(dst=aws_dir)
+            src_file.transfer_to(dst=s3_dir)
             # Confirm that file was indeed copied.
             copy_path = join_paths(tmp_dir_path, FILE_NAME)
             with (
@@ -3277,9 +3277,9 @@ class TestAWSS3Dir(unittest.TestCase):
         src_file = TestLocalFile.build_file()
         # Get tmp dir path (already created in bucket).
         tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
-        with self.build_dir(path=tmp_dir_path) as aws_dir:
+        with self.build_dir(path=tmp_dir_path) as s3_dir:
             # Copy file into dir.
-            src_file.transfer_to(dst=aws_dir, chunk_size=1000)
+            src_file.transfer_to(dst=s3_dir, chunk_size=1000)
             # Confirm that file was indeed copied.
             copy_path = join_paths(tmp_dir_path, FILE_NAME)
             with (
@@ -3300,9 +3300,9 @@ class TestAWSS3Dir(unittest.TestCase):
         src_file.set_metadata(metadata=metadata)
         # Get tmp dir path (already created in bucket).
         tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
-        with self.build_dir(path=tmp_dir_path) as aws_dir:
+        with self.build_dir(path=tmp_dir_path) as s3_dir:
             # Copy file into dir.
-            src_file.transfer_to(dst=aws_dir, include_metadata=True)
+            src_file.transfer_to(dst=s3_dir, include_metadata=True)
             # Confirm that metadata was indeed assigned.
             copy_path = join_paths(tmp_dir_path, FILE_NAME)
             self.assertEqual(
@@ -3316,10 +3316,10 @@ class TestAWSS3Dir(unittest.TestCase):
         src_file.set_metadata(metadata=metadata)
         # Get tmp dir path (already created in bucket).
         tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
-        with self.build_dir(path=tmp_dir_path) as aws_dir:
+        with self.build_dir(path=tmp_dir_path) as s3_dir:
             # Copy file into dir.
             src_file.transfer_to(
-                dst=aws_dir,
+                dst=s3_dir,
                 include_metadata=True,
                 chunk_size=1000)
             # Confirm that metadata was indeed assigned.

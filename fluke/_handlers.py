@@ -21,8 +21,8 @@ from ._iohandlers import LocalFileReader as _LocalFileReader
 from ._iohandlers import LocalFileWriter as _LocalFileWriter
 from ._iohandlers import RemoteFileReader as _RemoteFileReader
 from ._iohandlers import RemoteFileWriter as _RemoteFileWriter
-from ._iohandlers import AWSS3FileReader as _AWSS3FileReader
-from ._iohandlers import AWSS3FileWriter as _AWSS3FileWriter
+from ._iohandlers import AmazonS3FileReader as _AmazonS3FileReader
+from ._iohandlers import AmazonS3FileWriter as _AmazonS3FileWriter
 from ._iohandlers import AzureBlobReader as _AzureBlobReader
 from ._iohandlers import AzureBlobWriter as _AzureBlobWriter
 from ._exceptions import UnknownKeyTypeError as _UKTE
@@ -961,16 +961,16 @@ class AWSClientHandler(ClientHandler):
             ContentType='application/x-directory; charset=UTF-8')
         
 
-    def get_reader(self, file_path: str) -> _AWSS3FileReader:
+    def get_reader(self, file_path: str) -> _AmazonS3FileReader:
         '''
-        Returns an ``AWSS3FileReader`` class instance \
+        Returns an ``AmazonS3FileReader`` class instance \
         used for reading from a file which resides within \
         an Amazon S3 bucket.
 
         :param str file_path: The absolute path of \
             the file in question.
         '''
-        return _AWSS3FileReader(
+        return _AmazonS3FileReader(
             file_path=file_path,
             file_size=self.get_file_size(file_path),
             bucket=self.__bucket)
@@ -981,9 +981,9 @@ class AWSClientHandler(ClientHandler):
         file_path: str,
         metadata: _Optional[dict[str, str]],
         in_chunks: bool
-    ) -> _AWSS3FileWriter:
+    ) -> _AmazonS3FileWriter:
         '''
-        Returns an ``AWSS3FileWriter`` class instance \
+        Returns an ``AmazonS3FileWriter`` class instance \
         used for writing to a file which resides within \
         an Amazon S3 bucket.
 
@@ -997,7 +997,7 @@ class AWSClientHandler(ClientHandler):
             write the file in distinct chunks or \
             all at once.
         '''
-        return _AWSS3FileWriter(
+        return _AmazonS3FileWriter(
             file_path=file_path,
             metadata=metadata,
             in_chunks=in_chunks,

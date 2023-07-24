@@ -13,7 +13,7 @@ from moto import mock_sqs
 
 
 from fluke.auth import AWSAuth, AzureAuth
-from fluke.queues import AWSSQSQueue, AzureStorageQueue
+from fluke.queues import AmazonSQSQueue, AzureStorageQueue
 
 
 QUEUE = "test-queue"
@@ -163,14 +163,14 @@ class MockQueueClient():
         pass
 
 
-class TestAWSSQSQueue(unittest.TestCase):
+class TestAmazonSQSQueue(unittest.TestCase):
 
     MOCK_SQS = mock_sqs()
     QUEUE = None
 
     @staticmethod
-    def build_queue() -> AWSSQSQueue:
-        return AWSSQSQueue(**{
+    def build_queue() -> AmazonSQSQueue:
+        return AmazonSQSQueue(**{
             'auth': AWSAuth(
                 aws_access_key_id='',
                 aws_secret_access_key='',

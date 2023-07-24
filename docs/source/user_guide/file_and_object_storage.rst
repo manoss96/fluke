@@ -23,14 +23,14 @@ in order to interact with data:
    
      * `LocalFile <../documentation/storage.html#fluke.storage.LocalFile>`_
      * `RemoteFile <../documentation/storage.html#fluke.storage.RemoteFile>`_
-     * `AWSS3File <../documentation/storage.html#fluke.storage.AWSS3File>`_
+     * `AmazonS3File <../documentation/storage.html#fluke.storage.AmazonS3File>`_
      * `AzureBlobFile <../documentation/storage.html#fluke.storage.AzureBlobFile>`_
 
 #. **Dir API**: Used for handling entire directories of files/objects. This API includes:
 
      * `LocalDir <../documentation/storage.html#fluke.storage.LocalDir>`_
      * `RemoteDir <../documentation/storage.html#fluke.storage.RemoteDir>`_
-     * `AWSS3Dir <../documentation/storage.html#fluke.storage.AWSS3Dir>`_
+     * `AmazonS3Dir <../documentation/storage.html#fluke.storage.AmazonS3Dir>`_
      * `AzureBlobDir <../documentation/storage.html#fluke.storage.AzureBlobDir>`_
 
 ----------------------------------------
@@ -54,7 +54,7 @@ Accessing remote entities
 For any entity that is not local to our machine's file system, we usually
 need a bit more information. This is typically an *Auth* instance used
 for authenticating with the remote host in order to gain access to its resources
-(see `Handling authentication <authentication.html>`_), as well as some
+(see `Authentication <authentication.html>`_), as well as some
 more information regarding an entity's exact location. For example, in the
 case of a directory which resides within an Amazon S3 bucket, we also need
 the name of said bucket:
@@ -62,22 +62,22 @@ the name of said bucket:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.storage import AWSS3Dir
+  from fluke.storage import AmazonS3Dir
 
   # Create an "AWSAuth" instance.
   auth = AWSAuth(**credentials)
 
   # Gain access to an Amazon S3 directory.
-  aws_dir = AWSS3Dir(
+  s3_dir = AmazonS3Dir(
     auth=auth,
     bucket='bucket_name',
     path='path/within/amazon/s3/bucket/dir')
 
-  # Interact with "aws_dir".
+  # Interact with "s3_dir".
   ...
 
   # Close any open connections.
-  aws_dir.close()
+  s3_dir.close()
 
 Notice how at the end we invoked the instance's ``close`` method? This is
 done in order to prevent any connection leaks from occurring, and is in fact
@@ -88,19 +88,19 @@ class's context manager:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.storage import AWSS3Dir
+  from fluke.storage import AmazonS3Dir
 
   # Create an "AWSAuth" instance.
   auth = AWSAuth(**credentials)
 
   # Gain access to an S3 directory through a context manager.
-  with AWSS3Dir(
+  with AmazonS3Dir(
     auth=auth,
     bucket='bucket_name',
     path='path/within/amazon/s3/bucket/dir'
-  ) as aws_dir:
+  ) as s3_dir:
 
-    # Interact with "aws_dir".
+    # Interact with "s3_dir".
     ...
 
 .. _intermediate-access:
@@ -156,23 +156,23 @@ directory:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.storage import AWSS3Dir, AWSS3File
+  from fluke.storage import AmazonS3Dir, AmazonS3File
 
   # Create an "AWSAuth" instance.
   auth = AWSAuth(**credentials)
 
   # Access directory.
-  aws_dir = AWSS3Dir(auth=auth, bucket='bucket_name', path='dir')
+  s3_dir = AmazonS3Dir(auth=auth, bucket='bucket_name', path='dir')
 
   # Access file through directory.
-  aws_file: AWSS3File = aws_dir.get_file('file.txt')
+  s3_file: AmazonS3File = s3_dir.get_file('file.txt')
 
   # Close connection through file.
-  aws_file.close()
+  s3_file.close()
 
   # This would now cause an exception as
   # the underlying connection has been closed.
-  dir_size = aws_dir.get_size()
+  dir_size = s3_dir.get_size()
 
 Therefore, by utilizing intermediate access, you are able to
 interact with many remote entities without having to open
@@ -181,21 +181,21 @@ multiple connections:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.storage import AWSS3Dir, AWSS3File
+  from fluke.storage import AmazonS3Dir, AmazonS3File
 
   # Create an "AWSAuth" instance.
   auth = AWSAuth(**credentials)
 
   # Gain access to the entire bucket.
-  with AWSS3Dir(auth=auth, bucket='bucket_name') as bucket:
+  with AmazonS3Dir(auth=auth, bucket='bucket_name') as bucket:
 
     # Interact with its files.
-    aws_file: AWSS3File = bucket.get_file('file.txt')
-    file_size = aws_file.get_size()
+    s3_file: AmazonS3File = bucket.get_file('file.txt')
+    file_size = s3_file.get_size()
     
     # Interact with its subdirectories.
-    aws_dir: AWSS3Dir = bucket.get_subdir('dir')
-    aws_dir.ls()
+    s3_dir: AmazonS3Dir = bucket.get_subdir('dir')
+    s3_dir.ls()
 
 
 ========================================
@@ -333,7 +333,7 @@ all in just a few lines of code:
 .. code-block:: python
 
   from fluke.auth import AWSAuth, AzureAuth
-  from fluke.storage import AWSS3Dir, AzureBlobDir
+  from fluke.storage import AmazonS3Dir, AzureBlobDir
 
   # This object will be used to authenticate with AWS.
   aws_auth = AWSAuth(**aws_credentials)
@@ -342,10 +342,10 @@ all in just a few lines of code:
   azr_auth = AzureAuth.from_service_principal(**azr_credentials)
 
   with (
-      AWSS3Dir(auth=aws_auth, bucket='bucket', path='dir') as aws_dir,
+      AmazonS3Dir(auth=aws_auth, bucket='bucket', path='dir') as s3_dir,
       AzureBlobDir(auth=azr_auth, container='container', path='dir') as azr_dir
   ):
-      aws_dir.transfer_to(dst=azr_dir, recursively=True)
+      s3_dir.transfer_to(dst=azr_dir, recursively=True)
 
 Unless you set parameter ``suppress_output`` to ``True``, Fluke will go
 on to print the progress of the transfer onto the console:
@@ -396,15 +396,15 @@ some metadata to it through the ``set_metadata`` method:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.storage import LocalFile, AWSS3Dir
+  from fluke.storage import LocalFile, AmazonS3Dir
 
   # Instantiate a local file and assign some metadata to it.
   file = LocalFile(path='/home/user/path/to/file.txt')
   file.set_metadata({'id': '12345', 'type': 'txt'})
 
   # Transfer file to Amazon S3 along with its metadata.
-  with AWSS3Dir(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir') as aws_dir:
-      file.transfer_to(dst=aws_dir, include_metadata=True)
+  with AmazonS3Dir(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir') as s3_dir:
+      file.transfer_to(dst=s3_dir, include_metadata=True)
 
 Along with *file.txt* being uploaded to Amazon S3, any metadata that
 were defined via the ``set_metadata`` method will be associated with it.
@@ -412,7 +412,7 @@ In fact, we can easily confirm this by executing the following code:
 
 .. code-block:: python
 
-  print(aws_dir.get_metadata('file.txt'))
+  print(s3_dir.get_metadata('file.txt'))
 
 which results in the following output being printed onto the console:
 
@@ -487,10 +487,10 @@ assigned to it. Let's do just that and see what happens:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.storage import AWSS3File
+  from fluke.storage import AmazonS3File
 
   # Gain access to 'file.txt' on Amazon S3 and print its metadata.
-  with AWSS3File(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir/file.txt') as aws_obj:
+  with AmazonS3File(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir/file.txt') as aws_obj:
       print(aws_obj.get_metadata())
 
 By executing the above code, we get the following output:
@@ -518,10 +518,10 @@ add the aforementioned line of code:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.storage import AWSS3File
+  from fluke.storage import AmazonS3File
 
   # Gain access to 'file.txt' on Amazon S3 and print its metadata.
-  with AWSS3File(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir/file.txt') as aws_obj:
+  with AmazonS3File(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir/file.txt') as aws_obj:
       # Load metadata first.
       aws_obj.load_metadata()
       # Then print it.
@@ -545,10 +545,10 @@ has not been invoked:
 .. code-block:: python
 
   from fluke.auth import AWSAuth, AzureAuth
-  from fluke.storage import AWSS3File, AzureBlobFile
+  from fluke.storage import AmazonS3File, AzureBlobFile
 
   with (
-      AWSS3File(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir/file.txt') as aws_obj,
+      AmazonS3File(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir/file.txt') as aws_obj,
       AzureBlobDir(auth=AzureAuth.from_service_principal(**azr_credentials), container='container', path='file.txt') as azr_dir
   ):
       aws_obj.transfer_to(dst=azr_dir, include_metadata=True)
@@ -582,19 +582,19 @@ setting parameter ``cache`` to ``True`` during its instantiation:
   import time
   
   from fluke.auth import AWSAuth
-  from fluke.storage import AWSS3File
+  from fluke.storage import AmazonS3File
 
   auth = AWSAuth(**aws_credentials)
 
-  with AWSS3Dir(auth=auth, bucket='bucket', path='dir', cache=True) as aws_dir:
+  with AmazonS3Dir(auth=auth, bucket='bucket', path='dir', cache=True) as s3_dir:
     # Fetch metadata via HTTP.
     t = time.time()
-    aws_dir.load_metadata()
+    s3_dir.load_metadata()
     print(f"Fetched metadata in {time.time() - t:.2f} seconds!")
 
     # Fetch metadata from cache.
     t = time.time()
-    aws_dir.load_metadata()
+    s3_dir.load_metadata()
     print(f"Fetched metadata in {time.time() - t:.2f} seconds!")
 
 Executing the above code block outputs the following:
@@ -613,23 +613,23 @@ by invoking ``purge``:
 .. code-block:: python
   
   from fluke.auth import AWSAuth
-  from fluke.storage import AWSS3File
+  from fluke.storage import AmazonS3File
 
-  with AWSS3Dir(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir', cache=True) as aws_dir:
+  with AmazonS3Dir(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir', cache=True) as s3_dir:
     # Count number of items in directory.
-    print(f"Directory count: {aws_dir.count()}")
+    print(f"Directory count: {s3_dir.count()}")
 
     # At this point, assume that one more
     # file is uploaded to the directory.
 
     # Re-count number of items in directory
     # without purging the cache.
-    print(f"Directory count: {aws_dir.count()}")
+    print(f"Directory count: {s3_dir.count()}")
 
     # Re-count number of items in directory
     # after purging the cache.
-    aws_dir.purge()
-    print(f"Directory count: {aws_dir.count()}")
+    s3_dir.purge()
+    print(f"Directory count: {s3_dir.count()}")
 
 By executing the above code, we get the following output:
 
@@ -648,28 +648,28 @@ them. Consider the following example:
 
 .. code-block:: python
 
-  from fluke.storage import AWSS3Dir
+  from fluke.storage import AmazonS3Dir
 
   # This object will be used to authenticate with AWS.
   aws_auth = AWSAuth(**aws_credentials)
 
   # Access an AWS S3 directory and render it "cacheable".
-  with AWSS3Dir(auth=aws_auth, bucket="bucket", path='dir', cache=True) as aws_dir:
+  with AmazonS3Dir(auth=aws_auth, bucket="bucket", path='dir', cache=True) as s3_dir:
     # Fetch the directory's total size and time it.
     t = time.time()
-    _ = aws_dir.get_size(recursively=True)
+    _ = s3_dir.get_size(recursively=True)
     print(f"Fetched size in {time.time() - t:.2f} seconds!")
 
     # Now purge the directory's cache.
-    aws_dir.purge()
+    s3_dir.purge()
 
     # Fetch the sizes of the directory's file and subdirectory.
-    _ = aws_dir.get_file('file.txt').get_size()
-    _ = aws_dir.get_subdir('subdir').get_size(recursively=True)
+    _ = s3_dir.get_file('file.txt').get_size()
+    _ = s3_dir.get_subdir('subdir').get_size(recursively=True)
 
     # Fetch the directory's total size and time it again.
     t = time.time()
-    _ = aws_dir.get_size(recursively=True)
+    _ = s3_dir.get_size(recursively=True)
     print(f"Fetched size in {time.time() - t:.2f} seconds!")
 
 The above code produces the following output when executed:

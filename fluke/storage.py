@@ -1,8 +1,8 @@
 
 
 __all__ = [
-    'AWSS3Dir',
-    'AWSS3File',
+    'AmazonS3Dir',
+    'AmazonS3File',
     'AzureBlobDir',
     'AzureBlobFile',
     'LocalFile',
@@ -679,7 +679,7 @@ class _CloudFile(_NonLocalFile, _ABC):
         self.set_metadata(metadata=metadata)
 
 
-class AWSS3File(_CloudFile):
+class AmazonS3File(_CloudFile):
     '''
     This class represents an object which resides \
     within an Amazon S3 bucket.
@@ -783,9 +783,9 @@ class AWSS3File(_CloudFile):
         path: str,
         handler: _AWSClientHandler,
         metadata: dict[str, str]
-    ) -> 'AWSS3File':
+    ) -> 'AmazonS3File':
         '''
-        Creates and returns an ``AWSS3File`` instance.
+        Creates and returns an ``AmazonS3File`` instance.
 
         :param str path: The path pointing to the file.
         :param AWSClientHandler handler: An ``AWSClientHandler`` \
@@ -803,7 +803,7 @@ class AWSS3File(_CloudFile):
         return instance
     
 
-    def __enter__(self) -> 'AWSS3File':
+    def __enter__(self) -> 'AmazonS3File':
         '''
         Enter the runtime context related to this instance.
         '''
@@ -2020,7 +2020,7 @@ class _CloudDir(_NonLocalDir, _ABC):
             self.set_metadata(file_path, metadata)
 
 
-class AWSS3Dir(_CloudDir):
+class AmazonS3Dir(_CloudDir):
     '''
     This class represents a virtual directory which resides \
     within an Amazon S3 bucket.
@@ -2129,10 +2129,10 @@ class AWSS3Dir(_CloudDir):
         return f"s3://{self.get_bucket_name()}/{self.get_path()}"
     
 
-    def get_file(self, path: str) -> AWSS3File:
+    def get_file(self, path: str) -> AmazonS3File:
         '''
         Returns the file residing in the specified \
-        path as a ``AWSS3File`` instance.
+        path as a ``AmazonS3File`` instance.
 
         :param str path: Either the absolute path or the \
             path relative to the directory of the file in \
@@ -2157,16 +2157,16 @@ class AWSS3Dir(_CloudDir):
             raise _IPE(path=path)
         
         path = self._to_absolute(path, replace_sep=False)
-        return AWSS3File._create_file(
+        return AmazonS3File._create_file(
             path=path,
             handler=self._get_handler(),
             metadata=self._get_file_metadata_ref(path))
     
 
-    def get_subdir(self, path: str) -> 'AWSS3Dir':
+    def get_subdir(self, path: str) -> 'AmazonS3Dir':
         '''
         Returns the directory residing in the specified \
-        path as an ``AWSS3Dir`` instance.
+        path as an ``AmazonS3Dir`` instance.
 
         :param str path: Either the absolute path or the \
             path relative to the directory of the subdirectory \
@@ -2198,9 +2198,9 @@ class AWSS3Dir(_CloudDir):
         path: str,
         handler: _AWSClientHandler,
         metadata: dict[str, str]
-    ) -> 'AWSS3Dir':
+    ) -> 'AmazonS3Dir':
         '''
-        Creates and returns an ``AWSS3Dir`` instance.
+        Creates and returns an ``AmazonS3Dir`` instance.
 
         :param str path: The path pointing to the directory.
         :param AWSClientHandler handler: An ``AWSClientHandler`` \
@@ -2218,10 +2218,10 @@ class AWSS3Dir(_CloudDir):
         return instance
     
 
-    def _get_subdir_impl(self, dir_path: str) -> 'AWSS3Dir':
+    def _get_subdir_impl(self, dir_path: str) -> 'AmazonS3Dir':
         '''
         Returns the directory residing in the specified \
-        path as an ``AWSS3Dir`` instance.
+        path as an ``AmazonS3Dir`` instance.
 
         :param str dir_path: Either the absolute path \
             or the path relative to the directory of the \
@@ -2238,7 +2238,7 @@ class AWSS3Dir(_CloudDir):
             metadata=self._get_metadata_ref())
     
 
-    def __enter__(self) -> 'AWSS3Dir':
+    def __enter__(self) -> 'AmazonS3Dir':
         '''
         Enter the runtime context related to this instance.
         '''

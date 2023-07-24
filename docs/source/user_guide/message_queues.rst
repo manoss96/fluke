@@ -4,11 +4,11 @@
 Message Queues
 ***********************
 
-Through `fluke.queues <../documentation/queues.html>`_ Fluke provides
-a straightforward API that makes it easy to interact with various message
-queue services in the cloud, such as Amazon SQS and Azure Queue Storage.
-The simplicity of this API comes from the fact that it is based on just
-three basic operations:
+Through the module `fluke.queues <../documentation/queues.html>`_ Fluke
+provides a straightforward API that makes it easy to interact with various
+message queue services in the cloud, such as Amazon SQS and Azure Queue
+Storage. The simplicity of this API comes from the fact that it is based
+on just three basic operations:
 
 1. Push - Sending messages to a queue.
 2. Peek - Getting a glimpse of the messages within a queue.
@@ -28,13 +28,13 @@ the string message you wish to send to the queue:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.queues import AWSSQSQueue
+  from fluke.queues import AmazonSQSQueue
 
-  aws_auth = AWSAuth(
+  auth = AWSAuth(
       aws_access_key_id="aws_access_key",
       aws_secret_access_key="aws_secret_key")
 
-  with AWSSQSQueue(auth=aws_auth, queue='queue') as queue:
+  with AmazonSQSQueue(auth=auth, queue='queue') as queue:
     is_delivered = queue.push(message="Hello!")
 
 In response to invoking the ``push`` method, a boolean value
@@ -57,13 +57,13 @@ found within the queue:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.queues import AWSSQSQueue
+  from fluke.queues import AmazonSQSQueue
 
-  aws_auth = AWSAuth(
+  auth = AWSAuth(
       aws_access_key_id="aws_access_key",
       aws_secret_access_key="aws_secret_key")
 
-  with AWSSQSQueue(auth=aws_auth, queue='queue') as queue:
+  with AmazonSQSQueue(auth=auth, queue='queue') as queue:
     messages = queue.peek()
 
 .. warning::
@@ -90,13 +90,13 @@ of doing so:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.queues import AWSSQSQueue
+  from fluke.queues import AmazonSQSQueue
 
-  aws_auth = AWSAuth(
+  auth = AWSAuth(
       aws_access_key_id="aws_access_key",
       aws_secret_access_key="aws_secret_key")
 
-  with AWSSQSQueue(auth=aws_auth, queue='queue') as queue:
+  with AmazonSQSQueue(auth=auth, queue='queue') as queue:
     for batch in queue.poll(batch_size=10):
         for msg in batch:
             # Process the message...
@@ -109,13 +109,13 @@ parameter accordingly:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.queues import AWSSQSQueue
+  from fluke.queues import AmazonSQSQueue
 
-  aws_auth = AWSAuth(
+  auth = AWSAuth(
       aws_access_key_id="aws_access_key",
       aws_secret_access_key="aws_secret_key")
 
-  with AWSSQSQueue(auth=aws_auth, queue='queue') as queue:
+  with AmazonSQSQueue(auth=auth, queue='queue') as queue:
     for batch in queue.poll(num_messages=100, batch_size=10):
         for msg in batch:
             # Process the message...
@@ -134,13 +134,13 @@ parameter:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.queues import AWSSQSQueue
+  from fluke.queues import AmazonSQSQueue
 
-  aws_auth = AWSAuth(
+  auth = AWSAuth(
       aws_access_key_id="aws_access_key",
       aws_secret_access_key="aws_secret_key")
 
-  with AWSSQSQueue(auth=aws_auth, queue='queue') as queue:
+  with AmazonSQSQueue(auth=auth, queue='queue') as queue:
     for batch in queue.poll(
         num_messages=100,
         batch_size=10,
@@ -172,13 +172,13 @@ their processing:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.queues import AWSSQSQueue
+  from fluke.queues import AmazonSQSQueue
 
-  aws_auth = AWSAuth(
+  auth = AWSAuth(
       aws_access_key_id="aws_access_key",
       aws_secret_access_key="aws_secret_key")
 
-  with AWSSQSQueue(auth=aws_auth, queue='queue') as queue:
+  with AmazonSQSQueue(auth=auth, queue='queue') as queue:
     for batch in queue.poll():
         # Although an exception is raised, no messages will be lost
         # as, at this point, the messages within the batch have yet
@@ -193,13 +193,13 @@ one of the subsequent batches:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.queues import AWSSQSQueue
+  from fluke.queues import AmazonSQSQueue
 
-  aws_auth = AWSAuth(
+  auth = AWSAuth(
       aws_access_key_id="aws_access_key",
       aws_secret_access_key="aws_secret_key")
 
-  with AWSSQSQueue(auth=aws_auth, queue='queue') as queue:
+  with AmazonSQSQueue(auth=auth, queue='queue') as queue:
     for batch in queue.poll(num_messages=2, batch_size=2):
         for i, msg in enumerate(batch):
             if i == 0:
@@ -221,13 +221,13 @@ they are actually delivered to you:
 .. code-block:: python
 
   from fluke.auth import AWSAuth
-  from fluke.queues import AWSSQSQueue
+  from fluke.queues import AmazonSQSQueue
 
-  aws_auth = AWSAuth(
+  auth = AWSAuth(
       aws_access_key_id="aws_access_key",
       aws_secret_access_key="aws_secret_key")
 
-  with AWSSQSQueue(auth=aws_auth, queue='queue') as queue:
+  with AmazonSQSQueue(auth=auth, queue='queue') as queue:
     for batch in queue.poll(pre_delivery_delete=True):
         # At this point, all messages within the batch
         # have already been removed from the queue.
