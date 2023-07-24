@@ -291,6 +291,18 @@ class TestAmazonSQSQueue(unittest.TestCase):
                 counter += 1
         self.purge()
 
+    def test_poll_on_num_messages_and_batch_size(self):
+        messages = set(str(i) for i in range(20))
+        self.send_messages(messages)
+        batch_size = 5
+        num_batches = 4
+        batches = []
+        with self.build_queue() as queue:
+            for batch in queue.poll(num_messages=len(messages), batch_size=batch_size):
+                batches.append(batch)
+        self.assertEqual(len(batches), num_batches)
+        self.purge()
+
     def test_poll_on_pre_delivery_delete_set_to_False(self):
         num_messages = 5
         messages = set(str(i) for i in range(num_messages))
@@ -431,6 +443,18 @@ class TestAzureStorageQueue(unittest.TestCase):
             for batch in queue.poll(batch_size=batch_size):
                 self.assertEqual(len(batch), batch_sizes[counter])
                 counter += 1
+        self.purge()
+
+    def test_poll_on_num_messages_and_batch_size(self):
+        messages = set(str(i) for i in range(20))
+        self.send_messages(messages)
+        batch_size = 5
+        num_batches = 4
+        batches = []
+        with self.build_queue() as queue:
+            for batch in queue.poll(num_messages=len(messages), batch_size=batch_size):
+                batches.append(batch)
+        self.assertEqual(len(batches), num_batches)
         self.purge()
 
     def test_poll_on_pre_delivery_delete_set_to_False(self):
