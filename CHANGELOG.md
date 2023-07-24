@@ -2,6 +2,19 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2023/07/24
+
+### Added
+
+### Changed
+
+### Fixed
+
+- Fixed issue where method *fluke.queues.AmazonSQSQueue.poll*
+  would sometimes return fewer messages than the number of
+  messages specified via parameter ``num_messages``.
+  (https://github.com/manoss96/fluke/issues/40)
+
 ## [0.4.0] - 2023/07/24
 
 ### Added
