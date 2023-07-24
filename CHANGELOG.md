@@ -29,6 +29,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Fixed issue where type of objects could not be inferred
+  when they were instantiate via a context manager.
+  (https://github.com/manoss96/fluke/issues/35)
+
 
 ## [0.3.0] - 2023/04/16
 

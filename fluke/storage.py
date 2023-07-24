@@ -353,11 +353,7 @@ class _File(_ABC):
         return self.__handler
     
 
-    def __new__(
-        cls,
-        *args,
-        **kwargs
-    ) -> 'LocalFile':
+    def __new__(cls, *args, **kwargs):
         '''
         Creates an instance of this class.
 
@@ -1456,7 +1452,7 @@ class _Directory(_ABC):
             self.__metadata[abs_path].update({ key: val })
     
 
-    def __new__(cls, *args, **kwargs) -> '_Directory':
+    def __new__(cls, *args, **kwargs):
         '''
         Creates an instance of this class.
 
