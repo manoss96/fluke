@@ -12,7 +12,7 @@ The general idea is that you must first initialize some *Auth* instance,
 which is then provided to the resource with which you wish to interact.
 For instance, in the code snippet below we use the
 `RemoteAuth <../documentation/auth.html#fluke.auth.RemoteAuth>`_
-class in order to access a file within a remote server.
+class in order to access a file that resides within a remote server.
 
 .. code-block:: python
 

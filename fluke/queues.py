@@ -199,7 +199,7 @@ class _Queue(_ABC):
         pass
 
 
-class AWSSQSQueue(_Queue):
+class AmazonSQSQueue(_Queue):
     '''
     This class represents an Amazon SQS queue.
 
@@ -270,7 +270,10 @@ class AWSSQSQueue(_Queue):
         of the request.
         '''
         self.__queue.reload()
-        return int(self.__queue.attributes['ApproximateNumberOfMessages'])
+        return (
+            int(self.__queue.attributes['ApproximateNumberOfMessages']) +
+            int(self.__queue.attributes['ApproximateNumberOfMessagesNotVisible'])
+        )
 
 
     def push(
@@ -448,7 +451,7 @@ class AWSSQSQueue(_Queue):
         self.__queue.purge()
 
 
-    def __enter__(self) -> 'AWSSQSQueue':
+    def __enter__(self) -> 'AmazonSQSQueue':
         '''
         Enter the runtime context related to this instance.
         '''
