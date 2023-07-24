@@ -15,6 +15,9 @@ All notable changes to this project will be documented in this file.
   provided by various message queue services in the cloud.
   (https://github.com/manoss96/fluke/issues/31)
 
+- Added a new dependency: ``azure-storage-queue==12.6.0``
+  (https://github.com/manoss96/fluke/issues/31)
+
 ### Changed
 
 - *fluke.auth.AzureAuth* no longer has a constructor
@@ -26,6 +29,12 @@ All notable changes to this project will be documented in this file.
 - Classes *fluke.storage.{AWSS3File, AWSS3Dir}*
   have been renamed to *fluke.storage.{AmazonS3File, AmazonS3Dir}*.
   (https://github.com/manoss96/fluke/issues/34)
+
+- Updated dependency versions:
+  + azure-identity: 1.12.0 -> 1.13.0
+  + azure-storage-blob: 12.15.0 -> 12.17.0
+  + boto3: 1.26.84 -> 1.28.0
+  + paramiko: 3.0.0 -> 3.2.0
 
 ### Fixed
 
