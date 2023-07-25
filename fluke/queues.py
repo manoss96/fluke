@@ -388,7 +388,6 @@ class AmazonSQSQueue(_Queue):
             num_messages_delivered = 0
 
             while num_messages is None or num_messages_delivered < num_messages:
-
                 batch = []
                 while len(batch) < batch_size:
                     microbatch = self.__queue.receive_messages(
