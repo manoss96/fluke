@@ -23,6 +23,8 @@ from fluke._exceptions import InvalidFileError
 from fluke._exceptions import InvalidDirectoryError
 from fluke._exceptions import NonStringMetadataKeyError
 from fluke._exceptions import NonStringMetadataValueError
+from fluke._exceptions import BucketNotFoundError
+from fluke._exceptions import ContainerNotFoundError
 
 
 '''
@@ -420,21 +422,26 @@ class MockContainerClient():
         Returns a dictionary containing all the \
         methods that are to be mocked.
         '''
+        def get_client_from_constructor(*args, **kwargs):
+            return MockContainerClient(kwargs['container_name'], TEST_FILES_DIR)
 
+        def get_client_from_conn_string(*args, **kwargs):
+            return MockContainerClient(kwargs['container_name'], TEST_FILES_DIR)
+        
         return {
             'azure.identity.ClientSecretCredential.__init__': Mock(return_value=None),
             'azure.storage.blob.ContainerClient.__new__': Mock(
-                return_value=MockContainerClient(CONTAINER, path=TEST_FILES_DIR)
+                wraps=get_client_from_constructor
             ),
             'azure.storage.blob.ContainerClient.__init__': Mock(return_value=None),
             'azure.storage.blob.ContainerClient.from_connection_string': Mock(
-                return_value=MockContainerClient(CONTAINER, path=TEST_FILES_DIR)
+                wraps=get_client_from_conn_string
             )
         }
 
     @simulate_latency
     def exists(self) -> bool:
-        return True
+        return self.container_name == CONTAINER
     
     @simulate_latency    
     def get_blob_client(self, blob: str) -> MockBlobClient:
@@ -651,6 +658,7 @@ class TestLocalFile(unittest.TestCase):
         # Remove copy of the file.
         copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
         os.remove(copy_path)
+
 
 class TestRemoteFile(unittest.TestCase):
 
@@ -959,10 +967,14 @@ class TestAmazonS3File(unittest.TestCase):
         patch.stopall()
     
     @staticmethod
-    def build_file(path: str = REL_FILE_PATH, cache: bool = False) -> AmazonS3File:
+    def build_file(
+        path: str = REL_FILE_PATH,
+        bucket: str = BUCKET,
+        cache: bool = False
+    ) -> AmazonS3File:
         return AmazonS3File(**{
             'auth': get_aws_auth_instance(),
-            'bucket': BUCKET,
+            'bucket': bucket,
             'path': path,
             'cache': cache
         })
@@ -976,6 +988,9 @@ class TestAmazonS3File(unittest.TestCase):
 
     def test_constructor_on_invalid_file_error(self):
         self.assertRaises(InvalidFileError, self.build_file, path=REL_DIR_PATH)
+
+    def test_constructor_on_bucket_not_found_error(self):
+        self.assertRaises(BucketNotFoundError, self.build_file, bucket='UNKNOWN')
 
     def test_get_name(self):
         with self.build_file() as file:
@@ -1248,12 +1263,13 @@ class TestAzureBlobFile(unittest.TestCase):
     @staticmethod
     def build_file(
         path: str = REL_FILE_PATH,
+        container: str = CONTAINER,
         cache: bool = False,
         from_conn_string: bool = False
     ) -> AzureBlobFile:
         return AzureBlobFile(**{
             'auth': get_azure_auth_instance(from_conn_string),
-            'container': CONTAINER,
+            'container': container,
             'path': path,
             'cache': cache
         })
@@ -1278,6 +1294,9 @@ class TestAzureBlobFile(unittest.TestCase):
 
     def test_constructor_on_invalid_file_error(self):
         self.assertRaises(InvalidFileError, self.build_file, path=REL_DIR_PATH)
+
+    def test_constructor_on_container_not_found_error(self):
+        self.assertRaises(ContainerNotFoundError, self.build_file, container='UNKNOWN')
 
     def test_get_name(self):
         with self.build_file() as file:
@@ -2798,12 +2817,13 @@ class TestAmazonS3Dir(unittest.TestCase):
     @staticmethod
     def build_dir(
         path: str = REL_DIR_PATH,
+        bucket: str = BUCKET,
         cache: bool = False,
         create_if_missing: bool = False
     ) -> AmazonS3Dir:
         return AmazonS3Dir(**{
             'auth': get_aws_auth_instance(),
-            'bucket': BUCKET,
+            'bucket': bucket,
             'path': path,
             'cache': cache,
             'create_if_missing': create_if_missing
@@ -2825,6 +2845,9 @@ class TestAmazonS3Dir(unittest.TestCase):
 
     def test_constructor_on_invalid_path_error(self):
         self.assertRaises(InvalidPathError, self.build_dir, path="NON_EXISTING_PATH")
+
+    def test_constructor_on_bucket_not_found_error(self):
+        self.assertRaises(BucketNotFoundError, self.build_dir, bucket='UNKNOWN')
 
     def test_get_path_on_none_path(self):
         with self.build_dir(path=None) as dir:
@@ -3656,13 +3679,14 @@ class TestAzureBlobDir(unittest.TestCase):
     @staticmethod
     def build_dir(
         path: str = REL_DIR_PATH,
+        container: str = CONTAINER,
         cache: bool = False,
         create_if_missing: bool = False,
         from_conn_string: bool = False
     ) -> AzureBlobDir:
         return AzureBlobDir(**{
             'auth': get_azure_auth_instance(from_conn_string),
-            'container': CONTAINER,
+            'container': container,
             'path': path,
             'cache': cache,
             'create_if_missing': create_if_missing
@@ -3684,6 +3708,9 @@ class TestAzureBlobDir(unittest.TestCase):
 
     def test_constructor_on_invalid_path_error(self):
         self.assertRaises(InvalidPathError, self.build_dir, path="NON_EXISTING_PATH")
+
+    def test_constructor_on_container_not_found_error(self):
+        self.assertRaises(ContainerNotFoundError, self.build_dir, container='UNKNOWN')
 
     def test_get_path_on_none_path(self):
         with self.build_dir(path=None) as dir:

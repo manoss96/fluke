@@ -1,3 +1,11 @@
+
+
+__all__ = [
+    'AmazonSQSQueue',
+    'AzureStorageQueue',
+]
+
+
 import time as _time
 import random as _rand
 import warnings as _warn
@@ -377,9 +385,9 @@ class AmazonSQSQueue(_Queue):
                 print(f'\nPolling messages from queue "{self.get_name()}".')
 
             num_messages_fetched = 0
+            num_messages_delivered = 0
 
-            while num_messages is None or num_messages_fetched < num_messages:
-
+            while num_messages is None or num_messages_delivered < num_messages:
                 batch = []
                 while len(batch) < batch_size:
                     microbatch = self.__queue.receive_messages(
@@ -422,11 +430,11 @@ class AmazonSQSQueue(_Queue):
                         deleted_messages.append(messages[j])
                     # Only deliver successfully deleted messages.
                     yield deleted_messages
-                    num_messages_fetched += len(deleted_messages)
+                    num_messages_delivered += len(deleted_messages)
                 else:
                     # First deliver messages.
                     yield messages
-                    num_messages_fetched += len(messages)
+                    num_messages_delivered += len(messages)
                     # Then attempt to remove them from queue.
                     resp = self.__queue.delete_messages(Entries=entries)
                     if not suppress_output and 'Failed' in resp:
