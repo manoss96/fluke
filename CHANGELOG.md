@@ -2,11 +2,19 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
-## [0.4.1] - 2023/07/24
-
-### Added
+## [0.4.1] - 2023/07/25
 
 ### Changed
+
+- A ``BucketNotFound`` exception will now be thrown during
+  instantiation of either the *fluke.storage.AmazonS3File* or
+  a *fluke.storage.AmazonS3Dir* class, if the bucket provided
+  to the constructor via parameter ``bucket`` does not exist.
+  (https://github.com/manoss96/fluke/issues/42)
+
+- *fluke.exceptions.AzureBlobContainerNotFoundError* has been
+  renamed to *ContainerNotFoundError*.
+  (https://github.com/manoss96/fluke/issues/42)
 
 ### Fixed
 
@@ -14,6 +22,7 @@ All notable changes to this project will be documented in this file.
   would sometimes return fewer messages than the number of
   messages specified via parameter ``num_messages``.
   (https://github.com/manoss96/fluke/issues/40)
+
 
 ## [0.4.0] - 2023/07/24
 

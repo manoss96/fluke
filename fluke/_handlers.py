@@ -9,6 +9,7 @@ import boto3 as _boto3
 import paramiko as _prmk
 from azure.identity import ClientSecretCredential as _CSC
 from azure.storage.blob import ContainerClient as _ContainerClient
+from botocore.exceptions import ClientError as _CE
 
 
 from .auth import AWSAuth as _AWSAuth
@@ -26,6 +27,7 @@ from ._iohandlers import AmazonS3FileWriter as _AmazonS3FileWriter
 from ._iohandlers import AzureBlobReader as _AzureBlobReader
 from ._iohandlers import AzureBlobWriter as _AzureBlobWriter
 from ._exceptions import UnknownKeyTypeError as _UKTE
+from ._exceptions import BucketNotFoundError as _BNFE
 from ._helper import join_paths as _join_paths
 from ._helper import infer_separator as _infer_sep
 from ._helper import relativize_path as _relativize
@@ -897,6 +899,13 @@ class AWSClientHandler(ClientHandler):
             service_name='s3',
             **self.__auth.get_credentials()
         ).Bucket(self.__bucket_name)
+        # Ensure that bucket exists.
+        try:
+            self.__bucket.meta.client.head_bucket(Bucket=self.__bucket_name)
+        except _CE:
+            self.__bucket = None
+            raise _BNFE(bucket=self.__bucket_name)
+
         print("Connection established.")
 
 
@@ -917,7 +926,6 @@ class AWSClientHandler(ClientHandler):
         :param str path: Either an absolute path or a \
             path relative to the directory.
         '''
-        from botocore.exceptions import ClientError as _CE
         try:
             self.__bucket.Object(path).load()
         except _CE:
@@ -1165,7 +1173,6 @@ class AzureClientHandler(ClientHandler):
         '''
         Opens an HTTP connection to the Azure blob container.
         '''
-
         if self.__container is not None:
             return
 
