@@ -38,7 +38,7 @@ from ._exceptions import InvalidDirectoryError as _IDE
 from ._exceptions import OverwriteError as _OverwriteError
 from ._exceptions import NonStringMetadataKeyError as _NSMKE
 from ._exceptions import NonStringMetadataValueError as _NSMVE
-from ._exceptions import AzureBlobContainerNotFoundError as _ABCNFE 
+from ._exceptions import ContainerNotFoundError as _CNFE 
 
 
 class _File(_ABC):
@@ -689,6 +689,8 @@ class AmazonS3File(_CloudFile):
         any fetched data to be cached for faster subsequent \
         access.
 
+    :raises BucketNotFoundError: The specified \
+        bucket does not exist.
     :raises InvalidPathError: The provided path \
         does not exist.
     :raises InvalidFileError: The provided path \
@@ -721,6 +723,8 @@ class AmazonS3File(_CloudFile):
             any fetched data to be cached for faster subsequent \
             access. Defaults to ``False``.
 
+        :raises BucketNotFoundError: The specified \
+            bucket does not exist.
         :raises InvalidPathError: The provided path \
             does not exist.
         :raises InvalidFileError: The provided path \
@@ -820,7 +824,7 @@ class AzureBlobFile(_CloudFile):
         any fetched data to be cached for faster subsequent \
         access.
 
-    :raises AzureBlobContainerNotFoundError: The \
+    :raises ContainerNotFoundError: The \
         specified container does not exist.
     :raises InvalidPathError: The provided path \
         does not exist.
@@ -854,7 +858,7 @@ class AzureBlobFile(_CloudFile):
             any fetched data to be cached for faster subsequent \
             access. Defaults to ``False``.
 
-        :raises AzureBlobContainerNotFoundError: The \
+        :raises ContainerNotFoundError: The \
             specified container does not exist.
         :raises InvalidPathError: The provided path \
             does not exist.
@@ -888,7 +892,7 @@ class AzureBlobFile(_CloudFile):
         # Throw an exception if container does not exist.
         if not azr_handler.container_exists():
             self.close()
-            raise _ABCNFE(container)
+            raise _CNFE(container)
         
         if not azr_handler.path_exists(path=path):
             self.close()
@@ -2036,6 +2040,8 @@ class AmazonS3Dir(_CloudDir):
         in case it does not already exist, instead of an exception being \
         thrown. Defaults to ``False``.
 
+    :raises BucketNotFoundError: The specified \
+        bucket does not exist.
     :raises InvalidPathError: The provided path \
         does not exist.
 
@@ -2072,6 +2078,8 @@ class AmazonS3Dir(_CloudDir):
             in case it does not already exist, instead of an exception being \
             thrown. Defaults to ``False``.
 
+        :raises BucketNotFoundError: The specified \
+            bucket does not exist.
         :raises InvalidPathError: The provided path \
             does not exist.
 
@@ -2261,6 +2269,8 @@ class AzureBlobDir(_CloudDir):
         in case it does not already exist, instead of an exception being \
         thrown. Defaults to ``False``.
 
+    :raises ContainerNotFoundError: The \
+        specified container does not exist.
     :raises InvalidPathError: The provided path \
         does not exist.
 
@@ -2297,10 +2307,10 @@ class AzureBlobDir(_CloudDir):
             in case it does not already exist, instead of an exception being \
             thrown. Defaults to ``False``.
 
+        :raises ContainerNotFoundError: The \
+            specified container does not exist.
         :raises InvalidPathError: The provided path \
             does not exist.
-        :raises InvalidDirectoryError: The provided path \
-            does not point to a directory.
 
         :note: The provided path must not begin with \
             a separator.
@@ -2332,7 +2342,7 @@ class AzureBlobDir(_CloudDir):
         # Throw an exception if container does not exist.
         if not azr_handler.container_exists():
             self.close()
-            raise _ABCNFE(container)
+            raise _CNFE(container)
 
         # Create directory or throw an exception
         # depending on the value of "create_if_missing".
