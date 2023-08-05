@@ -16,6 +16,9 @@ from google.resumable_media.requests import MultipartUpload as _MultipartUpload
 from botocore.exceptions import ClientError as _BotoClientError
 from azure.core.exceptions import HttpResponseError as _AzureResponseError
 
+_ResumableUpload().transmit_next_chunk()
+_MultipartUpload().transmit()
+
 
 from ._helper import infer_separator as _infer_sep
 
@@ -205,17 +208,14 @@ class _FileReader(_IOHandler, _ABC):
     @_absmethod
     def _read_impl(
         self,
-        start: _Optional[int],
-        end: _Optional[int]
+        start: int,
+        end: int
     ) -> bytes:
         '''
         Reads and returns the specified byte range.
 
-        :param int | None start: The point to start reading from. \
-            If ``None``, then starts reading from the beginning \
-            of the file.
-        :param int | None end: The point to stop reading from. \
-            If ``None``, then stops reading at the end of the file.
+        :param int start: The point to start reading from.
+        :param int end: The point to stop reading from.
         '''
         pass
 
@@ -316,17 +316,14 @@ class LocalFileReader(_FileReader):
 
     def _read_impl(
         self,
-        start: _Optional[int],
-        end: _Optional[int]
+        start: int,
+        end: int
     ) -> bytes:
         '''
         Reads and returns the specified byte range.
 
-        :param int | None start: The point to start reading from. \
-            If ``None``, then starts reading from the beginning \
-            of the file.
-        :param int | None end: The point to stop reading from. \
-            If ``None``, then stops reading at the end of the file.
+        :param int start: The point to start reading from.
+        :param int end: The point to stop reading from.
         '''
         self.__file.seek(start)
         return self.__file.read(end - start)
@@ -420,17 +417,14 @@ class RemoteFileReader(_FileReader):
 
     def _read_impl(
         self,
-        start: _Optional[int],
-        end: _Optional[int]
+        start: int,
+        end: int
     ) -> bytes:
         '''
         Reads and returns the specified byte range.
 
-        :param int | None start: The point to start reading from. \
-            If ``None``, then starts reading from the beginning \
-            of the file.
-        :param int | None end: The point to stop reading from. \
-            If ``None``, then stops reading at the end of the file.
+        :param int start: The point to start reading from.
+        :param int end: The point to stop reading from.
         '''
         self.__file.seek(start)
         return self.__file.read(end - start)
@@ -558,18 +552,15 @@ class AmazonS3FileReader(_FileReader):
 
     def _read_impl(
         self,
-        start: _Optional[int],
-        end: _Optional[int]
+        start: int,
+        end: int
     ) -> bytes:
         '''
         Reads and returns the specified byte range.
 
-        :param int | None start: The point to start reading from. \
-            If ``None``, then starts reading from the beginning \
-            of the file.
-        :param int | None end: The point to stop reading from. \
-            If ``None``, then stops reading at the end of the file.
-        '''    
+        :param int start: The point to start reading from.
+        :param int end: The point to stop reading from.
+        ''' 
         range = f"bytes={start}-{end-1}"
         return self.__file.get(Range=range)['Body'].read()
 
@@ -712,18 +703,15 @@ class AzureBlobReader(_FileReader):
 
     def _read_impl(
         self,
-        start: _Optional[int],
-        end: _Optional[int]
+        start: int,
+        end: int
     ) -> bytes:
         '''
         Reads and returns the specified byte range.
 
-        :param int | None start: The point to start reading from. \
-            If ``None``, then starts reading from the beginning \
-            of the file.
-        :param int | None end: The point to stop reading from. \
-            If ``None``, then stops reading at the end of the file.
-        '''  
+        :param int start: The point to start reading from.
+        :param int end: The point to stop reading from.
+        '''
         return self.__file.download_blob(
             offset=start,
             length=end-start).read()
@@ -874,17 +862,14 @@ class GCPFileReader(_FileReader):
 
     def _read_impl(
         self,
-        start: _Optional[int],
-        end: _Optional[int]
+        start: int,
+        end: int
     ) -> bytes:
         '''
         Reads and returns the specified byte range.
 
-        :param int | None start: The point to start reading from. \
-            If ``None``, then starts reading from the beginning \
-            of the file.
-        :param int | None end: The point to stop reading from. \
-            If ``None``, then stops reading at the end of the file.
+        :param int start: The point to start reading from.
+        :param int end: The point to stop reading from.
         '''
         return self.__file.download_as_bytes(start=start, end=end-1)
 
@@ -935,11 +920,12 @@ class GCPFileWriter(_FileWriter):
 
         from google.resumable_media.requests import ResumableUpload
 
-        x = ResumableUpload()
+        x = ResumableUpload.initiate(upload_url=url, metadata=self.__metadata)
 
         # NOTE: If uploading file in chunks,then create
         # a resumable upload session.
         if in_chunks:
+            self.__file.create_resumable_upload_session
             self.__rus = self.__file.create_resumable_upload_session()
         else:
             self.__rus = None
