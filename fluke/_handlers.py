@@ -7,6 +7,7 @@ from typing import Optional as _Optional
 
 import boto3 as _boto3
 import paramiko as _prmk
+from google.cloud.storage import Client as _GCSClient
 from azure.identity import ClientSecretCredential as _CSC
 from azure.storage.blob import ContainerClient as _ContainerClient
 from botocore.exceptions import ClientError as _CE
@@ -14,6 +15,7 @@ from botocore.exceptions import ClientError as _CE
 
 from .auth import AWSAuth as _AWSAuth
 from .auth import AzureAuth as _AzureAuth
+from .auth import GCPAuth as _GCPAuth
 from .auth import RemoteAuth as _RemoteAuth
 from ._cache import CacheManager as _CacheManager
 from ._iohandlers import _FileReader
@@ -26,6 +28,8 @@ from ._iohandlers import AmazonS3FileReader as _AmazonS3FileReader
 from ._iohandlers import AmazonS3FileWriter as _AmazonS3FileWriter
 from ._iohandlers import AzureBlobReader as _AzureBlobReader
 from ._iohandlers import AzureBlobWriter as _AzureBlobWriter
+from ._iohandlers import GCPFileReader as _GCPFileReader
+from ._iohandlers import GCPFileWriter as _GCPFileWriter
 from ._exceptions import UnknownKeyTypeError as _UKTE
 from ._exceptions import BucketNotFoundError as _BNFE
 from ._helper import join_paths as _join_paths
@@ -40,7 +44,7 @@ class ClientHandler(_ABC):
 
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
-        access. Defaults to ``False``.
+        access.
     '''
 
 
@@ -51,7 +55,7 @@ class ClientHandler(_ABC):
 
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
-            access. Defaults to ``False``.
+            access.
         '''
 
         self.__cache_manager = _CacheManager() if cache else None
@@ -556,7 +560,7 @@ class SSHClientHandler(ClientHandler):
         for authenticating with a remote machine.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
-        access. Defaults to ``False``.
+        access.
     '''        
 
     def __init__(self, auth: _RemoteAuth, cache: bool):
@@ -568,7 +572,7 @@ class SSHClientHandler(ClientHandler):
             for authenticating with a remote machine.
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
-            access. Defaults to ``False``.
+            access.
         '''
         super().__init__(cache=cache)
         self.__auth: _RemoteAuth = auth
@@ -847,10 +851,15 @@ class AWSClientHandler(ClientHandler):
         to which a connection is to be established.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
-        access. Defaults to ``False``.
+        access.
     '''
 
-    def __init__(self, auth: _AWSAuth, bucket: str, cache: bool):
+    def __init__(
+        self,
+        auth: _AWSAuth,
+        bucket: str,
+        cache: bool
+    ):
         '''
         A class used in handling the HTTP \
         connection to an Amazon S3 bucket.
@@ -861,7 +870,7 @@ class AWSClientHandler(ClientHandler):
             to which a connection is to be established.
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
-            access. Defaults to ``False``.
+            access.
         '''
         super().__init__(cache=cache)
         self.__auth = auth
@@ -1122,10 +1131,15 @@ class AzureClientHandler(ClientHandler):
         container to which a connection is to be established.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
-        access. Defaults to ``False``.
+        access.
     '''
 
-    def __init__(self, auth: _AzureAuth, container: str, cache: bool):
+    def __init__(
+        self,
+        auth: _AzureAuth,
+        container: str,
+        cache: bool
+    ):
         '''
         A class used in handling the HTTP \
         connection to an Azure blob container.
@@ -1136,7 +1150,7 @@ class AzureClientHandler(ClientHandler):
             container to which a connection is to be established.
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
-            access. Defaults to ``False``.
+            access.
         '''
         super().__init__(cache=cache)
         self.__auth = auth
@@ -1351,3 +1365,246 @@ class AzureClientHandler(ClientHandler):
                 yield properties['name']
             else:
                 yield _relativize(dir_path, properties['name'], sep)
+
+
+
+class GCPClientHandler(ClientHandler):
+    '''
+    A class used in handling the HTTP \
+    connection to a Google Cloud Storage bucket.
+
+    :param GCPAuth auth: A ``GCPAuth`` instance \
+        used in authenticating with Google Cloud Platform.
+    :param str bucket: The name of the Google Cloud Storage \
+        bucket to which a connection is to be established.
+    :param bool cache: Indicates whether it is allowed for \
+        any fetched data to be cached for faster subsequent \
+        access.
+    '''
+    def __init__(
+        self,
+        auth: _GCPAuth,
+        bucket: str,
+        cache: bool
+    ):
+        '''
+        A class used in handling the HTTP \
+        connection to a Google Cloud Storage bucket.
+
+        :param GCPAuth auth: A ``GCPAuth`` instance \
+            used in authenticating with Google Cloud Platform.
+        :param str bucket: The name of the Google Cloud Storage \
+            bucket to which a connection is to be established.
+        :param bool cache: Indicates whether it is allowed for \
+            any fetched data to be cached for faster subsequent \
+            access.
+        '''
+        super().__init__(cache=cache)
+        self.__auth = auth
+        self.__bucket_name = bucket
+        self.__bucket = None
+
+
+    def bucket_exists(self) -> bool:
+        '''
+        Returns a value indicating whether the \
+        specified bucket exists or not.
+        '''
+        self.__bucket.exists()
+
+
+    def get_bucket_name(self) -> str:
+        '''
+        Returns the name of the bucket to which \
+        a connection has been established.
+        '''
+        return self.__bucket_name
+    
+
+    def is_open(self) -> bool:
+        '''
+        Returns a value indicating whether \
+        this handler's underlying client connection \
+        is open or not.
+        '''
+        return self.__bucket is not None
+
+
+    def open_connections(self) -> None:
+        '''
+        Opens an HTTP connection to the \
+        Google Cloud Storage bucket.
+        '''
+        if self.__bucket is not None:
+            return
+
+        credentials = self.__auth.get_credentials()
+
+        print(f"\nEstablishing connection to '{self.__bucket_name}' Google Cloud Storage bucket...")
+
+        if 'credentials' in credentials:
+            _os.environ.update({"GOOGLE_APPLICATION_CREDENTIALS": credentials['credentials']})
+            client = _GCSClient(
+                project=credentials['project_id'])
+
+        for bucket in client.list_buckets():
+            if bucket.name == self.__bucket_name:
+                self.__bucket = bucket
+                break
+        else:
+            client.close()
+            raise _BNFE(bucket=self.__bucket_name)
+
+        print("Connection established!")
+
+
+    def close_connections(self):
+        '''
+        Closes the HTTP connection to the Azure blob container.
+        '''
+        if self.__bucket is not None:
+            self.__bucket.client.close()
+            self.__bucket = None
+
+
+    def path_exists(self, path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path exists \
+        within the directory, else returns ``False``.
+
+        :param str path: Either an absolute path or a \
+            path relative to the directory.
+        '''
+        return self.__bucket.blob(path).exists()
+        
+
+    def is_file(self, file_path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path points \
+        to a file, else returns ``False``.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        return not file_path.endswith('/')
+    
+
+    def mkdir(self, path: str) -> None:
+        '''
+        Creates a directory into the provided path.
+
+        :param str path: The path of the directory \
+            that is to be created.
+        '''
+        with self.__bucket.blob(path) as blob_dir:
+            blob_dir.upload_from_string(
+                '',
+                content_type='application/x-www-form-urlencoded;charset=UTF-8')
+
+
+    def get_reader(self, file_path: str) -> _AzureBlobReader:
+        '''
+        Returns an ``AzureBlobReader`` class instance \
+        used for reading from a file which resides within \
+        an Azure blob container.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        return _GCPFileReader(
+            file_path=file_path,
+            file_size=self.get_file_size(file_path),
+            bucket=self.__bucket)
+
+
+    def get_writer(
+        self,
+        file_path: str,
+        metadata: _Optional[dict[str, str]],
+        in_chunks: bool
+    ) -> _AzureBlobWriter:
+        '''
+        Returns an ``AzureBlobWriter`` class instance \
+        used for writing to a file which resides within \
+        an Azure blob container.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        :param dict[str, str] | None metadata: A \
+            dictionary containing the metadata that \
+            are to be assigned to the file in question. \
+            If ``None``, then no metadata are assigned.
+        :param bool in_chunks: Indicates whether to \
+            write the file in distinct chunks or \
+            all at once.
+        '''
+        raise NotImplementedError()
+        return _AzureBlobWriter(
+            file_path=file_path,
+            metadata=metadata,
+            in_chunks=in_chunks,
+            container=self.__container)
+     
+
+    def _get_file_size_impl(self, file_path) -> int:
+        '''
+        Fetches and returns the size of a file in bytes.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        return self.__bucket.get_blob(file_path).size
+    
+
+    def _get_file_metadata_impl(self, file_path: str) -> dict[str, str]:
+        '''
+        Fetches and returns a dictionary containing the \
+        metadata of a file.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        return self.__bucket.get_blob(file_path).metadata
+
+
+    def _traverse_dir_impl(
+        self,
+        dir_path: str,
+        recursively: bool,
+        show_abs_path: bool
+    ) -> _Iterator[str]:
+        '''
+        Returns an iterator capable of going through \
+        the directory's contents as their paths.
+
+        :param str dir_path: The absolute path of the directory \
+            whose contents are to be iterated.
+        :param bool recursively: Indicates whether the directory \
+            is to be traversed recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories.
+        :param bool show_abs_path: Indicates whether it \
+            should be displayed the absolute or the relative \
+            path of the contents.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
+        '''
+        sep = '/'
+
+        if recursively:
+            iterable = self.__bucket.list_blobs(
+                prefix=dir_path)
+        else:
+            iterable = self.__bucket.list_blobs(
+                prefix=dir_path,
+                delimeter=sep)
+                    
+        for blob in iterable:
+            if show_abs_path:
+                yield blob.name
+            else:
+                yield _relativize(dir_path, blob.name, sep)

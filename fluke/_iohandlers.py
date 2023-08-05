@@ -10,6 +10,9 @@ import paramiko as _prmk
 import boto3 as _boto3
 from azure.storage.blob import ContainerClient as _ContainerClient
 from azure.storage.blob import BlobType as _BlobType
+from google.cloud.storage import Bucket as _GCPBucket
+from google.resumable_media.requests import ResumableUpload as _ResumableUpload
+from google.resumable_media.requests import MultipartUpload as _MultipartUpload
 from botocore.exceptions import ClientError as _BotoClientError
 from azure.core.exceptions import HttpResponseError as _AzureResponseError
 
@@ -442,8 +445,6 @@ class RemoteFileWriter(_FileWriter):
         the file in question.
     :param SFTPClient sftp: An ``SFTPClient`` \
         class instance.
-    :param int offset: The byte offset. Defaults \
-        to ``0``.
     '''
 
     def __init__(
@@ -587,8 +588,7 @@ class AmazonS3FileWriter(_FileWriter):
     :param bool in_chunks: Indicates whether to \
         write the file in distinct chunks or \
         all at once.
-    :param SFTPClient sftp: An ``SFTPClient`` \
-        class instance.
+    :param Bucket bucket: A ``Bucket`` class instance.
     '''
 
     def __init__(
@@ -745,8 +745,6 @@ class AzureBlobWriter(_FileWriter):
         all at once.
     :param ContainerClient container: A \
         ``ContainerClient`` class instance.
-    :param int offset: The byte offset. Defaults \
-        to ``0``.
     '''
 
     def __init__(
@@ -771,8 +769,6 @@ class AzureBlobWriter(_FileWriter):
             all at once.
         :param ContainerClient container: A \
             ``ContainerClient`` class instance.
-        :param int offset: The byte offset. Defaults \
-            to ``0``.
         '''
         super().__init__(file_path=file_path)
         self.__file = container.get_blob_client(blob=file_path)
@@ -831,3 +827,157 @@ class AzureBlobWriter(_FileWriter):
                 metadata=self.__metadata,
                 overwrite=True)
         return n
+    
+
+class GCPFileReader(_FileReader):
+    '''
+    A class used in reading from files which \
+    reside within a Google Cloud Storage bucket.
+
+    :param str file_path: The absolute path of \
+        the file in question.
+    :param int file_size: The size in bytes of \
+        the file in question.
+    :param Bucket bucket: A ``Bucket`` class instance.
+    '''
+
+    def __init__(
+        self,
+        file_path: str,
+        file_size: int,
+        bucket: _GCPBucket
+    ) -> None:
+        '''
+        A class used in reading from files which \
+        reside within a Google Cloud Storage bucket.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        :param int file_size: The size in bytes of \
+            the file in question.
+        :param Bucket bucket: A ``Bucket`` class instance.
+        '''
+        super().__init__(file_path=file_path, file_size=file_size)
+        self.__file = bucket.get_blob(blob_name=file_path)
+
+
+    def close(self) -> None:
+        '''
+        Closes the handler's underlying file.
+        '''
+        # NOTE: No need to close file, just the
+        #       underlying HTTPS connection which
+        #       will be closed by the `GCPClientHandler``
+        #       class instance.
+        pass
+
+
+    def _read_impl(
+        self,
+        start: _Optional[int],
+        end: _Optional[int]
+    ) -> bytes:
+        '''
+        Reads and returns the specified byte range.
+
+        :param int | None start: The point to start reading from. \
+            If ``None``, then starts reading from the beginning \
+            of the file.
+        :param int | None end: The point to stop reading from. \
+            If ``None``, then stops reading at the end of the file.
+        '''
+        return self.__file.download_as_bytes(start=start, end=end-1)
+
+            
+class GCPFileWriter(_FileWriter):
+    '''
+    A class used in writing to files which \
+    reside within a Google Cloud Storage bucket.
+
+    :param str file_path: The absolute path of \
+        the file in question.
+    :param dict[str, str] | None metadata: A \
+        dictionary containing the metadata that \
+        are to be assigned to the file in question. \
+        If ``None``, then no metadata are assigned.
+    :param bool in_chunks: Indicates whether to \
+        write the file in distinct chunks or \
+        all at once.
+    :param Bucket bucket: A ``Bucket`` class instance.
+    '''
+
+    def __init__(
+        self,
+        file_path: str,
+        metadata: _Optional[dict[str, str]],
+        in_chunks: bool,
+        bucket: _GCPBucket
+    ) -> None:
+        '''
+        A class used in reading from files which \
+        reside within a remote file system.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        :param dict[str, str] | None metadata: A \
+            dictionary containing the metadata that \
+            are to be assigned to the file in question. \
+            If ``None``, then no metadata are assigned.
+        :param bool in_chunks: Indicates whether to \
+            write the file in distinct chunks or \
+            all at once.
+        :param Bucket bucket: A ``Bucket`` class instance.
+        '''
+        super().__init__(file_path=file_path)
+
+        self.__metadata = metadata
+        self.__file = bucket.blob(file_path)
+
+        from google.resumable_media.requests import ResumableUpload
+
+        x = ResumableUpload()
+
+        # NOTE: If uploading file in chunks,then create
+        # a resumable upload session.
+        if in_chunks:
+            self.__rus = self.__file.create_resumable_upload_session()
+        else:
+            self.__rus = None
+        
+
+    def close(self) -> None:
+        '''
+        Closes the handler's underlying file.
+        '''
+        # NOTE: No need to close file, just the
+        #       underlying HTTPS connection which
+        #       will be closed by the `GCPClientHandler``
+        #       class instance.
+        if self.__rus is not None and self.__metadata is not None:
+            self.__file.metadata = self.__metadata
+            self.__file.patch()
+
+
+    def _write_impl(self, chunk: bytes) -> int:
+        '''
+        Writes the provided chunk to the opened file,
+        and returns the number of bytes written.
+
+        :param bytes chunk: The chunk of bytes that \
+            is to be written to the file.
+        '''
+        if self.__rus is None:
+            with _io.BytesIO(chunk) as buffer:
+                self.__file.metadata = self.__metadata
+                self.__file.upload_from_file(
+                    file_obj=buffer,
+                    size=len(chunk))
+        else:
+            part_number = len(self.__parts) + 1
+            part = self.__mpu.Part(part_number=part_number)
+            response = part.upload(Body=chunk)
+            self.__parts.append({
+                'PartNumber': part_number,
+                'ETag': response['ETag']
+            })
+        return len(chunk)

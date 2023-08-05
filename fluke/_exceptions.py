@@ -99,7 +99,8 @@ class NonStringMetadataValueError(Exception):
 class BucketNotFoundError(Exception):
     '''
     This exception is thrown whenever the user provides \
-    an Amazon S3 bucket that does not exist.
+    an Amazon S3 / Google Cloud Storage bucket that does \
+    not exist.
 
     :param str bucket: The name of the bucket that \
         was provided by the user.
@@ -108,7 +109,8 @@ class BucketNotFoundError(Exception):
     def __init__(self, bucket: str):
         '''
         This exception is thrown whenever the user provides \
-        an Amazon S3 bucket that does not exist.
+        an Amazon S3 / Google Cloud Storage bucket that does \
+        not exist.
 
         :param str bucket: The name of the bucket that \
             was provided by the user.

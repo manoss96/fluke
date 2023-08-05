@@ -5,6 +5,8 @@ __all__ = [
     'AmazonS3File',
     'AzureBlobDir',
     'AzureBlobFile',
+    'GCPStorageDir',
+    'GCPStorageFile',
     'LocalFile',
     'LocalDir',
     'RemoteFile',
@@ -26,12 +28,14 @@ from ._helper import join_paths as _join_paths
 from ._helper import infer_separator as _infer_sep
 from .auth import AWSAuth as _AWSAuth
 from .auth import AzureAuth as _AzureAuth
+from .auth import GCPAuth as _GCPAuth
 from .auth import RemoteAuth as _RemoteAuth
 from ._handlers import ClientHandler as _ClientHandler
 from ._handlers import FileSystemHandler as _FileSystemHandler
 from ._handlers import SSHClientHandler as _SSHClientHandler
 from ._handlers import AWSClientHandler as _AWSClientHandler
 from ._handlers import AzureClientHandler as _AzureClientHandler
+from ._handlers import GCPClientHandler as _GCPClientHandler
 from ._exceptions import InvalidPathError as _IPE
 from ._exceptions import InvalidFileError as _IFE
 from ._exceptions import InvalidDirectoryError as _IDE
@@ -552,7 +556,7 @@ class RemoteFile(_NonLocalFile):
     :param str path: A path pointing to the file.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
-        access. Defaults to ``True``.
+        access. Defaults to ``False``.
 
     :raises InvalidPathError: The provided path \
         does not exist.
@@ -687,7 +691,7 @@ class AmazonS3File(_CloudFile):
     :param str path: The path pointing to the file.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
-        access.
+        access. Defaults to ``False``.
 
     :raises BucketNotFoundError: The specified \
         bucket does not exist.
@@ -822,7 +826,7 @@ class AzureBlobFile(_CloudFile):
     :param str path: The path pointing to the file.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
-        access.
+        access. Defaults to ``False``.
 
     :raises ContainerNotFoundError: The \
         specified container does not exist.
@@ -950,6 +954,137 @@ class AzureBlobFile(_CloudFile):
     
 
     def __enter__(self) -> 'AzureBlobFile':
+        '''
+        Enter the runtime context related to this instance.
+        '''
+        return self
+    
+
+class GCPStorageFile(_CloudFile):
+    '''
+    This class represents an object which resides \
+    within a Google Cloud Storage bucket.
+
+    :param GCPAuth auth: A ``GCPAuth`` instance used \
+        for authenticating with GCP.
+    :param str bucket: The name of the bucket in which \
+        the file resides.
+    :param str path: The path pointing to the file.
+    :param bool cache: Indicates whether it is allowed for \
+        any fetched data to be cached for faster subsequent \
+        access. Defaults to ``False``.
+
+    :raises BucketNotFoundError: The specified \
+        bucket does not exist.
+    :raises InvalidPathError: The provided path \
+        does not exist.
+    :raises InvalidFileError: The provided path \
+        points to a directory.
+
+    :note: The provided path must not begin with \
+        a separator.
+
+            * Wrong: ``/path/to/file.txt``
+            * Right: ``path/to/file.txt``
+    '''
+    def __init__(
+        self,
+        auth: _GCPAuth,
+        bucket: str,
+        path: str,
+        cache: bool = False
+    ):
+        '''
+        This class represents an object which resides \
+        within a Google Cloud Storage bucket.
+
+        :param GCPAuth auth: A ``GCPAuth`` instance used \
+            for authenticating with GCP.
+        :param str bucket: The name of the bucket in which \
+            the file resides.
+        :param str path: The path pointing to the file.
+        :param bool cache: Indicates whether it is allowed for \
+            any fetched data to be cached for faster subsequent \
+            access. Defaults to ``False``.
+
+        :raises BucketNotFoundError: The specified \
+            bucket does not exist.
+        :raises InvalidPathError: The provided path \
+            does not exist.
+        :raises InvalidFileError: The provided path \
+            points to a directory.
+
+        :note: The provided path must not begin with \
+            a separator.
+
+                * Wrong: ``/path/to/file.txt``
+                * Right: ``path/to/file.txt``
+        '''
+        # Validate path.
+        sep = _infer_sep(path=path)
+        if path.startswith(sep):
+            raise _IPE(path=path)
+        
+        # Instantiate a connection handler.
+        gcp_handler = _GCPClientHandler(
+            auth=auth,
+            bucket=bucket,
+            cache=cache)
+
+        super().__init__(
+            path=path,
+            handler=gcp_handler)
+        
+        if not gcp_handler.path_exists(path=path):
+            self.close()
+            raise _IPE(path)
+        if not gcp_handler.is_file(file_path=path):
+            self.close()
+            raise _IFE(path)
+        
+
+    def get_bucket_name(self) -> str:
+        '''
+        Returns the name of the bucket in which \
+        the directory resides.
+        '''
+        return self._get_handler().get_bucket_name()
+
+
+    def get_uri(self) -> str:
+        '''
+        Returns the object's URI.
+        '''
+        return f"s3://{self.get_bucket_name()}{self._get_separator()}{self.get_path()}"
+    
+
+    @classmethod
+    def _create_file(
+        cls,
+        path: str,
+        handler: _GCPClientHandler,
+        metadata: dict[str, str]
+    ) -> 'GCPStorageFile':
+        '''
+        Creates and returns a ``GCPStorageFile`` instance.
+
+        :param str path: The path pointing to the file.
+        :param GCPClientHandler handler: A ``GCPClientHandler`` \
+            class instance.
+        :param dict[str, str] metadata: A dictionary containing \
+            any metadata associated with the file.
+        '''
+        instance = cls.__new__(cls)
+        _File.__init__(
+            instance,
+            path=path,
+            metadata=metadata,
+            handler=handler,
+            close_after_use=False)
+        return instance
+    
+
+    def __enter__(self) -> 'GCPStorageFile':
         '''
         Enter the runtime context related to this instance.
         '''
