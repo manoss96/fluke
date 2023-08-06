@@ -309,7 +309,7 @@ class _File(_ABC):
                 dst._get_handler().get_writer(
                     file_path=dst_fp,
                     metadata=metadata,
-                    in_chunks=chunk_size is not None
+                    chunk_size=chunk_size
                 ) as writer
             ):
                 if chunk_size is None:
@@ -1055,7 +1055,7 @@ class GCPStorageFile(_CloudFile):
         '''
         Returns the object's URI.
         '''
-        return f"s3://{self.get_bucket_name()}{self._get_separator()}{self.get_path()}"
+        return f"gs://{self.get_bucket_name()}{self._get_separator()}{self.get_path()}"
     
 
     @classmethod
@@ -2621,6 +2621,231 @@ class AzureBlobDir(_CloudDir):
 
     
     def __enter__(self) -> 'AzureBlobDir':
+        '''
+        Enter the runtime context related to this instance.
+        '''
+        return super().__enter__()
+    
+
+class GCPStorageDir(_CloudDir):
+    '''
+    This class represents a virtual directory which resides \
+    within a Google Cloud Storage bucket.
+
+    :param GCPAuth auth: A ``GCPAuth`` instance used \
+        for authenticating with GCP.
+    :param str bucket: The name of the bucket in which \
+        the directory resides.
+    :param str | None path: The path pointing to the directory. \
+        If ``None``, then the whole bucket is considered. \
+        Defaults to ``None``.
+    :param bool cache: Indicates whether it is allowed for \
+        any fetched data to be cached for faster subsequent \
+        access. Defaults to ``False``.
+    :param bool create_if_missing: If set to ``True``, then the directory \
+        to which the provided path points will be automatically created \
+        in case it does not already exist, instead of an exception being \
+        thrown. Defaults to ``False``.
+
+    :raises BucketNotFoundError: The specified \
+        bucket does not exist.
+    :raises InvalidPathError: The provided path \
+        does not exist.
+
+    :note: The provided path must not begin with \
+        a separator.
+            
+            * Wrong: ``/path/to/dir``
+            * Right: ``path/to/dir``
+    '''
+    def __init__(
+        self,
+        auth: _GCPAuth,
+        bucket: str,
+        path: _typ.Optional[str] = None,
+        cache: bool = False,
+        create_if_missing: bool = False
+    ):
+        '''
+        This class represents a virtual directory which resides \
+        within a Google Cloud Storage bucket.
+
+        :param GCPAuth auth: A ``GCPAuth`` instance used \
+            for authenticating with GCP.
+        :param str bucket: The name of the bucket in which \
+            the directory resides.
+        :param str | None path: The path pointing to the directory. \
+            If ``None``, then the whole bucket is considered. \
+            Defaults to ``None``.
+        :param bool cache: Indicates whether it is allowed for \
+            any fetched data to be cached for faster subsequent \
+            access. Defaults to ``True``.
+        :param bool create_if_missing: If set to ``True``, then the directory \
+            to which the provided path points will be automatically created \
+            in case it does not already exist, instead of an exception being \
+            thrown. Defaults to ``False``.
+
+        :raises BucketNotFoundError: The specified \
+            bucket does not exist.
+        :raises InvalidPathError: The provided path \
+            does not exist.
+
+        :note: The provided path must not begin with \
+            a separator.
+                
+                * Wrong: ``/path/to/dir``
+                * Right: ``path/to/dir``
+        '''
+        # Validate path.
+        if path is None:
+            path = ''
+        elif path.startswith('/'):
+            raise _IPE(path=path)
+            
+        # Instantiate a connection handler.
+        gcp_handler = _GCPClientHandler(
+            auth=auth,
+            bucket=bucket,
+            cache=cache)
+
+        super().__init__(
+            path=path,
+            handler=gcp_handler)
+
+        # Create directory or throw an exception
+        # depending on the value of "create_if_missing".
+        path = self.get_path()
+        if path != '':
+            if not gcp_handler.path_exists(path=path):
+                if create_if_missing:
+                    gcp_handler.mkdir(path=path)
+                else:
+                    self.close()
+                    raise _IPE(path)
+
+
+    def get_bucket_name(self) -> str:
+        '''
+        Returns the name of the bucket in which \
+        the directory resides.
+        '''
+        return self._get_handler().get_bucket_name()
+
+
+    def get_uri(self) -> str:
+        '''
+        Returns the directory's URI.
+        '''
+        return f"gs://{self.get_bucket_name()}/{self.get_path()}"
+    
+
+    def get_file(self, path: str) -> GCPStorageFile:
+        '''
+        Returns the file residing in the specified \
+        path as a ``GCPStorageFile`` instance.
+
+        :param str path: Either the absolute path or the \
+            path relative to the directory of the file in \
+            question.
+
+        :raises InvalidPathError: The provided path \
+            does not exist.
+        :raises InvalidFileError: The provided path does \
+            not point to a file within the directory.
+
+        :note: The provided path, if absolute, must not \
+            begin with a separator.
+
+                * Wrong: ``/path/to/file.txt``
+                * Right: ``path/to/file.txt``
+        '''
+        if not self.path_exists(path):
+            raise _IPE(path=path)
+        if not self.is_file(path):
+            raise _IFE(path=path)
+        
+        path = self._to_absolute(path, replace_sep=False)
+
+        return GCPStorageFile._create_file(
+            path=path,
+            handler=self._get_handler(),
+            metadata=self._get_file_metadata_ref(path))
+    
+
+    def get_subdir(self, path: str) -> 'GCPStorageDir':
+        '''
+        Returns the directory residing in the specified \
+        path as an ``GCPStorageDir`` instance.
+
+        :param str path: Either the absolute path or the \
+            path relative to the directory of the subdirectory \
+            in question.
+
+        :raises InvalidPathError: The provided path \
+            does not exist.
+
+        :note: The provided path, if absolute, must not \
+            begin with a separator.
+
+                * Wrong: ``/path/to/dir``
+                * Right: ``path/to/dir``
+        '''
+        sep = '/'
+        path = f"{path.removesuffix(sep)}{sep}"
+
+        if not self.path_exists(path):
+            raise _IPE(path=path)
+        
+        return self._get_subdir_impl(path)
+
+
+    @classmethod
+    def _create_dir(
+        cls,
+        path: str,
+        handler: _GCPClientHandler,
+        metadata: dict[str, str]
+    ) -> 'GCPStorageDir':
+        '''
+        Creates and returns an ``GCPStorageDir`` instance.
+
+        :param str path: The path pointing to the directory.
+        :param GCPClientHandler handler: A ``GCPClientHandler`` \
+            class instance.
+        :param dict[str, str] metadata: A dictionary containing \
+            file metadata.
+        '''
+        instance = cls.__new__(cls)
+        _Directory.__init__(
+            instance,
+            path=path,
+            metadata=metadata,
+            handler=handler,
+            close_after_use=False)
+        return instance
+    
+
+    def _get_subdir_impl(self, dir_path: str) -> 'GCPStorageDir':
+        '''
+        Returns the directory residing in the specified \
+        path as an ``GCPStorageDir`` instance.
+
+        :param str dir_path: Either the absolute path \
+            or the path relative to the directory of the \
+            subdirectory in question.
+        '''
+        sep = self._get_separator()
+        dir_path = f"{dir_path.removesuffix(sep)}{sep}"
+        abs_dir_path = self._to_absolute(
+            path=dir_path, replace_sep=False)
+        
+        return __class__._create_dir(
+            path=abs_dir_path,
+            handler=self._get_handler(),
+            metadata=self._get_metadata_ref())
+    
+
+    def __enter__(self) -> 'GCPStorageDir':
         '''
         Enter the runtime context related to this instance.
         '''

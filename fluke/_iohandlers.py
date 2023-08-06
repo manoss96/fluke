@@ -12,12 +12,10 @@ from azure.storage.blob import ContainerClient as _ContainerClient
 from azure.storage.blob import BlobType as _BlobType
 from google.cloud.storage import Bucket as _GCPBucket
 from google.resumable_media.requests import ResumableUpload as _ResumableUpload
+from google.auth.transport.requests import AuthorizedSession as _AuthSession
 from google.resumable_media.requests import MultipartUpload as _MultipartUpload
 from botocore.exceptions import ClientError as _BotoClientError
 from azure.core.exceptions import HttpResponseError as _AzureResponseError
-
-_ResumableUpload().transmit_next_chunk()
-_MultipartUpload().transmit()
 
 
 from ._helper import infer_separator as _infer_sep
@@ -576,17 +574,17 @@ class AmazonS3FileWriter(_FileWriter):
         dictionary containing the metadata that \
         are to be assigned to the file in question. \
         If ``None``, then no metadata are assigned.
-    :param bool in_chunks: Indicates whether to \
-        write the file in distinct chunks or \
-        all at once.
+    :param int | None chunk_size: Indicates whether \
+        the size of distinct chunks in which the file \
+        is written. If ``None``, then the file is to be \
+        written as a single chunk of bytes.
     :param Bucket bucket: A ``Bucket`` class instance.
     '''
-
     def __init__(
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool,
+        chunk_size: _Optional[int],
         bucket: '_boto3.resources.factory.s3.Bucket'
     ) -> None:
         '''
@@ -599,9 +597,10 @@ class AmazonS3FileWriter(_FileWriter):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         :param Bucket bucket: A ``Bucket`` class instance.
         '''
         super().__init__(file_path=file_path)
@@ -611,7 +610,7 @@ class AmazonS3FileWriter(_FileWriter):
         # multipart-upload, including any metadata that 
         # may exist. Else, store the metadata dictionary
         # so as to include them during the bulk upload.
-        if in_chunks:
+        if chunk_size is not None:
             if metadata is None:
                 self.__mpu = self.__file.initiate_multipart_upload()
             else:
@@ -728,9 +727,10 @@ class AzureBlobWriter(_FileWriter):
         dictionary containing the metadata that \
         are to be assigned to the file in question. \
         If ``None``, then no metadata are assigned.
-    :param bool in_chunks: Indicates whether to \
-        write the file in distinct chunks or \
-        all at once.
+    :param int | None chunk_size: Indicates whether \
+        the size of distinct chunks in which the file \
+        is written. If ``None``, then the file is to be \
+        written as a single chunk of bytes.
     :param ContainerClient container: A \
         ``ContainerClient`` class instance.
     '''
@@ -739,7 +739,7 @@ class AzureBlobWriter(_FileWriter):
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool,
+        chunk_size: _Optional[int],
         container: _ContainerClient,
     ) -> None:
         '''
@@ -752,16 +752,17 @@ class AzureBlobWriter(_FileWriter):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         :param ContainerClient container: A \
             ``ContainerClient`` class instance.
         '''
         super().__init__(file_path=file_path)
         self.__file = container.get_blob_client(blob=file_path)
         self.__metadata = metadata
-        self.__in_chunks = in_chunks
+        self.__chunk_size = chunk_size
         # NOTE: If blob already exists, then it has to be deleted only
         #       in the case that its type has to change. Furthermore,
         #       in the case the blob is to be written in chunks, it must
@@ -770,14 +771,14 @@ class AzureBlobWriter(_FileWriter):
             blob_type = self.__file.get_blob_properties().blob_type
             if blob_type == _BlobType.PAGEBLOB:
                 self.__file.delete_blob()
-                if in_chunks:
+                if chunk_size is not None:
                     self.__file.create_append_blob()
-            elif in_chunks and blob_type == _BlobType.BLOCKBLOB:
+            elif chunk_size is not None and blob_type == _BlobType.BLOCKBLOB:
                 self.__file.delete_blob()
                 self.__file.create_append_blob()
-            elif not in_chunks and blob_type == _BlobType.APPENDBLOB:
+            elif chunk_size is None and blob_type == _BlobType.APPENDBLOB:
                 self.__file.delete_blob()
-        elif in_chunks:
+        elif chunk_size is not None:
             self.__file.create_append_blob()
 
 
@@ -787,7 +788,7 @@ class AzureBlobWriter(_FileWriter):
         '''
         # If blob was uploaded in chunks,
         # then set file metadatan here.
-        if self.__in_chunks:
+        if self.__chunk_size is not None:
             self.__file.set_blob_metadata(
                 metadata=self.__metadata)
         # Close the file.
@@ -803,17 +804,16 @@ class AzureBlobWriter(_FileWriter):
             is to be written to the file.
         '''
         n = len(chunk)
-        if self.__in_chunks:
-            n = len(chunk)
-            self.__file.append_block(
-                data=chunk,
-                length=n)
-        else:
+        if self.__chunk_size is None:
             self.__file.upload_blob(
                 data=chunk,
                 length=n,
                 metadata=self.__metadata,
                 overwrite=True)
+        else:
+            self.__file.append_block(
+                data=chunk,
+                length=n)
         return n
     
 
@@ -885,9 +885,10 @@ class GCPFileWriter(_FileWriter):
         dictionary containing the metadata that \
         are to be assigned to the file in question. \
         If ``None``, then no metadata are assigned.
-    :param bool in_chunks: Indicates whether to \
-        write the file in distinct chunks or \
-        all at once.
+    :param int | None chunk_size: Indicates whether \
+        the size of distinct chunks in which the file \
+        is written. If ``None``, then the file is to be \
+        written as a single chunk of bytes.
     :param Bucket bucket: A ``Bucket`` class instance.
     '''
 
@@ -895,7 +896,7 @@ class GCPFileWriter(_FileWriter):
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool,
+        chunk_size: _Optional[int],
         bucket: _GCPBucket
     ) -> None:
         '''
@@ -908,28 +909,39 @@ class GCPFileWriter(_FileWriter):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         :param Bucket bucket: A ``Bucket`` class instance.
         '''
         super().__init__(file_path=file_path)
 
-        self.__metadata = metadata
-        self.__file = bucket.blob(file_path)
-
-        from google.resumable_media.requests import ResumableUpload
-
-        x = ResumableUpload.initiate(upload_url=url, metadata=self.__metadata)
-
         # NOTE: If uploading file in chunks,then create
         # a resumable upload session.
-        if in_chunks:
-            self.__file.create_resumable_upload_session
-            self.__rus = self.__file.create_resumable_upload_session()
+        if chunk_size is None:
+            self.__file = bucket.blob(blob_name=file_path)
+            self.__metadata = metadata
         else:
-            self.__rus = None
-        
+            self.__file = None
+            self.__rus = _ResumableUpload(
+                upload_url=(
+                    "https://storage.googleapis.com" +
+                    f"/upload/storage/v1/b/{bucket.name}/" +
+                    f"o?uploadType=resumable&name={file_path}"
+                ),
+                chunk_size=chunk_size
+            )
+            self.__transport = _AuthSession(
+                credentials=bucket.client._credentials)
+            self.__stream = _io.BytesIO()
+            self.__rus.initiate(
+                transport=self.__transport,
+                content_type='application/octet-stream',
+                stream=self.__stream,
+                stream_final=False,
+                metadata=metadata)
+
 
     def close(self) -> None:
         '''
@@ -939,8 +951,24 @@ class GCPFileWriter(_FileWriter):
         #       underlying HTTPS connection which
         #       will be closed by the `GCPClientHandler``
         #       class instance.
-        if self.__rus is not None and self.__metadata is not None:
-            self.__file.metadata = self.__metadata
+        if self.__file is None:
+            # NOTE: Due to setting ``stream_final`` to ``False``,
+            #       the upload is automatically iferred to be over
+            #       whenever a chunk whose size is less than the
+            #       specified chunk size is uploaded. If a file
+            #       happens to be divided into equally sized chunks,
+            #       then the algorithm cannot infer the final chunk.
+            #       In that case, a zero-byte chunk should be uploaded
+            #       to indicate that the upload has been finalized.
+            if not self.__rus.finished:
+                self.__rus.transmit_next_chunk(
+                    transport=self.__transport)
+            self.__transport.close()
+            self.__stream.close()
+        elif self.__metadata is not None:
+            # NOTE: Call ``patch`` in order to
+            #       upload the file's metadata.
+            self.__file = self.__metadata
             self.__file.patch()
 
 
@@ -952,18 +980,14 @@ class GCPFileWriter(_FileWriter):
         :param bytes chunk: The chunk of bytes that \
             is to be written to the file.
         '''
-        if self.__rus is None:
+        if self.__file is None:
+            self.__stream.write(chunk)
+            self.__stream.seek(-len(chunk), 1)
+            self.__rus.transmit_next_chunk(
+                transport=self.__transport)
+        else:
             with _io.BytesIO(chunk) as buffer:
-                self.__file.metadata = self.__metadata
                 self.__file.upload_from_file(
                     file_obj=buffer,
                     size=len(chunk))
-        else:
-            part_number = len(self.__parts) + 1
-            part = self.__mpu.Part(part_number=part_number)
-            response = part.upload(Body=chunk)
-            self.__parts.append({
-                'PartNumber': part_number,
-                'ETag': response['ETag']
-            })
         return len(chunk)

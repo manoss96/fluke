@@ -302,7 +302,7 @@ class ClientHandler(_ABC):
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool
+        chunk_size: _Optional[int]
     ) -> '_FileWriter':
         '''
         Returns an ``_FileWriter`` class instance \
@@ -314,9 +314,10 @@ class ClientHandler(_ABC):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         '''
         pass
 
@@ -464,7 +465,7 @@ class FileSystemHandler(ClientHandler):
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool
+        chunk_size: _Optional[int]
     ) -> _LocalFileWriter:
         '''
         Returns an ``LocalFileWriter`` class instance \
@@ -477,9 +478,10 @@ class FileSystemHandler(ClientHandler):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         '''
         return _LocalFileWriter(file_path=file_path)
     
@@ -725,7 +727,7 @@ class SSHClientHandler(ClientHandler):
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool
+        chunk_size: _Optional[int]
     ) -> _RemoteFileWriter:
         '''
         Returns a ``RemoteFileWriter`` class instance \
@@ -738,9 +740,10 @@ class SSHClientHandler(ClientHandler):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         '''
         return _RemoteFileWriter(
             file_path=file_path, sftp=self.__sftp)
@@ -997,7 +1000,7 @@ class AWSClientHandler(ClientHandler):
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool
+        chunk_size: _Optional[int]
     ) -> _AmazonS3FileWriter:
         '''
         Returns an ``AmazonS3FileWriter`` class instance \
@@ -1010,14 +1013,15 @@ class AWSClientHandler(ClientHandler):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         '''
         return _AmazonS3FileWriter(
             file_path=file_path,
             metadata=metadata,
-            in_chunks=in_chunks,
+            chunk_size=chunk_size,
             bucket=self.__bucket)
     
 
@@ -1267,7 +1271,7 @@ class AzureClientHandler(ClientHandler):
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool
+        chunk_size: _Optional[int]
     ) -> _AzureBlobWriter:
         '''
         Returns an ``AzureBlobWriter`` class instance \
@@ -1280,14 +1284,15 @@ class AzureClientHandler(ClientHandler):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         '''
         return _AzureBlobWriter(
             file_path=file_path,
             metadata=metadata,
-            in_chunks=in_chunks,
+            chunk_size=chunk_size,
             container=self.__container)
      
 
@@ -1496,10 +1501,9 @@ class GCPClientHandler(ClientHandler):
         :param str path: The path of the directory \
             that is to be created.
         '''
-        with self.__bucket.blob(path) as blob_dir:
-            blob_dir.upload_from_string(
-                '',
-                content_type='application/x-www-form-urlencoded;charset=UTF-8')
+        self.__bucket.blob(path).upload_from_string(
+            '',
+            content_type='application/x-www-form-urlencoded;charset=UTF-8')
 
 
     def get_reader(self, file_path: str) -> _AzureBlobReader:
@@ -1521,7 +1525,7 @@ class GCPClientHandler(ClientHandler):
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool
+        chunk_size: _Optional[int]
     ) -> _AzureBlobWriter:
         '''
         Returns an ``AzureBlobWriter`` class instance \
@@ -1534,16 +1538,16 @@ class GCPClientHandler(ClientHandler):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         '''
-        raise NotImplementedError()
-        return _AzureBlobWriter(
+        return _GCPFileWriter(
             file_path=file_path,
             metadata=metadata,
-            in_chunks=in_chunks,
-            container=self.__container)
+            chunk_size=chunk_size,
+            bucket=self.__bucket)
      
 
     def _get_file_size_impl(self, file_path) -> int:
@@ -1601,10 +1605,11 @@ class GCPClientHandler(ClientHandler):
         else:
             iterable = self.__bucket.list_blobs(
                 prefix=dir_path,
-                delimeter=sep)
+                delimiter=sep)
                     
         for blob in iterable:
-            if show_abs_path:
-                yield blob.name
-            else:
-                yield _relativize(dir_path, blob.name, sep)
+            if not blob.name.endswith('/'):
+                if show_abs_path:
+                    yield blob.name
+                else:
+                    yield _relativize(dir_path, blob.name, sep)
