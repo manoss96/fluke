@@ -420,8 +420,7 @@ class FileSystemHandler(ClientHandler):
         Returns ``True`` if the provided path exists \
         within the directory, else returns ``False``.
 
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
+        :param str path: An absolute path.
         '''
         return _os.path.exists(path=path)
     
@@ -676,8 +675,7 @@ class SSHClientHandler(ClientHandler):
         Returns ``True`` if the provided path exists \
         within the directory, else returns ``False``.
 
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
+        :param str path: An absolute path.
         '''
         try:
             self.__sftp.stat(path=path)
@@ -935,8 +933,7 @@ class AWSClientHandler(ClientHandler):
         Returns ``True`` if the provided path exists \
         within the directory, else returns ``False``.
 
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
+        :param str path: An absolute path.
         '''
         try:
             self.__bucket.Object(path).load()
@@ -1222,8 +1219,7 @@ class AzureClientHandler(ClientHandler):
         Returns ``True`` if the provided path exists \
         within the directory, else returns ``False``.
 
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
+        :param str path: An absolute path.
         '''
         with self.__container.get_blob_client(blob=path) as blob:
             return blob.exists()
@@ -1477,10 +1473,14 @@ class GCPClientHandler(ClientHandler):
         Returns ``True`` if the provided path exists \
         within the directory, else returns ``False``.
 
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
+        :param str path: An absolute path.
         '''
-        return self.__bucket.blob(path).exists()
+        for _ in self.__bucket.list_blobs(
+            prefix=path,
+            delimiter='/'
+        ):    
+            return True
+        return False
         
 
     def is_file(self, file_path: str) -> bool:
@@ -1568,7 +1568,10 @@ class GCPClientHandler(ClientHandler):
         :param str file_path: The absolute path of the \
             file in question.
         '''
-        return self.__bucket.get_blob(file_path).metadata
+        return dict() if (
+            metadata := self.__bucket.get_blob(file_path).metadata
+        ) is None else metadata
+        
 
 
     def _traverse_dir_impl(
@@ -1600,16 +1603,21 @@ class GCPClientHandler(ClientHandler):
         sep = '/'
 
         if recursively:
-            iterable = self.__bucket.list_blobs(
-                prefix=dir_path)
+            for blob in self.__bucket.list_blobs(
+                prefix=dir_path
+            ):
+                if not blob.name.endswith('/'):
+                    if show_abs_path:
+                        yield blob.name
+                    else:
+                        yield _relativize(dir_path, blob.name, sep)
         else:
-            iterable = self.__bucket.list_blobs(
+            for blob in self.__bucket.list_blobs(
                 prefix=dir_path,
-                delimiter=sep)
-                    
-        for blob in iterable:
-            if not blob.name.endswith('/'):
-                if show_abs_path:
-                    yield blob.name
-                else:
-                    yield _relativize(dir_path, blob.name, sep)
+                delimiter=sep
+            ):    
+                if blob.name != dir_path:   
+                    if show_abs_path:
+                        yield blob.name
+                    else:
+                        yield _relativize(dir_path, blob.name, sep)

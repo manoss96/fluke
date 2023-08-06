@@ -4,8 +4,8 @@ import sys
 import time
 import shutil
 import unittest
-from typing import Optional, Iterator, Callable
 from unittest.mock import Mock, patch
+from typing import Optional, Iterator, Callable
 
 
 import boto3
@@ -13,10 +13,10 @@ import paramiko
 from moto import mock_s3
 
 
-from fluke.auth import RemoteAuth, AWSAuth, AzureAuth
+from fluke.auth import RemoteAuth, AWSAuth, AzureAuth, GCPAuth
 from fluke.storage import LocalFile, LocalDir, \
     RemoteFile, RemoteDir, AmazonS3File, AmazonS3Dir, \
-    AzureBlobFile, AzureBlobDir
+    AzureBlobFile, AzureBlobDir, GCPStorageFile, GCPStorageDir
 from fluke._exceptions import OverwriteError
 from fluke._exceptions import InvalidPathError
 from fluke._exceptions import InvalidFileError
@@ -82,8 +82,16 @@ def get_azure_auth_instance(from_conn_string: bool) -> AzureAuth:
             account_url=STORAGE_ACCOUNT_URL,
             tenant_id='',
             client_id='',
-            client_secret='')
-    )
+            client_secret=''))
+
+
+def get_gcp_auth_instance() -> GCPAuth:
+    '''
+    Returns a dummy ``GCPAuth`` instance.
+    '''
+    return GCPAuth.from_application_default_credentials(
+        project_id='',
+        credentials='')
 
 
 def create_aws_s3_bucket(mock_s3, bucket_name: str, metadata: dict[str, str]):
@@ -103,7 +111,7 @@ def create_aws_s3_bucket(mock_s3, bucket_name: str, metadata: dict[str, str]):
     s3 = boto3.resource("s3")
     s3.create_bucket(Bucket=bucket_name)
     bucket = s3.Bucket(bucket_name)
-    # Structure it like "test_files".
+    # Structure it like "test_files/bucket".
     for dp, dn, fn in os.walk(TEST_FILES_DIR):
         dn.sort()
         for file in sorted(fn):
@@ -193,7 +201,7 @@ REMOTE-RELATED CONSTANTS
 HOST = "host"
 
 '''
-AWS-RELATED CONSTANTS
+AWS/GPC-RELATED CONSTANTS
 '''
 BUCKET = "bucket"
 
@@ -670,11 +678,14 @@ class TestRemoteFile(unittest.TestCase):
             'cache': cache
         })
 
-    def setUp(self):        
+    @classmethod
+    def setUpClass(cls):
+        print("AAAA")     
         for k, v in MockSFTPClient.get_mock_methods().items():
             patch(k, v).start()
 
-    def tearDown(self):
+    @classmethod
+    def tearDownClass(cls):
         patch.stopall()
 
     def test_constructor(self):
@@ -936,8 +947,9 @@ class TestAmazonS3File(unittest.TestCase):
 
     MOCK_S3 = mock_s3()
 
-    def setUp(self):
-        create_aws_s3_bucket(self.MOCK_S3, BUCKET, METADATA)
+    @classmethod
+    def setUpClass(cls):
+        create_aws_s3_bucket(cls.MOCK_S3, BUCKET, METADATA)
 
         from fluke._handlers import AWSClientHandler
 
@@ -962,8 +974,9 @@ class TestAmazonS3File(unittest.TestCase):
         m3.start().side_effect = simulate_latency_3
 
 
-    def tearDown(self):
-        self.MOCK_S3.stop()
+    @classmethod
+    def tearDownClass(cls):
+        cls.MOCK_S3.stop()
         patch.stopall()
     
     @staticmethod
@@ -1274,11 +1287,13 @@ class TestAzureBlobFile(unittest.TestCase):
             'cache': cache
         })
 
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
         for k, v in MockContainerClient.get_mock_methods().items():
             patch(k, v).start()
 
-    def tearDown(self):
+    @classmethod
+    def tearDownClass(self):
         patch.stopall()
 
     def test_constructor(self):
@@ -1311,6 +1326,373 @@ class TestAzureBlobFile(unittest.TestCase):
             uri = f"abfss://{CONTAINER}@{STORAGE_ACCOUNT}"
             uri += f".dfs.core.windows.net/{REL_FILE_PATH}"
             self.assertEqual(file.get_uri(), uri)
+
+    def test_get_metadata(self):
+        with self.build_file() as file:
+            self.assertEqual(file.get_metadata(), {})
+
+    def test_set_and_get_metadata(self):
+        with self.build_file() as file:
+            metadata = {'a': '1'}
+            file.set_metadata(metadata=metadata)
+            self.assertEqual(file.get_metadata(), metadata)
+
+    def test_set_metadata_on_non_string_metadata_key_error(self):
+        with self.build_file() as file:
+            metadata = {1: '1'}
+            self.assertRaises(NonStringMetadataKeyError, file.set_metadata, metadata=metadata)
+
+    def test_set_metadata_on_non_string_metadata_value_error(self):
+        with self.build_file() as file:
+            metadata = {'1': 1}
+            self.assertRaises(NonStringMetadataValueError, file.set_metadata, metadata=metadata)
+
+    def test_load_metadata(self):
+        with self.build_file() as file:
+            file.load_metadata()
+            self.assertEqual(file.get_metadata(), METADATA)
+
+    def test_load_metadata_after_set_metadata(self):
+        with self.build_file() as file:
+            file.set_metadata({'a': 'a'})
+            file.load_metadata()
+            self.assertEqual(file.get_metadata(), METADATA)
+
+    def test_set_metadata_after_load_metadata(self):
+        with self.build_file() as file:
+            file.load_metadata()
+            new_metadata = {'a': 'a'}
+            file.set_metadata(new_metadata)
+            self.assertEqual(file.get_metadata(), new_metadata)
+
+    def test_get_size(self):
+        with self.build_file() as file:
+            self.assertEqual(file.get_size(), 4)
+
+    def test_read(self):
+        with self.build_file() as file:
+            self.assertEqual(file.read(), b"TEXT")
+
+    def test_read_chunks(self):
+        data, chunk_size = b"TEXT", 1
+        with (
+            self.build_file() as file,
+            io.BytesIO(data) as buffer
+        ):
+            for chunk in file.read_chunks(chunk_size):
+                self.assertEqual(chunk, buffer.read(chunk_size))
+
+    def test_read_range(self):
+        data, start, end = b"EX", 1, 3
+        with self.build_file() as file:
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_is_none(self):
+        with self.build_file() as file:
+            data, start, end = b"TE", None, 2
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_end_is_none(self):
+        with self.build_file() as file:
+            data, start, end = b"XT", 2, None
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_range_on_start_greater_than_end(self):
+        with self.build_file() as file:
+            data, start, end = b"", 100, 1
+            self.assertEqual(data, file.read_range(start, end))
+
+    def test_read_text(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            self.assertEqual(data, file.read_text())
+
+    def test_read_lines(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            for line in file.read_lines():
+                self.assertEqual(data, line)
+
+    def test_read_lines_on_chunk_size(self):
+        with self.build_file() as file:
+            data = "TEXT"
+            for line in file.read_lines(chunk_size=1):
+                self.assertEqual(data, line)
+
+    def test_transfer_to(self):
+        with self.build_file() as file:
+            # Copy file into dir.
+            file.transfer_to(dst=TestLocalDir.build_dir(path=ABS_DIR_PATH))
+            # Confirm that file was indeed copied.
+            copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
+            # Remove copy of the file.
+            os.remove(copy_path)
+
+    def test_transfer_to_on_chunk_size(self):
+        with self.build_file() as file:
+            # Copy file into dir.
+            file.transfer_to(
+                dst=TestLocalDir.build_dir(path=ABS_DIR_PATH),
+                chunk_size=1)
+            # Confirm that file was indeed copied.
+            copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
+            with (
+                open(ABS_FILE_PATH, mode='rb') as file,
+                open(copy_path, mode='rb') as copy
+            ):
+                self.assertEqual(file.read(), copy.read())
+            # Remove copy of the file.
+            os.remove(copy_path)
+
+    def test_transfer_to_on_overwrite_error(self):
+        with self.build_file() as file:
+            dir = TestLocalDir.build_dir(path=ABS_DIR_PATH)
+            # Copy file into dir.
+            file.transfer_to(dst=dir)
+            # Ensure OverwriteError is raised when trying
+            # to copy file a second time.
+            self.assertFalse(file.transfer_to(dst=dir))
+            # Remove copy of the file.
+            copy_path = join_paths(ABS_DIR_PATH, FILE_NAME)
+            os.remove(copy_path)
+
+    def test_transfer_to_on_include_metadata_set_to_false(self):
+        with (
+            mock_s3() as mocks3,
+            self.build_file() as file
+        ):
+            # Create AWS bucket and contents.
+            create_aws_s3_bucket(
+                mocks3,
+                BUCKET,
+                metadata=METADATA)
+           # Copy file into dir, including its metadata.
+            file.set_metadata(metadata=METADATA)
+            dir_path = REL_DIR_PATH
+            with (AmazonS3Dir(
+                    auth=get_aws_auth_instance(),
+                    bucket=BUCKET,
+                    path=dir_path) as s3_dir
+            ):
+                file.transfer_to(dst=s3_dir, include_metadata=False)
+            # Gain access to the uploaded object.
+            file_path = join_paths(dir_path, FILE_NAME)
+            obj = get_aws_s3_object(BUCKET, file_path)
+            # Assert that metadata were copied to the object.
+            self.assertEqual(obj.metadata, {})
+            # Delete object.
+            obj.delete()
+
+    def test_transfer_to_on_include_metadata_set_to_true(self):
+        with (
+            mock_s3() as mocks3,
+            self.build_file() as file
+        ):
+            # Create AWS bucket and contents.
+            create_aws_s3_bucket(
+                mocks3,
+                BUCKET,
+                metadata=METADATA)
+            # Copy file into dir, including its metadata.
+            new_metadata = {'2': '2'}
+            file.set_metadata(metadata=new_metadata)
+            dir_path = REL_DIR_PATH
+            with (AmazonS3Dir(
+                    auth=get_aws_auth_instance(),
+                    bucket=BUCKET,
+                    path=dir_path) as s3_dir
+            ):
+                file.transfer_to(dst=s3_dir, include_metadata=True)
+            # Gain access to the uploaded object.
+            file_path = join_paths(dir_path, FILE_NAME)
+            obj = get_aws_s3_object(BUCKET, file_path)
+            # Assert that metadata were copied to the object.
+            self.assertEqual(obj.metadata, new_metadata)
+            # Delete object.
+            obj.delete()
+
+    '''
+    Test connection methods.
+    '''
+    def test_open(self):
+        file = self.build_file()
+        file.close()
+        file.open()
+        self.assertTrue(file._get_handler().is_open())
+        file.close()
+
+    def test_close(self):
+        file = self.build_file()
+        file.close()
+        self.assertFalse(file._get_handler().is_open())
+
+    '''
+    Test cache methods.
+    '''
+    def test_is_cachable_on_false(self):
+        with self.build_file() as file:
+            self.assertEqual(file.is_cacheable(), False)
+
+    def test_is_cachable_on_true(self):
+        with self.build_file(cache=True) as file:
+            self.assertEqual(file.is_cacheable(), True)
+
+    def test_purge(self):
+        with self.build_file(cache=True) as file:
+            # Load metadata via HTTP.
+            file.load_metadata()
+            # Load metadata via cache and time it.
+            t = time.time()
+            file.load_metadata()
+            cache_time = time.time() - t
+            # Purge cache.
+            file.purge()
+            # Load metadata via HTTP and time it.
+            t = time.time()
+            file.load_metadata()
+            normal_time = time.time() - t
+            self.assertGreater(normal_time, cache_time)
+
+    def test_load_metadata_from_cache_on_value(self):
+        with self.build_file(cache=True) as file:
+            # Load metadata via HTTP.
+            file.load_metadata()
+            # Load metadata from cache.
+            file.load_metadata()
+            self.assertEqual(file.get_metadata(), METADATA)
+
+    def test_load_metadata_from_cache_on_time(self):
+        with self.build_file(cache=True) as file:
+            # Fetch object metadata via HTTP.
+            t = time.time()
+            _ = file.load_metadata()
+            normal_time = time.time() - t
+            # Fetch object metadata from cache.
+            t = time.time()
+            _ = file.load_metadata()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+    def test_get_size_from_cache_on_value(self):
+        with self.build_file(cache=True) as file:
+            _ = file.get_size()
+            self.assertEqual(file.get_size(), 4)
+
+    def test_get_size_from_cache_on_time(self):
+        with self.build_file(cache=True) as file:
+            # Fetch object size via HTTP.
+            t = time.time()
+            _ = file.get_size()
+            normal_time = time.time() - t
+            # Fetch object size from cache.
+            t = time.time()
+            _ = file.get_size()
+            cache_time = time.time() - t
+            # Compare fetch times.
+            self.assertGreater(normal_time, cache_time)
+
+
+class TestGCPStorageFile(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+
+        from fluke._handlers import GCPClientHandler
+
+        m1 = patch.object(GCPClientHandler, '_get_file_size_impl', autospec=True)
+        m2 = patch.object(GCPClientHandler, '_get_file_metadata_impl', autospec=True)
+        m3 = patch.object(GCPClientHandler, '_traverse_dir_impl', autospec=True)
+
+        def simulate_latency_1(*args, **kwargs):
+            time.sleep(0.2)
+            return m1.temp_original(*args, **kwargs)
+        
+        def simulate_latency_2(*args, **kwargs):
+            time.sleep(0.2)
+            return m2.temp_original(*args, **kwargs)
+        
+        def simulate_latency_3(*args, **kwargs):
+            time.sleep(0.2)
+            return m3.temp_original(*args, **kwargs)
+
+        m1.start().side_effect = simulate_latency_1
+        m2.start().side_effect = simulate_latency_2
+        m3.start().side_effect = simulate_latency_3
+
+        from requests import Session
+        from google.cloud.storage import Client
+        from google.api_core.client_options import ClientOptions
+        from google.auth.credentials import AnonymousCredentials
+
+        cls.__session = Session()
+        cls.__session.verify = False
+
+        cls.__client = Client(
+            credentials=AnonymousCredentials(),
+            project="test",
+            _http=cls.__session,
+            client_options=ClientOptions(api_endpoint='https://127.0.0.1:4443'))
+        
+        # Assign metadata to each blob.
+        for blob in cls.__client.bucket(BUCKET).list_blobs():
+            blob.metadata = METADATA
+            blob.patch()
+
+        for k, v in {
+            'google.cloud.storage.Client.__init__': Mock(return_value=None),
+            'google.cloud.storage.Client.__new__': Mock(return_value=cls.__client)
+        }.items():
+            patch(k, v).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        patch.stopall()
+        cls.__session.close()
+        cls.__client.close()
+    
+    @staticmethod
+    def build_file(
+        path: str = REL_FILE_PATH,
+        bucket: str = BUCKET,
+        cache: bool = False
+    ) -> GCPStorageFile:
+        return GCPStorageFile(**{
+            'auth': get_gcp_auth_instance(),
+            'bucket': bucket,
+            'path': path,
+            'cache': cache
+        })
+
+    def test_constructor(self):
+        with self.build_file() as file:
+            self.assertEqual(file.get_path(), REL_FILE_PATH)
+
+    def test_constructor_on_invalid_path_error(self):
+        self.assertRaises(InvalidPathError, self.build_file, path="NON_EXISTING_PATH")
+
+    def test_constructor_on_invalid_file_error(self):
+        self.assertRaises(InvalidFileError, self.build_file, path=REL_DIR_PATH)
+
+    def test_constructor_on_bucket_not_found_error(self):
+        self.assertRaises(BucketNotFoundError, self.build_file, bucket='UNKNOWN')
+
+    def test_get_name(self):
+        with self.build_file() as file:
+            self.assertEqual(file.get_name(), FILE_NAME)
+
+    def test_get_uri(self):
+        with self.build_file() as file:
+            self.assertEqual(file.get_uri(), f"gs://{BUCKET}/{REL_FILE_PATH}")
+
+    def test_get_bucket_name(self):
+        with self.build_file() as file:
+            self.assertEqual(file.get_bucket_name(), BUCKET)
 
     def test_get_metadata(self):
         with self.build_file() as file:
@@ -2051,11 +2433,13 @@ class TestLocalDir(unittest.TestCase):
 
 class TestRemoteDir(unittest.TestCase):
 
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
         for k, v in MockSFTPClient.get_mock_methods().items():
             patch(k, v).start()
 
-    def tearDown(self):
+    @classmethod
+    def tearDownClass(cls):
         patch.stopall()
     
     @staticmethod
@@ -2785,8 +3169,9 @@ class TestAmazonS3Dir(unittest.TestCase):
         ):
             yield obj.key if show_abs_path else obj.key.removeprefix(path)
 
-    def setUp(self):
-        create_aws_s3_bucket(self.MOCK_S3, BUCKET, METADATA)
+    @classmethod
+    def setUpClass(cls):
+        create_aws_s3_bucket(cls.MOCK_S3, BUCKET, METADATA)
 
         from fluke._handlers import AWSClientHandler
 
@@ -2810,8 +3195,9 @@ class TestAmazonS3Dir(unittest.TestCase):
         m2.start().side_effect = simulate_latency_2
         m3.start().side_effect = simulate_latency_3
 
-    def tearDown(self):
-        self.MOCK_S3.stop()
+    @classmethod
+    def tearDownClass(cls):
+        cls.MOCK_S3.stop()
         patch.stopall()
     
     @staticmethod
@@ -3282,18 +3668,20 @@ class TestAmazonS3Dir(unittest.TestCase):
         with self.build_dir(path=tmp_dir_path) as s3_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=s3_dir)
-            # Confirm that file was indeed copied.
+            # Fetch transferred object.
             copy_path = join_paths(tmp_dir_path, FILE_NAME)
+            obj = get_aws_s3_object(BUCKET, copy_path)
             with (
                 open(ABS_FILE_PATH, mode='rb') as file,
                 io.BytesIO() as buffer
             ):
-                get_aws_s3_object(
-                    bucket_name=BUCKET, path=copy_path
-                ).download_fileobj(buffer)
+                # Confirm that file was indeed copied.
+                obj.download_fileobj(buffer)
                 self.assertEqual(
                     file.read(),
                     buffer.getvalue())
+            # Delete object.
+            obj.delete()
 
     def test_transfer_to_as_dst_on_chunk_size(self):
         # Get source file.
@@ -3303,18 +3691,20 @@ class TestAmazonS3Dir(unittest.TestCase):
         with self.build_dir(path=tmp_dir_path) as s3_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=s3_dir, chunk_size=1000)
-            # Confirm that file was indeed copied.
+            # Fetch transferred object.
             copy_path = join_paths(tmp_dir_path, FILE_NAME)
+            obj = get_aws_s3_object(BUCKET, copy_path)
             with (
                 open(ABS_FILE_PATH, mode='rb') as file,
                 io.BytesIO() as buffer
             ):
-                get_aws_s3_object(
-                    bucket_name=BUCKET, path=copy_path
-                ).download_fileobj(buffer)
+                # Confirm that file was indeed copied.
+                obj.download_fileobj(buffer)
                 self.assertEqual(
                     file.read(),
                     buffer.getvalue())
+            # Delete object.
+            obj.delete()
 
     def test_transfer_to_as_dst_on_include_metadata(self):
         # Get source file and metadata.
@@ -3326,11 +3716,13 @@ class TestAmazonS3Dir(unittest.TestCase):
         with self.build_dir(path=tmp_dir_path) as s3_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=s3_dir, include_metadata=True)
-            # Confirm that metadata was indeed assigned.
+            # Fetch transferred object.
             copy_path = join_paths(tmp_dir_path, FILE_NAME)
-            self.assertEqual(
-                get_aws_s3_object(BUCKET, copy_path).metadata,
-                metadata)
+            obj = get_aws_s3_object(BUCKET, copy_path)
+            # Confirm that metadata was indeed assigned.
+            self.assertEqual(obj.metadata, metadata)
+            # Delete object.
+            obj.delete()
         
     def test_transfer_to_as_dst_on_chunk_size_and_include_metadata(self):
         # Get source file and metadata.
@@ -3345,11 +3737,13 @@ class TestAmazonS3Dir(unittest.TestCase):
                 dst=s3_dir,
                 include_metadata=True,
                 chunk_size=1000)
-            # Confirm that metadata was indeed assigned.
+            # Fetch transferred object.
             copy_path = join_paths(tmp_dir_path, FILE_NAME)
-            self.assertEqual(
-                get_aws_s3_object(BUCKET, copy_path).metadata,
-                metadata)
+            obj = get_aws_s3_object(BUCKET, copy_path)
+            # Confirm that metadata was indeed assigned.
+            self.assertEqual(obj.metadata, metadata)
+            # Delete object.
+            obj.delete()
         
     def test_get_file(self):
         with self.build_dir() as dir:
@@ -3669,11 +4063,13 @@ class TestAzureBlobDir(unittest.TestCase):
             RECURSIVE_CONTENTS if recursively else CONTENTS
         )]
 
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
         for k, v in MockContainerClient.get_mock_methods().items():
             patch(k, v).start()
 
-    def tearDown(self):
+    @classmethod
+    def tearDownClass(cls):
         patch.stopall()
     
     @staticmethod
