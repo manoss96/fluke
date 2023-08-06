@@ -1501,9 +1501,11 @@ class GCPClientHandler(ClientHandler):
         :param str path: The path of the directory \
             that is to be created.
         '''
-        self.__bucket.blob(path).upload_from_string(
+        blob = self.__bucket.blob(blob_name=f"{path}DUMMY")
+        blob.upload_from_string(
             '',
-            content_type='application/x-www-form-urlencoded;charset=UTF-8')
+            content_type='application/octet-stream')
+        blob.delete()
 
 
     def get_reader(self, file_path: str) -> _AzureBlobReader:
@@ -1606,18 +1608,53 @@ class GCPClientHandler(ClientHandler):
             for blob in self.__bucket.list_blobs(
                 prefix=dir_path
             ):
-                if not blob.name.endswith('/'):
+                if blob.name != dir_path:  
                     if show_abs_path:
                         yield blob.name
                     else:
                         yield _relativize(dir_path, blob.name, sep)
         else:
-            for blob in self.__bucket.list_blobs(
-                prefix=dir_path,
-                delimiter=sep
-            ):    
-                if blob.name != dir_path:   
-                    if show_abs_path:
-                        yield blob.name
-                    else:
-                        yield _relativize(dir_path, blob.name, sep)
+
+            from google.api_core import page_iterator
+
+            dir_iter = page_iterator.HTTPIterator(
+                client=self.__bucket.client,
+                api_request=self.__bucket.client._connection.api_request,
+                path=f"/b/{self.get_bucket_name()}/o",
+                items_key='prefixes',
+                item_to_value=lambda _, item: item,
+                extra_params={
+                    "projection": "noAcl",
+                    "prefix": dir_path,
+                    "delimiter": '/'})
+
+            obj_iter = filter(
+                lambda obj: obj != dir_path,
+                map(
+                    lambda obj: obj.name,
+                    self.__bucket.list_blobs(
+                        prefix=dir_path,
+                        delimiter='/')))
+
+            obj = next(obj_iter, None)
+            dir = next(dir_iter, None)
+        
+            name_fun = lambda name: (
+                name if show_abs_path
+                else _relativize(dir_path, name, sep))
+
+            while True:
+                if obj is None and dir is None:
+                    break
+                elif obj is None and dir is not None:
+                    yield name_fun(dir)
+                    dir = next(dir_iter, None)
+                elif obj is not None and dir is None:
+                    yield name_fun(obj)
+                    obj = next(obj_iter, None)
+                elif obj > dir:
+                    yield name_fun(dir)
+                    dir = next(dir_iter, None)
+                else:
+                    yield name_fun(obj)
+                    obj = next(obj_iter, None)
