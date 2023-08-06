@@ -1663,9 +1663,24 @@ class TestGCPStorageFile(unittest.TestCase):
         # Set up the GCP bucket.
         cls.__client, cls.__session = set_up_gcp_bucket()
 
+        from google.resumable_media.requests import ResumableUpload
+
+        def get_resumable_upload_session(*args, **kwargs):
+            return ResumableUpload(
+                upload_url=(
+                    "https://127.0.0.1:4443" +
+                    f"/upload/storage/v1/b/{kwargs['bucket']}/" +
+                    f"o?uploadType=resumable&name={kwargs['file_path']}"
+                ),
+                chunk_size=kwargs['chunk_size'])
+
         for k, v in {
             'google.cloud.storage.Client.__init__': Mock(return_value=None),
-            'google.cloud.storage.Client.__new__': Mock(return_value=cls.__client)
+            'google.cloud.storage.Client.__new__': Mock(return_value=cls.__client),
+            'fluke._iohandlers.GCPFileWriter._create_resumable_upload_session': Mock(
+                wraps=get_resumable_upload_session),
+            'fluke._iohandlers.GCPFileWriter._create_transport_session': Mock(
+                return_value=cls.__session)
         }.items():
             patch(k, v).start()
 
@@ -4981,18 +4996,13 @@ class TestGCPStorageDir(unittest.TestCase):
                 ),
                 chunk_size=kwargs['chunk_size'])
 
-        from google.auth.transport.requests import Request
-
-        def get_transport_session(*args, **kwargs):
-            return cls.__session
-
         for k, v in {
             'google.cloud.storage.Client.__init__': Mock(return_value=None),
             'google.cloud.storage.Client.__new__': Mock(return_value=cls.__client),
             'fluke._iohandlers.GCPFileWriter._create_resumable_upload_session': Mock(
                 wraps=get_resumable_upload_session),
             'fluke._iohandlers.GCPFileWriter._create_transport_session': Mock(
-                wraps=get_transport_session)
+                return_value=cls.__session)
         }.items():
             patch(k, v).start()
 

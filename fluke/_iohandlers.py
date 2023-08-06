@@ -893,14 +893,19 @@ class GCPFileWriter(_FileWriter):
     '''
 
     @staticmethod
-    def _create_resumable_upload_session(bucket, file_path, chunk_size) -> _ResumableUpload:
+    def _create_resumable_upload_session(
+        bucket: str,
+        file_path: str,
+        chunk_size: int
+    ) -> _ResumableUpload:
         return _ResumableUpload(
-                upload_url=(
-                    "https://storage.googleapis.com" +
-                    f"/upload/storage/v1/b/{bucket.name}/" +
-                    f"o?uploadType=resumable&name={file_path}"
-                ),
-                chunk_size=chunk_size)
+            upload_url=(
+                "https://storage.googleapis.com" +
+                f"/upload/storage/v1/b/{bucket}/" +
+                f"o?uploadType=resumable&name={file_path}"
+            ),
+            chunk_size=chunk_size)
+    
     
     @staticmethod
     def _create_transport_session(credentials) -> _AuthSession:
@@ -940,7 +945,7 @@ class GCPFileWriter(_FileWriter):
         else:
             self.__file = None
             self.__rus = self._create_resumable_upload_session(
-                bucket=bucket,
+                bucket=bucket.name,
                 file_path=file_path,
                 chunk_size=chunk_size
             )
