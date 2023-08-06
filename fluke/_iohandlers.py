@@ -892,6 +892,21 @@ class GCPFileWriter(_FileWriter):
     :param Bucket bucket: A ``Bucket`` class instance.
     '''
 
+    @staticmethod
+    def _create_resumable_upload_session(bucket, file_path, chunk_size) -> _ResumableUpload:
+        return _ResumableUpload(
+                upload_url=(
+                    "https://storage.googleapis.com" +
+                    f"/upload/storage/v1/b/{bucket.name}/" +
+                    f"o?uploadType=resumable&name={file_path}"
+                ),
+                chunk_size=chunk_size)
+    
+    @staticmethod
+    def _create_transport_session(credentials) -> _AuthSession:
+        return _AuthSession(credentials=credentials)
+
+
     def __init__(
         self,
         file_path: str,
@@ -924,16 +939,14 @@ class GCPFileWriter(_FileWriter):
             self.__metadata = metadata
         else:
             self.__file = None
-            self.__rus = _ResumableUpload(
-                upload_url=(
-                    "https://storage.googleapis.com" +
-                    f"/upload/storage/v1/b/{bucket.name}/" +
-                    f"o?uploadType=resumable&name={file_path}"
-                ),
+            self.__rus = self._create_resumable_upload_session(
+                bucket=bucket,
+                file_path=file_path,
                 chunk_size=chunk_size
             )
-            self.__transport = _AuthSession(
+            self.__transport = self._create_transport_session(
                 credentials=bucket.client._credentials)
+            
             self.__stream = _io.BytesIO()
             self.__rus.initiate(
                 transport=self.__transport,

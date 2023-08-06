@@ -141,22 +141,9 @@ def get_aws_s3_object(bucket_name: str, path: str):
 def set_up_gcp_bucket():
 
     from requests import Session
-    from google.cloud.storage import Client, blob
+    from google.cloud.storage import Client
     from google.api_core.client_options import ClientOptions
     from google.auth.credentials import AnonymousCredentials
-
-    EXTERNAL_URL = "https://127.0.0.1:4443"
-    PUBLIC_HOST = "storage.gcs.127.0.0.1.nip.io:4443"
-
-    blob._API_ACCESS_ENDPOINT = f"https://{PUBLIC_HOST}"
-    blob._DOWNLOAD_URL_TEMPLATE = (
-        u"%s/download/storage/v1{path}?alt=media" % EXTERNAL_URL
-    )
-    blob._BASE_UPLOAD_TEMPLATE = (
-            u"%s/upload/storage/v1{bucket_path}/o?uploadType=" % EXTERNAL_URL
-    )
-    blob._MULTIPART_URL_TEMPLATE = blob._BASE_UPLOAD_TEMPLATE + "multipart"
-    blob._RESUMABLE_URL_TEMPLATE = blob._BASE_UPLOAD_TEMPLATE + "resumable"
 
     session = Session()
     session.verify = False
@@ -165,7 +152,7 @@ def set_up_gcp_bucket():
         credentials=AnonymousCredentials(),
         project="test1",
         _http=session,
-        client_options=ClientOptions(api_endpoint=EXTERNAL_URL))
+        client_options=ClientOptions(api_endpoint="https://127.0.0.1:4443"))
 
     # Assign metadata to each blob.
     for obj in client.bucket(BUCKET).list_blobs():
@@ -4983,19 +4970,29 @@ class TestGCPStorageDir(unittest.TestCase):
         # Set up the GCP bucket.
         cls.__client, cls.__session = set_up_gcp_bucket()
 
-        EXTERNAL_URL = "https://127.0.0.1:4443"
-        PUBLIC_HOST = "storage.gcs.127.0.0.1.nip.io:4443"
+        from google.resumable_media.requests import ResumableUpload
 
-        base_upload_template = u"%s/upload/storage/v1{bucket_path}/o?uploadType=" % EXTERNAL_URL
+        def get_resumable_upload_session(*args, **kwargs):
+            return ResumableUpload(
+                upload_url=(
+                    "https://127.0.0.1:4443" +
+                    f"/upload/storage/v1/b/{kwargs['bucket']}/" +
+                    f"o?uploadType=resumable&name={kwargs['file_path']}"
+                ),
+                chunk_size=kwargs['chunk_size'])
+
+        from google.auth.transport.requests import Request
+
+        def get_transport_session(*args, **kwargs):
+            return cls.__session
 
         for k, v in {
             'google.cloud.storage.Client.__init__': Mock(return_value=None),
             'google.cloud.storage.Client.__new__': Mock(return_value=cls.__client),
-            'google.cloud.storage.blob._API_ACCESS_ENDPOINT': f"https://{PUBLIC_HOST}",
-            'google.cloud.storage.blob._DOWNLOAD_URL_TEMPLATE': u"%s/download/storage/v1{path}?alt=media" % EXTERNAL_URL,
-            'google.cloud.storage.blob._BASE_UPLOAD_TEMPLATE': base_upload_template,
-            'google.cloud.storage.blob._MULTIPART_URL_TEMPLATE': base_upload_template + "multipart",
-            'google.cloud.storage.blob._RESUMABLE_URL_TEMPLATE': base_upload_template + "resumable",
+            'fluke._iohandlers.GCPFileWriter._create_resumable_upload_session': Mock(
+                wraps=get_resumable_upload_session),
+            'fluke._iohandlers.GCPFileWriter._create_transport_session': Mock(
+                wraps=get_transport_session)
         }.items():
             patch(k, v).start()
 
