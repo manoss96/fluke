@@ -11,6 +11,12 @@ from typing import Optional, Iterator, Callable
 import boto3
 import paramiko
 from moto import mock_s3
+from requests import Session
+from google.cloud.storage import Client
+from google.api_core.client_options import ClientOptions
+from google.auth.credentials import AnonymousCredentials
+from google.resumable_media.requests import ResumableUpload
+from google.resumable_media._helpers import header_required
 
 
 from fluke.auth import RemoteAuth, AWSAuth, AzureAuth, GCPAuth
@@ -138,24 +144,7 @@ def get_aws_s3_object(bucket_name: str, path: str):
     return boto3.resource("s3").Bucket(bucket_name).Object(path)
 
 
-def set_up_gcp_bucket():
-
-    from requests import Session
-    from google.cloud.storage import Client
-    from google.api_core.client_options import ClientOptions
-    from google.auth.credentials import AnonymousCredentials
-    from google.resumable_media.requests import ResumableUpload
-    from google.resumable_media._helpers import header_required
-
-    # Create session and client.
-    session = Session()
-    session.verify = False
-
-    client = Client(
-        credentials=AnonymousCredentials(),
-        project="test1",
-        _http=session,
-        client_options=ClientOptions(api_endpoint="https://127.0.0.1:4443"))
+def set_up_gcp_bucket(client):
 
     # Assign metadata to each blob.
     for obj in client.bucket(BUCKET).list_blobs():
@@ -182,20 +171,20 @@ def set_up_gcp_bucket():
         ISSUE: https://github.com/fsouza/fake-gcs-server/issues/1281
         '''
         return header_required(*args, **kwargs).replace('0.0.0.0', '127.0.0.1')
+    
+    def get_client(*args, **kwargs):
+        return client
 
     for k, v in {
         'google.cloud.storage.Client.__init__': Mock(return_value=None),
-        'google.cloud.storage.Client.__new__': Mock(return_value=client),
+        'google.cloud.storage.Client.__new__': Mock(wraps=get_client),
         'google.auth.transport.requests.AuthorizedSession.__init__': Mock(return_value=None),
-        'google.auth.transport.requests.AuthorizedSession.__new__': Mock(return_value=session), 
+        'google.auth.transport.requests.AuthorizedSession.__new__': Mock(return_value=client._http), 
         'google.resumable_media._helpers.header_required': Mock(wraps=modify_url),
         'fluke._iohandlers.GCPFileWriter._create_resumable_upload_session': Mock(
             wraps=get_resumable_upload_session)
     }.items():
         patch(k, v).start()
-
-    # Return client and session.
-    return (client, session)
 
 
 def simulate_latency(func: Callable):
@@ -740,12 +729,13 @@ class TestRemoteFile(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        print("AAAA")     
+        super(TestRemoteFile, cls).setUpClass()  
         for k, v in MockSFTPClient.get_mock_methods().items():
             patch(k, v).start()
 
     @classmethod
     def tearDownClass(cls):
+        super(TestRemoteFile, cls).tearDownClass()
         patch.stopall()
 
     def test_constructor(self):
@@ -1009,6 +999,7 @@ class TestAmazonS3File(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        super(TestAmazonS3File, cls).setUpClass()  
         create_aws_s3_bucket(cls.MOCK_S3, BUCKET, METADATA)
 
         from fluke._handlers import AWSClientHandler
@@ -1036,6 +1027,7 @@ class TestAmazonS3File(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        super(TestAmazonS3File, cls).tearDownClass()  
         cls.MOCK_S3.stop()
         patch.stopall()
     
@@ -1349,11 +1341,13 @@ class TestAzureBlobFile(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        super(TestAzureBlobFile, cls).setUpClass()  
         for k, v in MockContainerClient.get_mock_methods().items():
             patch(k, v).start()
 
     @classmethod
-    def tearDownClass(self):
+    def tearDownClass(cls):
+        super(TestAzureBlobFile, cls).tearDownClass()  
         patch.stopall()
 
     def test_constructor(self):
@@ -1662,6 +1656,7 @@ class TestGCPStorageFile(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        super(TestGCPStorageFile, cls).setUpClass()
 
         from fluke._handlers import GCPClientHandler
 
@@ -1685,14 +1680,25 @@ class TestGCPStorageFile(unittest.TestCase):
         m2.start().side_effect = simulate_latency_2
         m3.start().side_effect = simulate_latency_3
 
+        # Create session and client.
+        cls.__session = Session()
+        cls.__session.verify = False
+
+        cls.__client = Client(
+            credentials=AnonymousCredentials(),
+            project="test",
+            _http=cls.__session,
+            client_options=ClientOptions(api_endpoint="https://127.0.0.1:4443"))
+        
         # Set up the GCP bucket.
-        cls.__client, cls.__session = set_up_gcp_bucket()
+        set_up_gcp_bucket(cls.__client)
 
     @classmethod
     def tearDownClass(cls):
-        patch.stopall()
+        super(TestGCPStorageFile, cls).tearDownClass()
         cls.__session.close()
         cls.__client.close()
+        patch.stopall()
     
     @staticmethod
     def build_file(
@@ -2473,11 +2479,13 @@ class TestRemoteDir(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        super(TestRemoteDir, cls).setUpClass()  
         for k, v in MockSFTPClient.get_mock_methods().items():
             patch(k, v).start()
 
     @classmethod
     def tearDownClass(cls):
+        super(TestRemoteDir, cls).tearDownClass()  
         patch.stopall()
     
     @staticmethod
@@ -3209,6 +3217,8 @@ class TestAmazonS3Dir(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        super(TestAmazonS3Dir, cls).setUpClass()
+
         create_aws_s3_bucket(cls.MOCK_S3, BUCKET, METADATA)
 
         from fluke._handlers import AWSClientHandler
@@ -3235,6 +3245,7 @@ class TestAmazonS3Dir(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        super(TestAmazonS3Dir, cls).tearDownClass()
         cls.MOCK_S3.stop()
         patch.stopall()
     
@@ -4103,11 +4114,13 @@ class TestAzureBlobDir(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        super(TestAzureBlobDir, cls).setUpClass()
         for k, v in MockContainerClient.get_mock_methods().items():
             patch(k, v).start()
 
     @classmethod
     def tearDownClass(cls):
+        super(TestAzureBlobDir, cls).tearDownClass()
         patch.stopall()
     
     @staticmethod
@@ -4963,6 +4976,7 @@ class TestGCPStorageDir(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        super(TestGCPStorageDir, cls).setUpClass()
 
         from fluke._handlers import GCPClientHandler
 
@@ -4986,14 +5000,25 @@ class TestGCPStorageDir(unittest.TestCase):
         m2.start().side_effect = simulate_latency_2
         m3.start().side_effect = simulate_latency_3
 
+        # Create session and client.
+        cls.__session = Session()
+        cls.__session.verify = False
+
+        cls.__client = Client(
+            credentials=AnonymousCredentials(),
+            project="test",
+            _http=cls.__session,
+            client_options=ClientOptions(api_endpoint="https://127.0.0.1:4443"))
+        
         # Set up the GCP bucket.
-        cls.__client, cls.__session = set_up_gcp_bucket()
+        set_up_gcp_bucket(cls.__client)
 
     @classmethod
     def tearDownClass(cls):
-        patch.stopall()
+        super(TestGCPStorageDir, cls).tearDownClass()
         cls.__session.close()
         cls.__client.close()
+        patch.stopall()
     
     @staticmethod
     def build_dir(
@@ -5842,3 +5867,4 @@ class TestGCPStorageDir(unittest.TestCase):
 
 if __name__=="__main__":
     unittest.main()
+    print("AAA")

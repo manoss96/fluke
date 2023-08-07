@@ -920,7 +920,7 @@ class GCPFileWriter(_FileWriter):
         #       create a resumable upload session.
         if chunk_size is None:
             self.__file = bucket.blob(blob_name=file_path)
-            self.__file.metadata = metadata
+            self.__metadata = metadata
         else:
             self.__file = None
             self.__rus = self._create_resumable_upload_session(
@@ -960,9 +960,10 @@ class GCPFileWriter(_FileWriter):
                     transport=self.__transport)
             self.__transport.close()
             self.__stream.close()
-        elif self.__file.metadata is not None:
+        elif self.__metadata is not None:
             # NOTE: Call ``patch`` in order to
             #       upload the file's metadata.
+            self.__file.metadata = self.__metadata
             self.__file.patch()
 
 
