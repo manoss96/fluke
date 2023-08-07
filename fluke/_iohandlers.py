@@ -891,27 +891,6 @@ class GCPFileWriter(_FileWriter):
         written as a single chunk of bytes.
     :param Bucket bucket: A ``Bucket`` class instance.
     '''
-
-    @staticmethod
-    def _create_resumable_upload_session(
-        bucket: str,
-        file_path: str,
-        chunk_size: int
-    ) -> _ResumableUpload:
-        return _ResumableUpload(
-            upload_url=(
-                "https://storage.googleapis.com" +
-                f"/upload/storage/v1/b/{bucket}/" +
-                f"o?uploadType=resumable&name={file_path}"
-            ),
-            chunk_size=chunk_size)
-    
-    
-    @staticmethod
-    def _create_transport_session(credentials) -> _AuthSession:
-        return _AuthSession(credentials=credentials)
-
-
     def __init__(
         self,
         file_path: str,
@@ -949,7 +928,7 @@ class GCPFileWriter(_FileWriter):
                 file_path=file_path,
                 chunk_size=chunk_size
             )
-            self.__transport = self._create_transport_session(
+            self.__transport = _AuthSession(
                 credentials=bucket.client._credentials)
             
             self.__stream = _io.BytesIO()
@@ -1009,3 +988,18 @@ class GCPFileWriter(_FileWriter):
                     file_obj=buffer,
                     size=len(chunk))
         return len(chunk)
+    
+
+    @staticmethod
+    def _create_resumable_upload_session(
+        bucket: str,
+        file_path: str,
+        chunk_size: int
+    ) -> _ResumableUpload:
+        return _ResumableUpload(
+            upload_url=(
+                "https://storage.googleapis.com" +
+                f"/upload/storage/v1/b/{bucket}/" +
+                f"o?uploadType=resumable&name={file_path}"
+            ),
+            chunk_size=chunk_size)

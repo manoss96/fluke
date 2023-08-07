@@ -144,7 +144,10 @@ def set_up_gcp_bucket():
     from google.cloud.storage import Client
     from google.api_core.client_options import ClientOptions
     from google.auth.credentials import AnonymousCredentials
+    from google.resumable_media.requests import ResumableUpload
+    from google.resumable_media._helpers import header_required
 
+    # Create session and client.
     session = Session()
     session.verify = False
 
@@ -164,7 +167,31 @@ def set_up_gcp_bucket():
         blob_name=join_paths(TEST_FILES_DIR, TMP_DIR_NAME, 'DUMMY')
     ).upload_from_string(data=b'')
 
-    # return client and session
+    # Patch methods.
+    def get_resumable_upload_session(*args, **kwargs):
+        return ResumableUpload(
+            upload_url=(
+                "https://127.0.0.1:4443" +
+                f"/upload/storage/v1/b/{kwargs['bucket']}/" +
+                f"o?uploadType=resumable&name={kwargs['file_path']}"
+            ),
+            chunk_size=kwargs['chunk_size'])
+
+    def modify_url(*args, **kwargs):
+        return header_required(*args, **kwargs).replace('0.0.0.0', '127.0.0.1')
+
+    for k, v in {
+        'google.cloud.storage.Client.__init__': Mock(return_value=None),
+        'google.cloud.storage.Client.__new__': Mock(return_value=client),
+        'google.auth.transport.requests.AuthorizedSession.__init__': Mock(return_value=None),
+        'google.auth.transport.requests.AuthorizedSession.__new__': Mock(return_value=session), 
+        'google.resumable_media._helpers.header_required': Mock(wraps=modify_url),
+        'fluke._iohandlers.GCPFileWriter._create_resumable_upload_session': Mock(
+            wraps=get_resumable_upload_session)
+    }.items():
+        patch(k, v).start()
+
+    # Return client and session.
     return (client, session)
 
 
@@ -1655,34 +1682,8 @@ class TestGCPStorageFile(unittest.TestCase):
         m2.start().side_effect = simulate_latency_2
         m3.start().side_effect = simulate_latency_3
 
-        from requests import Session
-        from google.cloud.storage import Client
-        from google.api_core.client_options import ClientOptions
-        from google.auth.credentials import AnonymousCredentials
-
         # Set up the GCP bucket.
         cls.__client, cls.__session = set_up_gcp_bucket()
-
-        from google.resumable_media.requests import ResumableUpload
-
-        def get_resumable_upload_session(*args, **kwargs):
-            return ResumableUpload(
-                upload_url=(
-                    "https://127.0.0.1:4443" +
-                    f"/upload/storage/v1/b/{kwargs['bucket']}/" +
-                    f"o?uploadType=resumable&name={kwargs['file_path']}"
-                ),
-                chunk_size=kwargs['chunk_size'])
-
-        for k, v in {
-            'google.cloud.storage.Client.__init__': Mock(return_value=None),
-            'google.cloud.storage.Client.__new__': Mock(return_value=cls.__client),
-            'fluke._iohandlers.GCPFileWriter._create_resumable_upload_session': Mock(
-                wraps=get_resumable_upload_session),
-            'fluke._iohandlers.GCPFileWriter._create_transport_session': Mock(
-                return_value=cls.__session)
-        }.items():
-            patch(k, v).start()
 
     @classmethod
     def tearDownClass(cls):
@@ -4984,28 +4985,6 @@ class TestGCPStorageDir(unittest.TestCase):
 
         # Set up the GCP bucket.
         cls.__client, cls.__session = set_up_gcp_bucket()
-
-        from google.resumable_media.requests import ResumableUpload
-
-        def get_resumable_upload_session(*args, **kwargs):
-            return ResumableUpload(
-                upload_url=(
-                    "https://127.0.0.1:4443" +
-                    f"/upload/storage/v1/b/{kwargs['bucket']}/" +
-                    f"o?uploadType=resumable&name={kwargs['file_path']}"
-                ),
-                chunk_size=kwargs['chunk_size'])
-
-        for k, v in {
-            'google.cloud.storage.Client.__init__': Mock(return_value=None),
-            'google.cloud.storage.Client.__new__': Mock(return_value=cls.__client),
-            'fluke._iohandlers.GCPFileWriter._create_resumable_upload_session': Mock(
-                wraps=get_resumable_upload_session),
-            'fluke._iohandlers.GCPFileWriter._create_transport_session': Mock(
-                return_value=cls.__session)
-        }.items():
-            patch(k, v).start()
-
 
     @classmethod
     def tearDownClass(cls):
