@@ -1461,7 +1461,7 @@ class GCPClientHandler(ClientHandler):
 
     def close_connections(self):
         '''
-        Closes the HTTP connection to the Azure blob container.
+        Closes the HTTP connection to Google Cloud Storage.
         '''
         if self.__bucket is not None:
             self.__bucket.client.close()
@@ -1508,11 +1508,11 @@ class GCPClientHandler(ClientHandler):
         blob.delete()
 
 
-    def get_reader(self, file_path: str) -> _AzureBlobReader:
+    def get_reader(self, file_path: str) -> _GCPFileReader:
         '''
-        Returns an ``AzureBlobReader`` class instance \
+        Returns a ``GCPFileReader`` class instance \
         used for reading from a file which resides within \
-        an Azure blob container.
+        a Google Cloud Storage bucket.
 
         :param str file_path: The absolute path of \
             the file in question.
@@ -1528,11 +1528,11 @@ class GCPClientHandler(ClientHandler):
         file_path: str,
         metadata: _Optional[dict[str, str]],
         chunk_size: _Optional[int]
-    ) -> _AzureBlobWriter:
+    ) -> _GCPFileWriter:
         '''
-        Returns an ``AzureBlobWriter`` class instance \
+        Returns a ``GCPFileWriter`` class instance \
         used for writing to a file which resides within \
-        an Azure blob container.
+        a Google Cloud Storage bucket.
 
         :param str file_path: The absolute path of \
             the file in question.

@@ -916,28 +916,26 @@ class GCPFileWriter(_FileWriter):
         '''
         super().__init__(file_path=file_path)
 
-        # NOTE: If uploading file in chunks,then create
-        # a resumable upload session.
+        # NOTE: If uploading file in chunks, then
+        #       create a resumable upload session.
         if chunk_size is None:
             self.__file = bucket.blob(blob_name=file_path)
-            self.__metadata = metadata
+            self.__file.metadata = metadata
         else:
             self.__file = None
             self.__rus = self._create_resumable_upload_session(
                 bucket=bucket.name,
                 file_path=file_path,
-                chunk_size=chunk_size
-            )
+                chunk_size=chunk_size)
             self.__transport = _AuthSession(
                 credentials=bucket.client._credentials)
-            
             self.__stream = _io.BytesIO()
             self.__rus.initiate(
                 transport=self.__transport,
                 content_type='application/octet-stream',
                 stream=self.__stream,
                 stream_final=False,
-                metadata=metadata)
+                metadata={'metadata': metadata})
 
 
     def close(self) -> None:
@@ -962,10 +960,9 @@ class GCPFileWriter(_FileWriter):
                     transport=self.__transport)
             self.__transport.close()
             self.__stream.close()
-        elif self.__metadata is not None:
+        elif self.__file.metadata is not None:
             # NOTE: Call ``patch`` in order to
             #       upload the file's metadata.
-            self.__file = self.__metadata
             self.__file.patch()
 
 

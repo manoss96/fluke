@@ -178,6 +178,9 @@ def set_up_gcp_bucket():
             chunk_size=kwargs['chunk_size'])
 
     def modify_url(*args, **kwargs):
+        '''
+        ISSUE: https://github.com/fsouza/fake-gcs-server/issues/1281
+        '''
         return header_required(*args, **kwargs).replace('0.0.0.0', '127.0.0.1')
 
     for k, v in {
@@ -5493,12 +5496,12 @@ class TestGCPStorageDir(unittest.TestCase):
         src_file.set_metadata(metadata=metadata)
         # Get tmp dir path (already created in bucket).
         tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
-        with self.build_dir(path=tmp_dir_path) as s3_dir:
+        with self.build_dir(path=tmp_dir_path) as gcp_dir:
             # Copy file into dir.
-            src_file.transfer_to(dst=s3_dir, include_metadata=True)
+            src_file.transfer_to(dst=gcp_dir, include_metadata=True)
             # Fetch transferred object.
             copy_path = join_paths(tmp_dir_path, FILE_NAME)
-            obj = get_aws_s3_object(BUCKET, copy_path)
+            obj = self.__client.bucket(BUCKET).get_blob(copy_path)
             # Confirm that metadata was indeed assigned.
             self.assertEqual(obj.metadata, metadata)
             # Delete object.
@@ -5511,15 +5514,15 @@ class TestGCPStorageDir(unittest.TestCase):
         src_file.set_metadata(metadata=metadata)
         # Get tmp dir path (already created in bucket).
         tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
-        with self.build_dir(path=tmp_dir_path) as s3_dir:
+        with self.build_dir(path=tmp_dir_path) as gcp_dir:
             # Copy file into dir.
             src_file.transfer_to(
-                dst=s3_dir,
+                dst=gcp_dir,
                 include_metadata=True,
-                chunk_size=1000)
+                chunk_size=1024*1024)
             # Fetch transferred object.
             copy_path = join_paths(tmp_dir_path, FILE_NAME)
-            obj = get_aws_s3_object(BUCKET, copy_path)
+            obj = self.__client.bucket(BUCKET).get_blob(copy_path)
             # Confirm that metadata was indeed assigned.
             self.assertEqual(obj.metadata, metadata)
             # Delete object.
