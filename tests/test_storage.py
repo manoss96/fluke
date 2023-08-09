@@ -144,7 +144,27 @@ def get_aws_s3_object(bucket_name: str, path: str):
     return boto3.resource("s3").Bucket(bucket_name).Object(path)
 
 
-def set_up_gcp_bucket(client):
+def get_gcs_client():
+    '''
+    Returns a ``google.cloud.storage.Client`` instance
+    used in establishing a connection to the fake-gcs-server.
+    '''
+    session = Session()
+    session.verify = False
+
+    return Client(
+        credentials=AnonymousCredentials(),
+        project="test",
+        _http=session,
+        client_options=ClientOptions(api_endpoint="https://127.0.0.1:4443"))
+
+
+def set_up_gcs_bucket():
+    '''
+    Sets up the dummy GCS bucket and returns \
+    the client used in order to interact with it.
+    '''
+    client = get_gcs_client()
 
     # Assign metadata to each blob.
     for obj in client.bucket(BUCKET).list_blobs():
@@ -171,20 +191,18 @@ def set_up_gcp_bucket(client):
         ISSUE: https://github.com/fsouza/fake-gcs-server/issues/1281
         '''
         return header_required(*args, **kwargs).replace('0.0.0.0', '127.0.0.1')
-    
-    def get_client(*args, **kwargs):
-        return client
 
     for k, v in {
-        'google.cloud.storage.Client.__init__': Mock(return_value=None),
-        'google.cloud.storage.Client.__new__': Mock(wraps=get_client),
+        'fluke._handlers.GCPClientHandler._CLIENT_GENERATOR': Mock(return_value=client),
         'google.auth.transport.requests.AuthorizedSession.__init__': Mock(return_value=None),
-        'google.auth.transport.requests.AuthorizedSession.__new__': Mock(return_value=client._http), 
+        'google.auth.transport.requests.AuthorizedSession.__new__': Mock(return_value=client._http),
         'google.resumable_media._helpers.header_required': Mock(wraps=modify_url),
         'fluke._iohandlers.GCPFileWriter._create_resumable_upload_session': Mock(
             wraps=get_resumable_upload_session)
     }.items():
         patch(k, v).start()
+
+    return client
 
 
 def simulate_latency(func: Callable):
@@ -1679,24 +1697,13 @@ class TestGCPStorageFile(unittest.TestCase):
         m1.start().side_effect = simulate_latency_1
         m2.start().side_effect = simulate_latency_2
         m3.start().side_effect = simulate_latency_3
-
-        # Create session and client.
-        cls.__session = Session()
-        cls.__session.verify = False
-
-        cls.__client = Client(
-            credentials=AnonymousCredentials(),
-            project="test",
-            _http=cls.__session,
-            client_options=ClientOptions(api_endpoint="https://127.0.0.1:4443"))
         
-        # Set up the GCP bucket.
-        set_up_gcp_bucket(cls.__client)
+        # Set up the GCS bucket.
+        cls.__client = set_up_gcs_bucket()
 
     @classmethod
     def tearDownClass(cls):
         super(TestGCPStorageFile, cls).tearDownClass()
-        cls.__session.close()
         cls.__client.close()
         patch.stopall()
     
@@ -4999,24 +5006,13 @@ class TestGCPStorageDir(unittest.TestCase):
         m1.start().side_effect = simulate_latency_1
         m2.start().side_effect = simulate_latency_2
         m3.start().side_effect = simulate_latency_3
-
-        # Create session and client.
-        cls.__session = Session()
-        cls.__session.verify = False
-
-        cls.__client = Client(
-            credentials=AnonymousCredentials(),
-            project="test",
-            _http=cls.__session,
-            client_options=ClientOptions(api_endpoint="https://127.0.0.1:4443"))
         
-        # Set up the GCP bucket.
-        set_up_gcp_bucket(cls.__client)
+        # Set up the GCS bucket.
+        cls.__client = set_up_gcs_bucket()
 
     @classmethod
     def tearDownClass(cls):
         super(TestGCPStorageDir, cls).tearDownClass()
-        cls.__session.close()
         cls.__client.close()
         patch.stopall()
     
@@ -5867,4 +5863,3 @@ class TestGCPStorageDir(unittest.TestCase):
 
 if __name__=="__main__":
     unittest.main()
-    print("AAA")

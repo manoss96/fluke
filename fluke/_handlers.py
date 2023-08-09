@@ -1382,6 +1382,12 @@ class GCPClientHandler(ClientHandler):
         any fetched data to be cached for faster subsequent \
         access.
     '''
+
+    # NOTE: This is used instead of directly instantiating a client
+    #       due to certain issues while attempting to mock the client
+    #       by patching the class' method ``__new__``.
+    _CLIENT_GENERATOR = lambda project_id: _GCSClient(project=project_id)
+
     def __init__(
         self,
         auth: _GCPAuth,
@@ -1445,7 +1451,7 @@ class GCPClientHandler(ClientHandler):
 
         if 'credentials' in credentials:
             _os.environ.update({"GOOGLE_APPLICATION_CREDENTIALS": credentials['credentials']})
-            client = _GCSClient(
+            client = self._CLIENT_GENERATOR(
                 project=credentials['project_id'])
 
         for bucket in client.list_buckets():
