@@ -5036,8 +5036,18 @@ class TestGCPStorageDir(unittest.TestCase):
             self.assertEqual(dir.get_path(), REL_DIR_PATH)
 
     def test_constructor_on_create_if_missing(self):
-        # NOTE: SKIP DUE TO google-cloud-storage Python package
-        #       and ``fake-gcs-server`` incompatibility.
+        # NOTE: Skip due to incompatibilities with
+        #       fake-gcs-server.
+        '''
+        dir_path = "NON_EXISTING_DIR/"
+        with self.build_dir(path=dir_path, create_if_missing=True) as _:
+            for _ in self.__client.bucket(BUCKET).list_blobs(
+                prefix=dir_path.rstrip('/')
+            ):
+                break
+            else:
+                self.fail(f"Directory {dir_path} was not created!")
+        '''
         pass
 
     def test_constructor_on_invalid_path_error(self):

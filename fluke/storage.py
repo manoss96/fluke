@@ -42,7 +42,6 @@ from ._exceptions import InvalidDirectoryError as _IDE
 from ._exceptions import OverwriteError as _OverwriteError
 from ._exceptions import NonStringMetadataKeyError as _NSMKE
 from ._exceptions import NonStringMetadataValueError as _NSMVE
-from ._exceptions import ContainerNotFoundError as _CNFE 
 
 
 class _File(_ABC):
@@ -403,12 +402,11 @@ class LocalFile(_File):
             does not exist.
         :raises InvalidFileError: The provided path \
             points to a directory.
-        '''
+        '''       
         if not _os.path.exists(path):
             raise _IPE(path)
         if not _os.path.isfile(path):
-            raise _IFE(path)
-        
+            raise _IFE(path) 
         sep = _infer_sep(path=path)
         super().__init__(
             path=_os.path.abspath(path).replace(_os.sep, sep),
@@ -478,7 +476,15 @@ class _NonLocalFile(_File, _ABC):
             path=path,
             metadata=dict(),
             handler=handler)
+        # Open connection.
         self.open()
+        # Check if path is valid.
+        if not handler.path_exists(path=path):
+            self.close()
+            raise _IPE(path)
+        if not handler.is_file(file_path=path):
+            self.close()
+            raise _IFE(path)
 
 
     def is_cacheable(self) -> bool:
@@ -587,23 +593,13 @@ class RemoteFile(_NonLocalFile):
         :raises InvalidFileError: The provided path \
             points to a directory.
         '''
-        # Instantiate a connection handler.
-        ssh_handler = _SSHClientHandler(auth=auth, cache=cache)
-
         # Set up hostname.
         self.__host = auth.get_credentials()['hostname']
-
         super().__init__(
             path=path,
-            handler=ssh_handler)
-
-        if not ssh_handler.path_exists(path=path):
-            self.close()
-            raise _IPE(path)
-        
-        if not ssh_handler.is_file(file_path=path):
-            self.close()
-            raise _IFE(path)
+            handler=_SSHClientHandler(
+                auth=auth,
+                cache=cache))
 
 
     def get_hostname(self) -> str:
@@ -662,7 +658,26 @@ class _CloudFile(_NonLocalFile, _ABC):
     '''
     An abstract class which serves as the base class for \
     all file-like classes that represent files in the cloud.
+
+    :param str path: A path pointing to the file.
+    :param ClientHandler handler: A ``ClientHandler`` class \
+        instance used for interacting with the underlying handler.
     '''
+    def __init__(self, path: str, handler: _ClientHandler) -> None:
+        '''
+        An abstract class which serves as the base class for \
+        all file-like classes that represent files in the cloud.
+
+        :param str path: A path pointing to the file.
+        :param ClientHandler handler: A ``ClientHandler`` class \
+            instance used for interacting with the underlying handler.
+        '''
+        # Validate path.
+        sep = _infer_sep(path=path)
+        if path.startswith(sep):
+            raise _IPE(path=path)
+        super().__init__(path, handler)
+
 
     def load_metadata(self) -> None:
         '''
@@ -740,30 +755,12 @@ class AmazonS3File(_CloudFile):
                 * Wrong: ``/path/to/file.txt``
                 * Right: ``path/to/file.txt``
         '''
-        # Validate path.
-        sep = _infer_sep(path=path)
-        if path.startswith(sep):
-            raise _IPE(path=path)
-        
-        # Instantiate a connection handler.
-        aws_handler = _AWSClientHandler(
-            auth=auth,
-            bucket=bucket,
-            cache=cache)
-
         super().__init__(
             path=path,
-            handler=aws_handler)
-
-        if not aws_handler.path_exists(path=path):
-            if aws_handler.dir_exists(path=path):
-                self.close()
-                raise _IFE(path)
-            self.close()
-            raise _IPE(path)     
-        if not aws_handler.is_file(file_path=path):
-            self.close()
-            raise _IFE(path)
+            handler=_AWSClientHandler(
+                auth=auth,
+                bucket=bucket,
+                cache=cache))
         
 
     def get_bucket_name(self) -> str:
@@ -875,36 +872,15 @@ class AzureBlobFile(_CloudFile):
                 * Wrong: ``/path/to/file.txt``
                 * Right: ``path/to/file.txt``
         '''
-        # Validate path.
-        sep = _infer_sep(path=path)
-        if path.startswith(sep):
-            raise _IPE(path=path)
-
-        # Instantiate a connection handler.
-        azr_handler = _AzureClientHandler(
-            auth=auth,
-            container=container,
-            cache=cache)
-        
         # Infer storage account.
         self.__storage_account = auth._get_storage_account()
-        
         super().__init__(
             path=path,
-            handler=azr_handler)
-        
-        # Throw an exception if container does not exist.
-        if not azr_handler.container_exists():
-            self.close()
-            raise _CNFE(container)
-        
-        if not azr_handler.path_exists(path=path):
-            self.close()
-            raise _IPE(path)
-        if not azr_handler.is_file(file_path=path):
-            self.close()
-            raise _IFE(path)
-            
+            handler=_AzureClientHandler(
+                auth=auth,
+                container=container,
+                cache=cache))
+  
 
     def get_container_name(self) -> str:
         '''
@@ -1020,27 +996,12 @@ class GCPStorageFile(_CloudFile):
                 * Wrong: ``/path/to/file.txt``
                 * Right: ``path/to/file.txt``
         '''
-        # Validate path.
-        sep = _infer_sep(path=path)
-        if path.startswith(sep):
-            raise _IPE(path=path)
-        
-        # Instantiate a connection handler.
-        gcp_handler = _GCPClientHandler(
-            auth=auth,
-            bucket=bucket,
-            cache=cache)
-
         super().__init__(
             path=path,
-            handler=gcp_handler)
-        
-        if not gcp_handler.path_exists(path=path):
-            self.close()
-            raise _IPE(path)
-        if not gcp_handler.is_file(file_path=path):
-            self.close()
-            raise _IFE(path)
+            handler=_GCPClientHandler(
+                auth=auth,
+                bucket=bucket,
+                cache=cache))
         
 
     def get_bucket_name(self) -> str:
@@ -1834,12 +1795,17 @@ class _NonLocalDir(_Directory, _ABC):
     directories or directories in the cloud.
 
     :param str path: The path pointing to the directory.
+    :param bool create_if_missing: If set to ``True``, then the directory \
+        to which the provided path points will be automatically created \
+        in case it does not already exist, instead of an exception being \
+        thrown.
     :param ClientHandler handler: A ``ClientHandler`` class \
         instance used for interacting with the underlying handler.
     '''
     def __init__(
         self,
         path: str,
+        create_if_missing: bool,
         handler: _ClientHandler
     ):
         '''
@@ -1848,11 +1814,30 @@ class _NonLocalDir(_Directory, _ABC):
         directories or directories in the cloud.
 
         :param str path: The path pointing to the directory.
+        :param bool create_if_missing: If set to ``True``, then the directory \
+            to which the provided path points will be automatically created \
+            in case it does not already exist, instead of an exception being \
+            thrown.
         :param ClientHandler handler: A ``ClientHandler`` class \
             instance used for interacting with the underlying handler.
         '''
         super().__init__(path=path, metadata=dict(), handler=handler)
         self.open()
+        # Refresh path after any modifications.
+        path = self.get_path()
+        # NOTE: Use ``path != ''`` as when it comes to cloud directories
+        #       one can use the empty path in order to reference the
+        #       bucket's/container's "top-level" virtual directory.
+        if path != '':
+            if not handler.path_exists(path=path):
+                if create_if_missing:
+                    handler.mkdir(path=path)
+                else:
+                    self.close()
+                    raise _IPE(path)
+            if handler.is_file(file_path=path):
+                self.close()
+                raise _IDE(path)
 
 
     def is_cacheable(self) -> bool:
@@ -1969,27 +1954,17 @@ class RemoteDir(_NonLocalDir):
         :raises InvalidDirectoryError: The provided path \
             does not point to a directory.
         '''        
-        ssh_handler = _SSHClientHandler(auth=auth, cache=cache)
-        self.__host = auth.get_credentials()['hostname']
-
-        super().__init__(
-            path=path,
-            handler=ssh_handler)
-        
         # Validate path.
         if path == '':
-            self.close()
             raise _IPE(path=path)
-
-        if not ssh_handler.path_exists(path=path):
-            if create_if_missing:
-                ssh_handler.mkdir(path=path)
-            else:
-                self.close()
-                raise _IPE(path)
-        if ssh_handler.is_file(file_path=path):
-            self.close()
-            raise _IDE(path)
+        # Set hostname.
+        self.__host = auth.get_credentials()['hostname']
+        super().__init__(
+            path=path,
+            create_if_missing=create_if_missing,
+            handler=_SSHClientHandler(
+                auth=auth,
+                cache=cache))
 
 
     def get_hostname(self) -> str:
@@ -2120,7 +2095,43 @@ class _CloudDir(_NonLocalDir, _ABC):
     An abstract class which serves as the base class for \
     all directory-like classes that represent directories \
     in the cloud.
+
+    :param str path: The path pointing to the directory.
+    :param bool create_if_missing: If set to ``True``, then the directory \
+        to which the provided path points will be automatically created \
+        in case it does not already exist, instead of an exception being \
+        thrown.
+    :param ClientHandler handler: A ``ClientHandler`` class \
+        instance used for interacting with the underlying handler.
     '''
+    def __init__(
+        self,
+        path: str,
+        create_if_missing: bool,
+        handler: _ClientHandler
+    ) -> None:
+        '''
+        An abstract class which serves as the base class for \
+        all directory-like classes that represent directories \
+        in the cloud.
+
+        :param str path: The path pointing to the directory.
+        :param bool create_if_missing: If set to ``True``, then the directory \
+            to which the provided path points will be automatically created \
+            in case it does not already exist, instead of an exception being \
+            thrown.
+        :param ClientHandler handler: A ``ClientHandler`` class \
+            instance used for interacting with the underlying handler.
+        '''
+        # Validate path.
+        if path is None:
+            path = ''
+        else:
+            sep = _infer_sep(path=path)
+            if path.startswith(sep):
+                raise _IPE(path=path)
+        super().__init__(path, create_if_missing, handler)
+
 
     def load_metadata(self, recursively: bool = False) -> None:
         '''
@@ -2224,33 +2235,13 @@ class AmazonS3Dir(_CloudDir):
                 * Wrong: ``/path/to/dir``
                 * Right: ``path/to/dir``
         '''
-        # Validate path.
-        if path is None:
-            path = ''
-        else:
-            sep = _infer_sep(path=path)
-            if path.startswith(sep):
-                raise _IPE(path=path)
-            
-        # Instantiate a connection handler.
-        aws_handler = _AWSClientHandler(
-            auth=auth,
-            bucket=bucket,
-            cache=cache)
-
         super().__init__(
             path=path,
-            handler=aws_handler)
-
-        # Create directory or throw an exception
-        # depending on the value of "create_if_missing".
-        if path != '':
-            if not aws_handler.dir_exists(path=path):
-                if create_if_missing:
-                    aws_handler.mkdir(path=path)
-                else:
-                    self.close()
-                    raise _IPE(path)
+            create_if_missing=create_if_missing,
+            handler=_AWSClientHandler(
+                auth=auth,
+                bucket=bucket,
+                cache=cache))
 
 
     def get_bucket_name(self) -> str:
@@ -2452,42 +2443,16 @@ class AzureBlobDir(_CloudDir):
                 
                 * Wrong: ``/path/to/dir``
                 * Right: ``path/to/dir``
-        '''        
-        # Validate path.
-        if path is None:
-            path = ''
-        else:
-            sep = _infer_sep(path=path)
-            if path.startswith(sep):
-                raise _IPE(path=path)
-            
-        # Instantiate a connection handler.
-        azr_handler = _AzureClientHandler(
-            auth=auth,
-            cache=cache,
-            container=container)
-        
+        '''                    
         # Infer storage account.
         self.__storage_account = auth._get_storage_account()
-
         super().__init__(
             path=path,
-            handler=azr_handler)
-
-        # Throw an exception if container does not exist.
-        if not azr_handler.container_exists():
-            self.close()
-            raise _CNFE(container)
-
-        # Create directory or throw an exception
-        # depending on the value of "create_if_missing".
-        if path != '':
-            if not azr_handler.path_exists(path=path):
-                if create_if_missing:
-                    azr_handler.mkdir(path=path)
-                else:
-                    self.close()
-                    raise _IPE(path)
+            create_if_missing=create_if_missing,
+            handler=_AzureClientHandler(
+                auth=auth,
+                cache=cache,
+                container=container))
 
 
     def get_container_name(self) -> str:
@@ -2696,32 +2661,13 @@ class GCPStorageDir(_CloudDir):
                 * Wrong: ``/path/to/dir``
                 * Right: ``path/to/dir``
         '''
-        # Validate path.
-        if path is None:
-            path = ''
-        elif path.startswith('/'):
-            raise _IPE(path=path)
-            
-        # Instantiate a connection handler.
-        gcp_handler = _GCPClientHandler(
-            auth=auth,
-            bucket=bucket,
-            cache=cache)
-
         super().__init__(
             path=path,
-            handler=gcp_handler)
-
-        # Create directory or throw an exception
-        # depending on the value of "create_if_missing".
-        path = self.get_path()
-        if path != '':
-            if not gcp_handler.path_exists(path=path):
-                if create_if_missing:
-                    gcp_handler.mkdir(path=path)
-                else:
-                    self.close()
-                    raise _IPE(path)
+            create_if_missing=create_if_missing,
+            handler=_GCPClientHandler(
+                auth=auth,
+                bucket=bucket,
+                cache=cache))
 
 
     def get_bucket_name(self) -> str:

@@ -32,6 +32,7 @@ from ._iohandlers import GCPFileReader as _GCPFileReader
 from ._iohandlers import GCPFileWriter as _GCPFileWriter
 from ._exceptions import UnknownKeyTypeError as _UKTE
 from ._exceptions import BucketNotFoundError as _BNFE
+from ._exceptions import ContainerNotFoundError as _CNFE 
 from ._helper import join_paths as _join_paths
 from ._helper import infer_separator as _infer_sep
 from ._helper import relativize_path as _relativize
@@ -422,7 +423,8 @@ class FileSystemHandler(ClientHandler):
 
         :param str path: An absolute path.
         '''
-        return _os.path.exists(path=path)
+        return _os.path.exists(
+            path=path.rstrip(_infer_sep(path)))
     
 
     def is_file(self, file_path: str) -> bool:
@@ -433,7 +435,7 @@ class FileSystemHandler(ClientHandler):
         :param str file_path: The absolute path of the \
             file in question.
         '''
-        return _os.path.isfile(file_path)
+        return _os.path.isfile(file_path.rstrip(_infer_sep(file_path)))
     
 
     def mkdir(self, path: str) -> None:
@@ -678,7 +680,8 @@ class SSHClientHandler(ClientHandler):
         :param str path: An absolute path.
         '''
         try:
-            self.__sftp.stat(path=path)
+            self.__sftp.stat(
+                path=path.rstrip(_infer_sep(path)))
         except FileNotFoundError:
             return False
         return True
@@ -693,7 +696,8 @@ class SSHClientHandler(ClientHandler):
             file in question.
         '''
         from stat import S_ISDIR as _is_dir
-        return not _is_dir(self.__sftp.stat(path=file_path).st_mode)
+        return not _is_dir(self.__sftp.stat(
+            path=file_path.rstrip(_infer_sep(file_path))).st_mode)
     
     
     def mkdir(self, path: str) -> None:
@@ -913,7 +917,7 @@ class AWSClientHandler(ClientHandler):
         try:
             self.__bucket.meta.client.head_bucket(Bucket=self.__bucket_name)
         except _CE:
-            self.__bucket = None
+            self.close_connections()
             raise _BNFE(bucket=self.__bucket_name)
 
         print("Connection established.")
@@ -935,11 +939,13 @@ class AWSClientHandler(ClientHandler):
 
         :param str path: An absolute path.
         '''
-        try:
-            self.__bucket.Object(path).load()
-        except _CE:
-            return False
-        return True
+        for _ in self._traverse_dir_impl(
+            dir_path=path.rstrip(_infer_sep(path)),
+            recursively=False,
+            show_abs_path=True
+        ):    
+            return True
+        return False
 
 
     def is_file(self, file_path: str) -> bool:
@@ -950,7 +956,12 @@ class AWSClientHandler(ClientHandler):
         :param str file_path: The absolute path of the \
             file in question.
         '''
-        return not file_path.endswith('/')
+        try:
+            file_path = file_path.rstrip(_infer_sep(file_path))
+            self.__bucket.Object(file_path).load()
+            return not self.dir_exists(file_path)
+        except _CE:
+            return False
     
 
     def dir_exists(self, path: str) -> bool:
@@ -961,9 +972,11 @@ class AWSClientHandler(ClientHandler):
         :param str path: Either an absolute path or a \
             path relative to the parent directory.
         '''
-        for _ in self.__bucket.objects.filter(Prefix=path):
-            return True
-        return False
+        return 'CommonPrefixes' in self.__bucket.meta.client.list_objects(
+            Bucket=self.get_bucket_name(),
+            Prefix=path.rstrip(_infer_sep(path)),
+            Delimiter='/',
+            MaxKeys=1)
         
     
     def mkdir(self, path: str) -> None:
@@ -1203,6 +1216,11 @@ class AzureClientHandler(ClientHandler):
                 account_url=credentials.pop('account_url'),
                 container_name=self.__container_name,
                 credential=_CSC(**credentials))
+            
+        if not self.container_exists():
+            self.close_connections()
+            raise _CNFE(self.__container_name)
+        
         print("Connection established!")
 
     def close_connections(self):
@@ -1221,7 +1239,9 @@ class AzureClientHandler(ClientHandler):
 
         :param str path: An absolute path.
         '''
-        with self.__container.get_blob_client(blob=path) as blob:
+        with self.__container.get_blob_client(
+            blob=path.rstrip(_infer_sep(path))
+        ) as blob:
             return blob.exists()
         
 
@@ -1464,7 +1484,7 @@ class GCPClientHandler(ClientHandler):
                 self.__bucket = bucket
                 break
         else:
-            client.close()
+            self.close_connections()
             raise _BNFE(bucket=self.__bucket_name)
 
         print("Connection established!")
@@ -1487,9 +1507,8 @@ class GCPClientHandler(ClientHandler):
         :param str path: An absolute path.
         '''
         for _ in self.__bucket.list_blobs(
-            prefix=path,
-            delimiter='/'
-        ):    
+            prefix=path.rstrip('/')
+        ):   
             return True
         return False
         
@@ -1502,7 +1521,9 @@ class GCPClientHandler(ClientHandler):
         :param str file_path: The absolute path of the \
             file in question.
         '''
-        return not file_path.endswith('/')
+        return (self.__bucket
+            .blob(blob_name=file_path.rstrip(_infer_sep(file_path)))
+            .exists())
     
 
     def mkdir(self, path: str) -> None:
@@ -1512,11 +1533,11 @@ class GCPClientHandler(ClientHandler):
         :param str path: The path of the directory \
             that is to be created.
         '''
-        blob = self.__bucket.blob(blob_name=f"{path}DUMMY")
-        blob.upload_from_string(
-            '',
-            content_type='application/octet-stream')
-        blob.delete()
+        (self.__bucket
+            .blob(blob_name=path)
+            .upload_from_string(
+                '',
+                content_type='application/x-www-form-urlencoded;charset=UTF-8'))
 
 
     def get_reader(self, file_path: str) -> _GCPFileReader:
@@ -1585,7 +1606,6 @@ class GCPClientHandler(ClientHandler):
             metadata := self.__bucket.get_blob(file_path).metadata
         ) is None else metadata
         
-
 
     def _traverse_dir_impl(
         self,
