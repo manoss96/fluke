@@ -291,6 +291,10 @@ class GCPAuth():
     '''
     This class is used for authenticating with GCP.
     '''
+    _PROJECT_ID = 'project_id'
+    _APPLICATION_DEFAULT_CREDENTIALS = 'adc'
+    _SERVICE_ACCOUNT_KEY = 'sak'
+
 
     @classmethod
     def from_application_default_credentials(
@@ -308,8 +312,28 @@ class GCPAuth():
         '''
         auth = cls()
         auth.__credentials = {
-            'project_id': project_id,
-            'credentials': credentials
+            cls._PROJECT_ID: project_id,
+            cls._APPLICATION_DEFAULT_CREDENTIALS: credentials
+        }
+        return auth
+    
+
+    @classmethod
+    def from_service_account_key(
+        cls,
+        credentials: str
+    ) -> 'GCPAuth':
+        '''
+        Returns a ``GCPAuth`` instance used for \
+        authenticating with a GCP project via a \
+        service account key file.
+
+        :param str credentials: The path to the service account \
+            key JSON file.
+        '''
+        auth = cls()
+        auth.__credentials = {
+            cls._SERVICE_ACCOUNT_KEY: credentials
         }
         return auth
 

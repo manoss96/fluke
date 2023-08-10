@@ -2,6 +2,21 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - UNRELEASED
+
+### Added
+
+- There now exist classes ``fluke.storage.GCPStorageFile``
+  and ``fluke.storage.GCPStorageDir`` in order to interact
+  with Google Cloud Storage buckets. Furthermore, a class
+  ``fluke.auth.GCPAuth`` has been added in order to be able
+  to authenticate with GCP.
+  (https://github.com/manoss96/fluke/issues/10)
+
+- Added a new dependency: ``google-cloud-storage==2.10.0``
+  (https://github.com/manoss96/fluke/issues/10)
+  
+
 ## [0.4.1] - 2023/07/25
 
 ### Changed

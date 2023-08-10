@@ -1386,7 +1386,7 @@ class GCPClientHandler(ClientHandler):
     # NOTE: This is used instead of directly instantiating a client
     #       due to certain issues while attempting to mock the client
     #       by patching the class' method ``__new__``.
-    _CLIENT_GENERATOR = lambda project_id: _GCSClient(project=project_id)
+    _CLIENT_GENERATOR = lambda _, project_id: _GCSClient(project=project_id)
 
     def __init__(
         self,
@@ -1449,11 +1449,16 @@ class GCPClientHandler(ClientHandler):
 
         print(f"\nEstablishing connection to '{self.__bucket_name}' Google Cloud Storage bucket...")
 
-        if 'credentials' in credentials:
-            _os.environ.update({"GOOGLE_APPLICATION_CREDENTIALS": credentials['credentials']})
+        if _GCPAuth._APPLICATION_DEFAULT_CREDENTIALS in credentials:
+            _os.environ.update({
+                "GOOGLE_APPLICATION_CREDENTIALS":
+                credentials[_GCPAuth._APPLICATION_DEFAULT_CREDENTIALS]
+            })
             client = self._CLIENT_GENERATOR(
-                project=credentials['project_id'])
-
+                project_id=credentials[_GCPAuth._PROJECT_ID])
+        elif _GCPAuth._SERVICE_ACCOUNT_KEY in credentials:           
+            client = _GCSClient.from_service_account_json(
+                json_credentials_path=credentials[_GCPAuth._SERVICE_ACCOUNT_KEY])
         for bucket in client.list_buckets():
             if bucket.name == self.__bucket_name:
                 self.__bucket = bucket
