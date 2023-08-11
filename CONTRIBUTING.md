@@ -49,10 +49,17 @@ you can do in order to test each service:
   dst=/data/bucket/tests/test_files \
   fsouza/fake-gcs-server:1.47.0
   ``````
-  This command will pull the ``fsouza-fake-gcs-server`` image from Docker Hub and start it as a Docker container
-  in the background, while at the same time mapping its port `4443` to your local port `4443`. Furthermore, it mounts the repository's ``tests/test_files`` folder into the container, thereby creating a dummy bucket called ``bucket`` which will be containing this folder. Before you execute the above command, just make sure that you replace ``{PATH_TO_FLUKE_REPO}`` with the actual path of your local copy of the Fluke repository.
+  This command will pull the ``fsouza-fake-gcs-server`` image from Docker Hub
+  and start it as a Docker container in the background, while at the same time
+  mapping its port `4443` to your local port `4443`. Furthermore, it mounts the
+  repository's ``tests/test_files`` folder into the container, thereby creating
+  a dummy bucket called ``bucket`` which will be containing this folder. Before
+  you execute the above command, make sure that you replace ``{PATH_TO_FLUKE_REPO}``
+  with the actual path of your local copy of the Fluke repository.
 
-- Azure Blob Storage / Azure Queue Storage: Unfortunately, there is not a way of mocking out Azure services as of yet, though it is being looked into. For now, an Azure storage account is required in order to fully test these services.
+- Azure Blob Storage / Azure Queue Storage: Unfortunately, there is not a way
+  of mocking out Azure services as of yet, though it is being looked into.
+  For now, an Azure storage account is required in order to fully test these services.
 
 Running the tests
 -------------------------------------
