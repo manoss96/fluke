@@ -20,6 +20,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Set up fake GCS server
+        run: |
+          docker run -d \
+          -p 4443:4443 \
+          --mount type=bind,\
+          src=${{ github.workspace }}/tests/test_files,\
+          dst=/data/bucket/tests/test_files \
+          fsouza/fake-gcs-server:1.47.0
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
