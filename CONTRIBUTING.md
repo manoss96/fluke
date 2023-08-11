@@ -22,7 +22,7 @@ fastest way to do this would be the following:
    [Local project installs](https://pip.pypa.io/en/stable/topics/local-project-installs/).
 
 
-Mocking cloud services
+Mocking out cloud services
 -------------------------------------
 
 Interacting with various cloud services is a big part of Fluke.
