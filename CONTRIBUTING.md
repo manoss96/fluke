@@ -12,15 +12,47 @@ you should be able to set up a separate development environment just for Fluke. 
 fastest way to do this would be the following:
 
 1. Make sure that Python 3.9 or later is installed on your machine.
-2. Either clone or download the "fluke" repository.
-3. Create a virtual environment just for Fluke (by running ``python3 -m venv env``)
-4. Install all dependencies (you can find a ``requirements.txt`` file in ``docs/source/``)
+2. Create a virtual environment just for Fluke (by running ``python3 -m venv env``) and activate it.
+3. Either clone or download the Fluke Github repository.
+4. Navigate to the repository and run ``pip install -e .[tests]``.
+   This results in fluke being installed in development mode,
+   which means that any Python script that imports from Fluke
+   will be referencing the modules within the cloned/downloaded
+   repository. You can read more about "development mode" in
+   [Local project installs](https://pip.pypa.io/en/stable/topics/local-project-installs/).
 
-At this point you may want to create a simple script, e.g. ``main.py``
-and place it directly within the cloned repo. In this script, you are
-free to import from "fluke" so that you can experiment by executing
-various bits of code. Just make sure that, when running your script,
-your working directory is the "fluke" repo, and you are good to go!
+
+Mocking cloud services
+-------------------------------------
+
+Interacting with various cloud services is a big part of Fluke.
+It is only natural that you want to test your code on these
+services without having to actually pay for them. Here's what
+you can do in order to test each service:
+
+- Amazon S3 / Amazon SQS: In order to test these services you can utilize
+  the [moto](https://pypi.org/project/moto/) package, which, if you followed
+  the steps in "Setting up a development environment", should already be
+  installed to your Python virtual environment.
+
+- Google Cloud Storage: In order to mock out this service, you'll
+  want to run a dummy GCS server locally. The easiest way to do this
+  would be to run such a server as a Docker container. In fact, this
+  is a necessary step in order to run the tests as all GCS-related
+  tests require a mock GCS server running locally. Fluke uses the
+  [fsouza/fake-gcs-server](https://hub.docker.com/r/fsouza/fake-gcs-server)
+  Docker image. Having installed Docker on your system, you can simply
+  run the following command in order to start a dummy GCS server:
+  ```
+  docker run -d -p 4443:4443 --mount type=bind,\
+  src={PATH_TO_FLUKE_REPO}/tests/test_files,\
+  dst=/data/bucket/tests/test_files \
+  fsouza/fake-gcs-server:1.47.0
+  ``````
+  This command will pull the ``fsouza-fake-gcs-server`` image from Docker Hub and start it as a Docker container
+  in the background, while at the same time mapping its port `4443` to your local port `4443`. Furthermore, it mounts the repository's ``tests/test_files`` folder into the container, thereby creating a dummy bucket called ``bucket`` which will be containing this folder. Before you execute the above command, just make sure that you replace ``{PATH_TO_FLUKE_REPO}`` with the actual path of your local copy of the Fluke repository.
+
+- Azure Blob Storage / Azure Queue Storage: Unfortunately, there is not a way of mocking out Azure services as of yet, though it is being looked into. For now, an Azure storage account is required in order to fully test these services.
 
 Running the tests
 -------------------------------------

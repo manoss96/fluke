@@ -402,7 +402,7 @@ class LocalFile(_File):
             does not exist.
         :raises InvalidFileError: The provided path \
             points to a directory.
-        '''       
+        '''
         if not _os.path.exists(path):
             raise _IPE(path)
         if not _os.path.isfile(path):
