@@ -30,12 +30,12 @@ It is only natural that you want to test your code on these
 services without having to actually pay for them. Here's what
 you can do in order to test each service:
 
-- Amazon S3 / Amazon SQS: In order to test these services you can utilize
+- **Amazon S3 / Amazon SQS**: In order to test these services you can utilize
   the [moto](https://pypi.org/project/moto/) package, which, if you followed
   the steps in "Setting up a development environment", should already be
   installed to your Python virtual environment.
 
-- Google Cloud Storage: In order to mock out this service, you'll
+- *Google Cloud Storage*: In order to mock out this service, you'll
   want to run a dummy GCS server locally. The easiest way to do this
   would be to run such a server as a Docker container. In fact, this
   is a necessary step in order to run the tests as all GCS-related
@@ -57,7 +57,7 @@ you can do in order to test each service:
   you execute the above command, make sure that you replace ``{PATH_TO_FLUKE_REPO}``
   with the actual path of your local copy of the Fluke repository.
 
-- Azure Blob Storage / Azure Queue Storage: Unfortunately, there is not a way
+- *Azure Blob Storage / Azure Queue Storage*: Unfortunately, there is not a way
   of mocking out Azure services as of yet, though it is being looked into.
   For now, an Azure storage account is required in order to fully test these services.
 
