@@ -3,7 +3,8 @@
 __all__ = [
     'AWSAuth',
     'AzureAuth',
-    'RemoteAuth'
+    'RemoteAuth',
+    'GCPAuth'
 ]
 
 
@@ -284,3 +285,63 @@ class AzureAuth():
         associated with this instance.
         '''
         return self.__storage_account
+
+
+class GCPAuth():
+    '''
+    This class is used for authenticating with GCP.
+    '''
+    _PROJECT_ID = 'project_id'
+    _APPLICATION_DEFAULT_CREDENTIALS = 'adc'
+    _SERVICE_ACCOUNT_KEY = 'sak'
+
+
+    @classmethod
+    def from_application_default_credentials(
+        cls,
+        project_id: str,
+        credentials: str
+    ) -> 'GCPAuth':
+        '''
+        Returns a ``GCPAuth`` instance used for \
+        authenticating with a GCP project via the \
+        Application Default Credentials (ADC) strategy.
+
+        :param str project_id: The GCP project's identifier.
+        :param str credentials: The path to the JSON file \
+            containing the credentials.
+        '''
+        auth = cls()
+        auth.__credentials = {
+            cls._PROJECT_ID: project_id,
+            cls._APPLICATION_DEFAULT_CREDENTIALS: credentials
+        }
+        return auth
+    
+
+    @classmethod
+    def from_service_account_key(
+        cls,
+        credentials: str
+    ) -> 'GCPAuth':
+        '''
+        Returns a ``GCPAuth`` instance used for \
+        authenticating with a GCP project via a \
+        service account key file.
+
+        :param str credentials: The path to the \
+            service account key JSON file.
+        '''
+        auth = cls()
+        auth.__credentials = {
+            cls._SERVICE_ACCOUNT_KEY: credentials
+        }
+        return auth
+
+
+    def get_credentials(self) -> dict[str, str]:
+        '''
+        Returns the provided credentials stored \
+        within a dictionary.
+        '''
+        return dict(self.__credentials)

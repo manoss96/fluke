@@ -7,6 +7,7 @@ from typing import Optional as _Optional
 
 import boto3 as _boto3
 import paramiko as _prmk
+from google.cloud.storage import Client as _GCSClient
 from azure.identity import ClientSecretCredential as _CSC
 from azure.storage.blob import ContainerClient as _ContainerClient
 from botocore.exceptions import ClientError as _CE
@@ -14,6 +15,7 @@ from botocore.exceptions import ClientError as _CE
 
 from .auth import AWSAuth as _AWSAuth
 from .auth import AzureAuth as _AzureAuth
+from .auth import GCPAuth as _GCPAuth
 from .auth import RemoteAuth as _RemoteAuth
 from ._cache import CacheManager as _CacheManager
 from ._iohandlers import _FileReader
@@ -26,8 +28,11 @@ from ._iohandlers import AmazonS3FileReader as _AmazonS3FileReader
 from ._iohandlers import AmazonS3FileWriter as _AmazonS3FileWriter
 from ._iohandlers import AzureBlobReader as _AzureBlobReader
 from ._iohandlers import AzureBlobWriter as _AzureBlobWriter
+from ._iohandlers import GCPFileReader as _GCPFileReader
+from ._iohandlers import GCPFileWriter as _GCPFileWriter
 from ._exceptions import UnknownKeyTypeError as _UKTE
 from ._exceptions import BucketNotFoundError as _BNFE
+from ._exceptions import ContainerNotFoundError as _CNFE 
 from ._helper import join_paths as _join_paths
 from ._helper import infer_separator as _infer_sep
 from ._helper import relativize_path as _relativize
@@ -40,7 +45,7 @@ class ClientHandler(_ABC):
 
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
-        access. Defaults to ``False``.
+        access.
     '''
 
 
@@ -51,7 +56,7 @@ class ClientHandler(_ABC):
 
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
-            access. Defaults to ``False``.
+            access.
         '''
 
         self.__cache_manager = _CacheManager() if cache else None
@@ -298,7 +303,7 @@ class ClientHandler(_ABC):
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool
+        chunk_size: _Optional[int]
     ) -> '_FileWriter':
         '''
         Returns an ``_FileWriter`` class instance \
@@ -310,9 +315,10 @@ class ClientHandler(_ABC):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         '''
         pass
 
@@ -415,10 +421,10 @@ class FileSystemHandler(ClientHandler):
         Returns ``True`` if the provided path exists \
         within the directory, else returns ``False``.
 
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
+        :param str path: An absolute path.
         '''
-        return _os.path.exists(path=path)
+        return _os.path.exists(
+            path=path.rstrip(_infer_sep(path)))
     
 
     def is_file(self, file_path: str) -> bool:
@@ -429,7 +435,7 @@ class FileSystemHandler(ClientHandler):
         :param str file_path: The absolute path of the \
             file in question.
         '''
-        return _os.path.isfile(file_path)
+        return _os.path.isfile(file_path.rstrip(_infer_sep(file_path)))
     
 
     def mkdir(self, path: str) -> None:
@@ -460,7 +466,7 @@ class FileSystemHandler(ClientHandler):
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool
+        chunk_size: _Optional[int]
     ) -> _LocalFileWriter:
         '''
         Returns an ``LocalFileWriter`` class instance \
@@ -473,9 +479,10 @@ class FileSystemHandler(ClientHandler):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         '''
         return _LocalFileWriter(file_path=file_path)
     
@@ -556,7 +563,7 @@ class SSHClientHandler(ClientHandler):
         for authenticating with a remote machine.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
-        access. Defaults to ``False``.
+        access.
     '''        
 
     def __init__(self, auth: _RemoteAuth, cache: bool):
@@ -568,7 +575,7 @@ class SSHClientHandler(ClientHandler):
             for authenticating with a remote machine.
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
-            access. Defaults to ``False``.
+            access.
         '''
         super().__init__(cache=cache)
         self.__auth: _RemoteAuth = auth
@@ -670,11 +677,11 @@ class SSHClientHandler(ClientHandler):
         Returns ``True`` if the provided path exists \
         within the directory, else returns ``False``.
 
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
+        :param str path: An absolute path.
         '''
         try:
-            self.__sftp.stat(path=path)
+            self.__sftp.stat(
+                path=path.rstrip(_infer_sep(path)))
         except FileNotFoundError:
             return False
         return True
@@ -689,7 +696,8 @@ class SSHClientHandler(ClientHandler):
             file in question.
         '''
         from stat import S_ISDIR as _is_dir
-        return not _is_dir(self.__sftp.stat(path=file_path).st_mode)
+        return not _is_dir(self.__sftp.stat(
+            path=file_path.rstrip(_infer_sep(file_path))).st_mode)
     
     
     def mkdir(self, path: str) -> None:
@@ -721,7 +729,7 @@ class SSHClientHandler(ClientHandler):
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool
+        chunk_size: _Optional[int]
     ) -> _RemoteFileWriter:
         '''
         Returns a ``RemoteFileWriter`` class instance \
@@ -734,9 +742,10 @@ class SSHClientHandler(ClientHandler):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         '''
         return _RemoteFileWriter(
             file_path=file_path, sftp=self.__sftp)
@@ -847,10 +856,15 @@ class AWSClientHandler(ClientHandler):
         to which a connection is to be established.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
-        access. Defaults to ``False``.
+        access.
     '''
 
-    def __init__(self, auth: _AWSAuth, bucket: str, cache: bool):
+    def __init__(
+        self,
+        auth: _AWSAuth,
+        bucket: str,
+        cache: bool
+    ):
         '''
         A class used in handling the HTTP \
         connection to an Amazon S3 bucket.
@@ -861,7 +875,7 @@ class AWSClientHandler(ClientHandler):
             to which a connection is to be established.
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
-            access. Defaults to ``False``.
+            access.
         '''
         super().__init__(cache=cache)
         self.__auth = auth
@@ -903,7 +917,7 @@ class AWSClientHandler(ClientHandler):
         try:
             self.__bucket.meta.client.head_bucket(Bucket=self.__bucket_name)
         except _CE:
-            self.__bucket = None
+            self.close_connections()
             raise _BNFE(bucket=self.__bucket_name)
 
         print("Connection established.")
@@ -923,14 +937,15 @@ class AWSClientHandler(ClientHandler):
         Returns ``True`` if the provided path exists \
         within the directory, else returns ``False``.
 
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
+        :param str path: An absolute path.
         '''
-        try:
-            self.__bucket.Object(path).load()
-        except _CE:
-            return False
-        return True
+        for _ in self._traverse_dir_impl(
+            dir_path=path.rstrip(_infer_sep(path)),
+            recursively=False,
+            show_abs_path=True
+        ):    
+            return True
+        return False
 
 
     def is_file(self, file_path: str) -> bool:
@@ -941,7 +956,12 @@ class AWSClientHandler(ClientHandler):
         :param str file_path: The absolute path of the \
             file in question.
         '''
-        return not file_path.endswith('/')
+        try:
+            file_path = file_path.rstrip(_infer_sep(file_path))
+            self.__bucket.Object(file_path).load()
+            return not self.dir_exists(file_path)
+        except _CE:
+            return False
     
 
     def dir_exists(self, path: str) -> bool:
@@ -952,9 +972,11 @@ class AWSClientHandler(ClientHandler):
         :param str path: Either an absolute path or a \
             path relative to the parent directory.
         '''
-        for _ in self.__bucket.objects.filter(Prefix=path):
-            return True
-        return False
+        return 'CommonPrefixes' in self.__bucket.meta.client.list_objects(
+            Bucket=self.get_bucket_name(),
+            Prefix=path.rstrip(_infer_sep(path)),
+            Delimiter='/',
+            MaxKeys=1)
         
     
     def mkdir(self, path: str) -> None:
@@ -988,7 +1010,7 @@ class AWSClientHandler(ClientHandler):
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool
+        chunk_size: _Optional[int]
     ) -> _AmazonS3FileWriter:
         '''
         Returns an ``AmazonS3FileWriter`` class instance \
@@ -1001,14 +1023,15 @@ class AWSClientHandler(ClientHandler):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         '''
         return _AmazonS3FileWriter(
             file_path=file_path,
             metadata=metadata,
-            in_chunks=in_chunks,
+            chunk_size=chunk_size,
             bucket=self.__bucket)
     
 
@@ -1122,10 +1145,15 @@ class AzureClientHandler(ClientHandler):
         container to which a connection is to be established.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
-        access. Defaults to ``False``.
+        access.
     '''
 
-    def __init__(self, auth: _AzureAuth, container: str, cache: bool):
+    def __init__(
+        self,
+        auth: _AzureAuth,
+        container: str,
+        cache: bool
+    ):
         '''
         A class used in handling the HTTP \
         connection to an Azure blob container.
@@ -1136,7 +1164,7 @@ class AzureClientHandler(ClientHandler):
             container to which a connection is to be established.
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
-            access. Defaults to ``False``.
+            access.
         '''
         super().__init__(cache=cache)
         self.__auth = auth
@@ -1188,6 +1216,11 @@ class AzureClientHandler(ClientHandler):
                 account_url=credentials.pop('account_url'),
                 container_name=self.__container_name,
                 credential=_CSC(**credentials))
+            
+        if not self.container_exists():
+            self.close_connections()
+            raise _CNFE(self.__container_name)
+        
         print("Connection established!")
 
     def close_connections(self):
@@ -1204,10 +1237,11 @@ class AzureClientHandler(ClientHandler):
         Returns ``True`` if the provided path exists \
         within the directory, else returns ``False``.
 
-        :param str path: Either an absolute path or a \
-            path relative to the directory.
+        :param str path: An absolute path.
         '''
-        with self.__container.get_blob_client(blob=path) as blob:
+        with self.__container.get_blob_client(
+            blob=path.rstrip(_infer_sep(path))
+        ) as blob:
             return blob.exists()
         
 
@@ -1253,7 +1287,7 @@ class AzureClientHandler(ClientHandler):
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool
+        chunk_size: _Optional[int]
     ) -> _AzureBlobWriter:
         '''
         Returns an ``AzureBlobWriter`` class instance \
@@ -1266,14 +1300,15 @@ class AzureClientHandler(ClientHandler):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         '''
         return _AzureBlobWriter(
             file_path=file_path,
             metadata=metadata,
-            in_chunks=in_chunks,
+            chunk_size=chunk_size,
             container=self.__container)
      
 
@@ -1351,3 +1386,306 @@ class AzureClientHandler(ClientHandler):
                 yield properties['name']
             else:
                 yield _relativize(dir_path, properties['name'], sep)
+
+
+
+class GCPClientHandler(ClientHandler):
+    '''
+    A class used in handling the HTTP \
+    connection to a Google Cloud Storage bucket.
+
+    :param GCPAuth auth: A ``GCPAuth`` instance \
+        used in authenticating with Google Cloud Platform.
+    :param str bucket: The name of the Google Cloud Storage \
+        bucket to which a connection is to be established.
+    :param bool cache: Indicates whether it is allowed for \
+        any fetched data to be cached for faster subsequent \
+        access.
+    '''
+
+    # NOTE: This is used instead of directly instantiating a client
+    #       due to certain issues while attempting to mock the client
+    #       by patching the class' method ``__new__``.
+    _CLIENT_GENERATOR = lambda _, project_id: _GCSClient(project=project_id)
+
+    def __init__(
+        self,
+        auth: _GCPAuth,
+        bucket: str,
+        cache: bool
+    ):
+        '''
+        A class used in handling the HTTP \
+        connection to a Google Cloud Storage bucket.
+
+        :param GCPAuth auth: A ``GCPAuth`` instance \
+            used in authenticating with Google Cloud Platform.
+        :param str bucket: The name of the Google Cloud Storage \
+            bucket to which a connection is to be established.
+        :param bool cache: Indicates whether it is allowed for \
+            any fetched data to be cached for faster subsequent \
+            access.
+        '''
+        super().__init__(cache=cache)
+        self.__auth = auth
+        self.__bucket_name = bucket
+        self.__bucket = None
+
+
+    def bucket_exists(self) -> bool:
+        '''
+        Returns a value indicating whether the \
+        specified bucket exists or not.
+        '''
+        self.__bucket.exists()
+
+
+    def get_bucket_name(self) -> str:
+        '''
+        Returns the name of the bucket to which \
+        a connection has been established.
+        '''
+        return self.__bucket_name
+    
+
+    def is_open(self) -> bool:
+        '''
+        Returns a value indicating whether \
+        this handler's underlying client connection \
+        is open or not.
+        '''
+        return self.__bucket is not None
+
+
+    def open_connections(self) -> None:
+        '''
+        Opens an HTTP connection to the \
+        Google Cloud Storage bucket.
+        '''
+        if self.__bucket is not None:
+            return
+
+        credentials = self.__auth.get_credentials()
+
+        print(f"\nEstablishing connection to '{self.__bucket_name}' Google Cloud Storage bucket...")
+
+        if _GCPAuth._APPLICATION_DEFAULT_CREDENTIALS in credentials:
+            _os.environ.update({
+                "GOOGLE_APPLICATION_CREDENTIALS":
+                credentials[_GCPAuth._APPLICATION_DEFAULT_CREDENTIALS]
+            })
+            client = self._CLIENT_GENERATOR(
+                project_id=credentials[_GCPAuth._PROJECT_ID])
+        elif _GCPAuth._SERVICE_ACCOUNT_KEY in credentials:           
+            client = _GCSClient.from_service_account_json(
+                json_credentials_path=credentials[_GCPAuth._SERVICE_ACCOUNT_KEY])
+        for bucket in client.list_buckets():
+            if bucket.name == self.__bucket_name:
+                self.__bucket = bucket
+                break
+        else:
+            self.close_connections()
+            raise _BNFE(bucket=self.__bucket_name)
+
+        print("Connection established!")
+
+
+    def close_connections(self):
+        '''
+        Closes the HTTP connection to Google Cloud Storage.
+        '''
+        if self.__bucket is not None:
+            self.__bucket.client.close()
+            self.__bucket = None
+
+
+    def path_exists(self, path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path exists \
+        within the directory, else returns ``False``.
+
+        :param str path: An absolute path.
+        '''
+        for _ in self.__bucket.list_blobs(
+            prefix=path.rstrip('/')
+        ):   
+            return True
+        return False
+        
+
+    def is_file(self, file_path: str) -> bool:
+        '''
+        Returns ``True`` if the provided path points \
+        to a file, else returns ``False``.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        return (self.__bucket
+            .blob(blob_name=file_path.rstrip(_infer_sep(file_path)))
+            .exists())
+    
+
+    def mkdir(self, path: str) -> None:
+        '''
+        Creates a directory into the provided path.
+
+        :param str path: The path of the directory \
+            that is to be created.
+        '''
+        (self.__bucket
+            .blob(blob_name=path)
+            .upload_from_string(
+                '',
+                content_type='application/x-www-form-urlencoded;charset=UTF-8'))
+
+
+    def get_reader(self, file_path: str) -> _GCPFileReader:
+        '''
+        Returns a ``GCPFileReader`` class instance \
+        used for reading from a file which resides within \
+        a Google Cloud Storage bucket.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        '''
+        return _GCPFileReader(
+            file_path=file_path,
+            file_size=self.get_file_size(file_path),
+            bucket=self.__bucket)
+
+
+    def get_writer(
+        self,
+        file_path: str,
+        metadata: _Optional[dict[str, str]],
+        chunk_size: _Optional[int]
+    ) -> _GCPFileWriter:
+        '''
+        Returns a ``GCPFileWriter`` class instance \
+        used for writing to a file which resides within \
+        a Google Cloud Storage bucket.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        :param dict[str, str] | None metadata: A \
+            dictionary containing the metadata that \
+            are to be assigned to the file in question. \
+            If ``None``, then no metadata are assigned.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
+        '''
+        return _GCPFileWriter(
+            file_path=file_path,
+            metadata=metadata,
+            chunk_size=chunk_size,
+            bucket=self.__bucket)
+     
+
+    def _get_file_size_impl(self, file_path) -> int:
+        '''
+        Fetches and returns the size of a file in bytes.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        return self.__bucket.get_blob(file_path).size
+    
+
+    def _get_file_metadata_impl(self, file_path: str) -> dict[str, str]:
+        '''
+        Fetches and returns a dictionary containing the \
+        metadata of a file.
+
+        :param str file_path: The absolute path of the \
+            file in question.
+        '''
+        return dict() if (
+            metadata := self.__bucket.get_blob(file_path).metadata
+        ) is None else metadata
+        
+
+    def _traverse_dir_impl(
+        self,
+        dir_path: str,
+        recursively: bool,
+        show_abs_path: bool
+    ) -> _Iterator[str]:
+        '''
+        Returns an iterator capable of going through \
+        the directory's contents as their paths.
+
+        :param str dir_path: The absolute path of the directory \
+            whose contents are to be iterated.
+        :param bool recursively: Indicates whether the directory \
+            is to be traversed recursively or not. If set to  ``False``, \
+            then only those files that reside directly within the \
+            directory are to be considered. If set to ``True``, \
+            then all files are considered, no matter whether they \
+            reside directly within the directory or within any of \
+            its subdirectories.
+        :param bool show_abs_path: Indicates whether it \
+            should be displayed the absolute or the relative \
+            path of the contents.
+
+        :note: The resulting iterator may vary depending on the \
+            value of parameter ``recursively``.
+        '''
+        sep = '/'
+
+        if recursively:
+            for blob in self.__bucket.list_blobs(
+                prefix=dir_path
+            ):
+                if blob.name != dir_path:  
+                    if show_abs_path:
+                        yield blob.name
+                    else:
+                        yield _relativize(dir_path, blob.name, sep)
+        else:
+
+            from google.api_core import page_iterator
+
+            dir_iter = page_iterator.HTTPIterator(
+                client=self.__bucket.client,
+                api_request=self.__bucket.client._connection.api_request,
+                path=f"/b/{self.get_bucket_name()}/o",
+                items_key='prefixes',
+                item_to_value=lambda _, item: item,
+                extra_params={
+                    "projection": "noAcl",
+                    "prefix": dir_path,
+                    "delimiter": '/'})
+
+            obj_iter = filter(
+                lambda obj: obj != dir_path,
+                map(
+                    lambda obj: obj.name,
+                    self.__bucket.list_blobs(
+                        prefix=dir_path,
+                        delimiter='/')))
+
+            obj = next(obj_iter, None)
+            dir = next(dir_iter, None)
+        
+            name_fun = lambda name: (
+                name if show_abs_path
+                else _relativize(dir_path, name, sep))
+
+            while True:
+                if obj is None and dir is None:
+                    break
+                elif obj is None and dir is not None:
+                    yield name_fun(dir)
+                    dir = next(dir_iter, None)
+                elif obj is not None and dir is None:
+                    yield name_fun(obj)
+                    obj = next(obj_iter, None)
+                elif obj > dir:
+                    yield name_fun(dir)
+                    dir = next(dir_iter, None)
+                else:
+                    yield name_fun(obj)
+                    obj = next(obj_iter, None)

@@ -1,6 +1,6 @@
 import unittest
 
-from fluke.auth import RemoteAuth, AWSAuth, AzureAuth
+from fluke.auth import RemoteAuth, AWSAuth, AzureAuth, GCPAuth
 
 
 class TestRemoteAuth(unittest.TestCase):
@@ -112,6 +112,32 @@ class TestAzureAuth(unittest.TestCase):
         self.assertEqual(
             AzureAuth.from_conn_string(**credentials).get_credentials(),
             credentials)
+        
+
+class TestGCPAuth(unittest.TestCase):
+
+    PROJECT_ID = "PROJECT_ID"
+    CREDENTIALS = "PATH/TO/CREDENTIALS/FILE"
+        
+    def test_get_credentials_from_application_default_credentials(self):
+        self.assertEqual(
+            GCPAuth.from_application_default_credentials(**{
+                'project_id': self.PROJECT_ID,
+                'credentials': self.CREDENTIALS,
+            }).get_credentials(),
+            {
+                GCPAuth._PROJECT_ID: self.PROJECT_ID,
+                GCPAuth._APPLICATION_DEFAULT_CREDENTIALS: self.CREDENTIALS
+            })
+        
+    def test_get_credentials_from_service_account_key(self):
+        self.assertEqual(
+            GCPAuth.from_service_account_key(**{
+                'credentials': self.CREDENTIALS,
+            }).get_credentials(),
+            {
+                GCPAuth._SERVICE_ACCOUNT_KEY: self.CREDENTIALS
+            })
         
 
 if __name__=="__main__": 

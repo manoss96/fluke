@@ -10,6 +10,10 @@ import paramiko as _prmk
 import boto3 as _boto3
 from azure.storage.blob import ContainerClient as _ContainerClient
 from azure.storage.blob import BlobType as _BlobType
+from google.cloud.storage import Bucket as _GCPBucket
+from google.resumable_media.requests import ResumableUpload as _ResumableUpload
+from google.auth.transport.requests import AuthorizedSession as _AuthSession
+from google.resumable_media.requests import MultipartUpload as _MultipartUpload
 from botocore.exceptions import ClientError as _BotoClientError
 from azure.core.exceptions import HttpResponseError as _AzureResponseError
 
@@ -202,17 +206,14 @@ class _FileReader(_IOHandler, _ABC):
     @_absmethod
     def _read_impl(
         self,
-        start: _Optional[int],
-        end: _Optional[int]
+        start: int,
+        end: int
     ) -> bytes:
         '''
         Reads and returns the specified byte range.
 
-        :param int | None start: The point to start reading from. \
-            If ``None``, then starts reading from the beginning \
-            of the file.
-        :param int | None end: The point to stop reading from. \
-            If ``None``, then stops reading at the end of the file.
+        :param int start: The point to start reading from.
+        :param int end: The point to stop reading from.
         '''
         pass
 
@@ -313,17 +314,14 @@ class LocalFileReader(_FileReader):
 
     def _read_impl(
         self,
-        start: _Optional[int],
-        end: _Optional[int]
+        start: int,
+        end: int
     ) -> bytes:
         '''
         Reads and returns the specified byte range.
 
-        :param int | None start: The point to start reading from. \
-            If ``None``, then starts reading from the beginning \
-            of the file.
-        :param int | None end: The point to stop reading from. \
-            If ``None``, then stops reading at the end of the file.
+        :param int start: The point to start reading from.
+        :param int end: The point to stop reading from.
         '''
         self.__file.seek(start)
         return self.__file.read(end - start)
@@ -417,17 +415,14 @@ class RemoteFileReader(_FileReader):
 
     def _read_impl(
         self,
-        start: _Optional[int],
-        end: _Optional[int]
+        start: int,
+        end: int
     ) -> bytes:
         '''
         Reads and returns the specified byte range.
 
-        :param int | None start: The point to start reading from. \
-            If ``None``, then starts reading from the beginning \
-            of the file.
-        :param int | None end: The point to stop reading from. \
-            If ``None``, then stops reading at the end of the file.
+        :param int start: The point to start reading from.
+        :param int end: The point to stop reading from.
         '''
         self.__file.seek(start)
         return self.__file.read(end - start)
@@ -442,8 +437,6 @@ class RemoteFileWriter(_FileWriter):
         the file in question.
     :param SFTPClient sftp: An ``SFTPClient`` \
         class instance.
-    :param int offset: The byte offset. Defaults \
-        to ``0``.
     '''
 
     def __init__(
@@ -557,18 +550,15 @@ class AmazonS3FileReader(_FileReader):
 
     def _read_impl(
         self,
-        start: _Optional[int],
-        end: _Optional[int]
+        start: int,
+        end: int
     ) -> bytes:
         '''
         Reads and returns the specified byte range.
 
-        :param int | None start: The point to start reading from. \
-            If ``None``, then starts reading from the beginning \
-            of the file.
-        :param int | None end: The point to stop reading from. \
-            If ``None``, then stops reading at the end of the file.
-        '''    
+        :param int start: The point to start reading from.
+        :param int end: The point to stop reading from.
+        ''' 
         range = f"bytes={start}-{end-1}"
         return self.__file.get(Range=range)['Body'].read()
 
@@ -584,18 +574,17 @@ class AmazonS3FileWriter(_FileWriter):
         dictionary containing the metadata that \
         are to be assigned to the file in question. \
         If ``None``, then no metadata are assigned.
-    :param bool in_chunks: Indicates whether to \
-        write the file in distinct chunks or \
-        all at once.
-    :param SFTPClient sftp: An ``SFTPClient`` \
-        class instance.
+    :param int | None chunk_size: Indicates whether \
+        the size of distinct chunks in which the file \
+        is written. If ``None``, then the file is to be \
+        written as a single chunk of bytes.
+    :param Bucket bucket: A ``Bucket`` class instance.
     '''
-
     def __init__(
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool,
+        chunk_size: _Optional[int],
         bucket: '_boto3.resources.factory.s3.Bucket'
     ) -> None:
         '''
@@ -608,9 +597,10 @@ class AmazonS3FileWriter(_FileWriter):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         :param Bucket bucket: A ``Bucket`` class instance.
         '''
         super().__init__(file_path=file_path)
@@ -620,7 +610,7 @@ class AmazonS3FileWriter(_FileWriter):
         # multipart-upload, including any metadata that 
         # may exist. Else, store the metadata dictionary
         # so as to include them during the bulk upload.
-        if in_chunks:
+        if chunk_size is not None:
             if metadata is None:
                 self.__mpu = self.__file.initiate_multipart_upload()
             else:
@@ -712,18 +702,15 @@ class AzureBlobReader(_FileReader):
 
     def _read_impl(
         self,
-        start: _Optional[int],
-        end: _Optional[int]
+        start: int,
+        end: int
     ) -> bytes:
         '''
         Reads and returns the specified byte range.
 
-        :param int | None start: The point to start reading from. \
-            If ``None``, then starts reading from the beginning \
-            of the file.
-        :param int | None end: The point to stop reading from. \
-            If ``None``, then stops reading at the end of the file.
-        '''  
+        :param int start: The point to start reading from.
+        :param int end: The point to stop reading from.
+        '''
         return self.__file.download_blob(
             offset=start,
             length=end-start).read()
@@ -740,20 +727,19 @@ class AzureBlobWriter(_FileWriter):
         dictionary containing the metadata that \
         are to be assigned to the file in question. \
         If ``None``, then no metadata are assigned.
-    :param bool in_chunks: Indicates whether to \
-        write the file in distinct chunks or \
-        all at once.
+    :param int | None chunk_size: Indicates whether \
+        the size of distinct chunks in which the file \
+        is written. If ``None``, then the file is to be \
+        written as a single chunk of bytes.
     :param ContainerClient container: A \
         ``ContainerClient`` class instance.
-    :param int offset: The byte offset. Defaults \
-        to ``0``.
     '''
 
     def __init__(
         self,
         file_path: str,
         metadata: _Optional[dict[str, str]],
-        in_chunks: bool,
+        chunk_size: _Optional[int],
         container: _ContainerClient,
     ) -> None:
         '''
@@ -766,18 +752,17 @@ class AzureBlobWriter(_FileWriter):
             dictionary containing the metadata that \
             are to be assigned to the file in question. \
             If ``None``, then no metadata are assigned.
-        :param bool in_chunks: Indicates whether to \
-            write the file in distinct chunks or \
-            all at once.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
         :param ContainerClient container: A \
             ``ContainerClient`` class instance.
-        :param int offset: The byte offset. Defaults \
-            to ``0``.
         '''
         super().__init__(file_path=file_path)
         self.__file = container.get_blob_client(blob=file_path)
         self.__metadata = metadata
-        self.__in_chunks = in_chunks
+        self.__chunk_size = chunk_size
         # NOTE: If blob already exists, then it has to be deleted only
         #       in the case that its type has to change. Furthermore,
         #       in the case the blob is to be written in chunks, it must
@@ -786,14 +771,14 @@ class AzureBlobWriter(_FileWriter):
             blob_type = self.__file.get_blob_properties().blob_type
             if blob_type == _BlobType.PAGEBLOB:
                 self.__file.delete_blob()
-                if in_chunks:
+                if chunk_size is not None:
                     self.__file.create_append_blob()
-            elif in_chunks and blob_type == _BlobType.BLOCKBLOB:
+            elif chunk_size is not None and blob_type == _BlobType.BLOCKBLOB:
                 self.__file.delete_blob()
                 self.__file.create_append_blob()
-            elif not in_chunks and blob_type == _BlobType.APPENDBLOB:
+            elif chunk_size is None and blob_type == _BlobType.APPENDBLOB:
                 self.__file.delete_blob()
-        elif in_chunks:
+        elif chunk_size is not None:
             self.__file.create_append_blob()
 
 
@@ -803,7 +788,7 @@ class AzureBlobWriter(_FileWriter):
         '''
         # If blob was uploaded in chunks,
         # then set file metadatan here.
-        if self.__in_chunks:
+        if self.__chunk_size is not None:
             self.__file.set_blob_metadata(
                 metadata=self.__metadata)
         # Close the file.
@@ -819,15 +804,200 @@ class AzureBlobWriter(_FileWriter):
             is to be written to the file.
         '''
         n = len(chunk)
-        if self.__in_chunks:
-            n = len(chunk)
-            self.__file.append_block(
-                data=chunk,
-                length=n)
-        else:
+        if self.__chunk_size is None:
             self.__file.upload_blob(
                 data=chunk,
                 length=n,
                 metadata=self.__metadata,
                 overwrite=True)
+        else:
+            self.__file.append_block(
+                data=chunk,
+                length=n)
         return n
+    
+
+class GCPFileReader(_FileReader):
+    '''
+    A class used in reading from files which \
+    reside within a Google Cloud Storage bucket.
+
+    :param str file_path: The absolute path of \
+        the file in question.
+    :param int file_size: The size in bytes of \
+        the file in question.
+    :param Bucket bucket: A ``Bucket`` class instance.
+    '''
+
+    def __init__(
+        self,
+        file_path: str,
+        file_size: int,
+        bucket: _GCPBucket
+    ) -> None:
+        '''
+        A class used in reading from files which \
+        reside within a Google Cloud Storage bucket.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        :param int file_size: The size in bytes of \
+            the file in question.
+        :param Bucket bucket: A ``Bucket`` class instance.
+        '''
+        super().__init__(file_path=file_path, file_size=file_size)
+        self.__file = bucket.get_blob(blob_name=file_path)
+
+
+    def close(self) -> None:
+        '''
+        Closes the handler's underlying file.
+        '''
+        # NOTE: No need to close file, just the
+        #       underlying HTTPS connection which
+        #       will be closed by the `GCPClientHandler``
+        #       class instance.
+        pass
+
+
+    def _read_impl(
+        self,
+        start: int,
+        end: int
+    ) -> bytes:
+        '''
+        Reads and returns the specified byte range.
+
+        :param int start: The point to start reading from.
+        :param int end: The point to stop reading from.
+        '''
+        return self.__file.download_as_bytes(start=start, end=end-1)
+
+            
+class GCPFileWriter(_FileWriter):
+    '''
+    A class used in writing to files which \
+    reside within a Google Cloud Storage bucket.
+
+    :param str file_path: The absolute path of \
+        the file in question.
+    :param dict[str, str] | None metadata: A \
+        dictionary containing the metadata that \
+        are to be assigned to the file in question. \
+        If ``None``, then no metadata are assigned.
+    :param int | None chunk_size: Indicates whether \
+        the size of distinct chunks in which the file \
+        is written. If ``None``, then the file is to be \
+        written as a single chunk of bytes.
+    :param Bucket bucket: A ``Bucket`` class instance.
+    '''
+    def __init__(
+        self,
+        file_path: str,
+        metadata: _Optional[dict[str, str]],
+        chunk_size: _Optional[int],
+        bucket: _GCPBucket
+    ) -> None:
+        '''
+        A class used in reading from files which \
+        reside within a remote file system.
+
+        :param str file_path: The absolute path of \
+            the file in question.
+        :param dict[str, str] | None metadata: A \
+            dictionary containing the metadata that \
+            are to be assigned to the file in question. \
+            If ``None``, then no metadata are assigned.
+        :param int | None chunk_size: Indicates whether \
+            the size of distinct chunks in which the file \
+            is written. If ``None``, then the file is to be \
+            written as a single chunk of bytes.
+        :param Bucket bucket: A ``Bucket`` class instance.
+        '''
+        super().__init__(file_path=file_path)
+
+        # NOTE: If uploading file in chunks, then
+        #       create a resumable upload session.
+        if chunk_size is None:
+            self.__file = bucket.blob(blob_name=file_path)
+            self.__metadata = metadata
+        else:
+            self.__file = None
+            self.__rus = self._create_resumable_upload_session(
+                bucket=bucket.name,
+                file_path=file_path,
+                chunk_size=chunk_size)
+            self.__transport = _AuthSession(
+                credentials=bucket.client._credentials)
+            self.__stream = _io.BytesIO()
+            self.__rus.initiate(
+                transport=self.__transport,
+                content_type='application/octet-stream',
+                stream=self.__stream,
+                stream_final=False,
+                metadata={'metadata': metadata})
+
+
+    def close(self) -> None:
+        '''
+        Closes the handler's underlying file.
+        '''
+        # NOTE: No need to close file, just the
+        #       underlying HTTPS connection which
+        #       will be closed by the `GCPClientHandler``
+        #       class instance.
+        if self.__file is None:
+            # NOTE: Due to setting ``stream_final`` to ``False``,
+            #       the upload is automatically iferred to be over
+            #       whenever a chunk whose size is less than the
+            #       specified chunk size is uploaded. If a file
+            #       happens to be divided into equally sized chunks,
+            #       then the algorithm cannot infer the final chunk.
+            #       In that case, a zero-byte chunk should be uploaded
+            #       to indicate that the upload has been finalized.
+            if not self.__rus.finished:
+                self.__rus.transmit_next_chunk(
+                    transport=self.__transport)
+            self.__transport.close()
+            self.__stream.close()
+        elif self.__metadata is not None:
+            # NOTE: Call ``patch`` in order to
+            #       upload the file's metadata.
+            self.__file.metadata = self.__metadata
+            self.__file.patch()
+
+
+    def _write_impl(self, chunk: bytes) -> int:
+        '''
+        Writes the provided chunk to the opened file,
+        and returns the number of bytes written.
+
+        :param bytes chunk: The chunk of bytes that \
+            is to be written to the file.
+        '''
+        if self.__file is None:
+            self.__stream.write(chunk)
+            self.__stream.seek(-len(chunk), 1)
+            self.__rus.transmit_next_chunk(
+                transport=self.__transport)
+        else:
+            with _io.BytesIO(chunk) as buffer:
+                self.__file.upload_from_file(
+                    file_obj=buffer,
+                    size=len(chunk))
+        return len(chunk)
+    
+
+    @staticmethod
+    def _create_resumable_upload_session(
+        bucket: str,
+        file_path: str,
+        chunk_size: int
+    ) -> _ResumableUpload:
+        return _ResumableUpload(
+            upload_url=(
+                "https://storage.googleapis.com" +
+                f"/upload/storage/v1/b/{bucket}/" +
+                f"o?uploadType=resumable&name={file_path}"
+            ),
+            chunk_size=chunk_size)
