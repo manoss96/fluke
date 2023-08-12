@@ -59,7 +59,8 @@ you can do in order to test each service:
 
 - **Azure Blob Storage / Azure Queue Storage**: Unfortunately, there is not a way
   of mocking out Azure services as of yet, though it is being looked into.
-  For now, an Azure storage account is required in order to fully test these services.
+  For now, an Azure storage account is required in order to truly test out
+  any code that interacts with these services.
 
 Running the tests
 -------------------------------------

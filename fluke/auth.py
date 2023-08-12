@@ -308,7 +308,8 @@ class GCPAuth():
         Application Default Credentials (ADC) strategy.
 
         :param str project_id: The GCP project's identifier.
-        :param str credentials: The path to the credentials JSON file.
+        :param str credentials: The path to the JSON file \
+            containing the credentials.
         '''
         auth = cls()
         auth.__credentials = {
@@ -328,8 +329,8 @@ class GCPAuth():
         authenticating with a GCP project via a \
         service account key file.
 
-        :param str credentials: The path to the service account \
-            key JSON file.
+        :param str credentials: The path to the \
+            service account key JSON file.
         '''
         auth = cls()
         auth.__credentials = {

@@ -456,6 +456,11 @@ class _NonLocalFile(_File, _ABC):
     :param str path: A path pointing to the file.
     :param ClientHandler handler: A ``ClientHandler`` class \
         instance used for interacting with the underlying handler.
+
+    :raises InvalidPathError: The provided path \
+        does not exist.
+    :raises InvalidFileError: The provided path \
+        points to a directory.
     '''
 
     def __init__(
@@ -471,6 +476,11 @@ class _NonLocalFile(_File, _ABC):
         :param str path: A path pointing to the file.
         :param ClientHandler handler: A ``ClientHandler`` class \
             instance used for interacting with the underlying handler.
+
+        :raises InvalidPathError: The provided path \
+            does not exist.
+        :raises InvalidFileError: The provided path \
+            points to a directory.
         '''
         super().__init__(
             path=path,
@@ -1801,6 +1811,11 @@ class _NonLocalDir(_Directory, _ABC):
         thrown.
     :param ClientHandler handler: A ``ClientHandler`` class \
         instance used for interacting with the underlying handler.
+
+    :raises InvalidPathError: The provided path \
+        does not exist.
+    :raises InvalidDirectoryError: The provided path \
+        does not point to a directory.
     '''
     def __init__(
         self,
@@ -1820,6 +1835,11 @@ class _NonLocalDir(_Directory, _ABC):
             thrown.
         :param ClientHandler handler: A ``ClientHandler`` class \
             instance used for interacting with the underlying handler.
+
+        :raises InvalidPathError: The provided path \
+            does not exist.
+        :raises InvalidDirectoryError: The provided path \
+            does not point to a directory.
         '''
         super().__init__(path=path, metadata=dict(), handler=handler)
         self.open()
@@ -2190,6 +2210,8 @@ class AmazonS3Dir(_CloudDir):
         bucket does not exist.
     :raises InvalidPathError: The provided path \
         does not exist.
+    :raises InvalidDirectoryError: The provided path \
+        does not point to a directory.
 
     :note: The provided path must not begin with \
         a separator.
@@ -2228,6 +2250,8 @@ class AmazonS3Dir(_CloudDir):
             bucket does not exist.
         :raises InvalidPathError: The provided path \
             does not exist.
+        :raises InvalidDirectoryError: The provided path \
+            does not point to a directory.
 
         :note: The provided path must not begin with \
             a separator.
@@ -2399,6 +2423,8 @@ class AzureBlobDir(_CloudDir):
         specified container does not exist.
     :raises InvalidPathError: The provided path \
         does not exist.
+    :raises InvalidDirectoryError: The provided path \
+        does not point to a directory.
 
     :note: The provided path must not begin with \
         a separator.
@@ -2437,6 +2463,8 @@ class AzureBlobDir(_CloudDir):
             specified container does not exist.
         :raises InvalidPathError: The provided path \
             does not exist.
+        :raises InvalidDirectoryError: The provided path \
+            does not point to a directory.
 
         :note: The provided path must not begin with \
             a separator.
@@ -2616,6 +2644,8 @@ class GCPStorageDir(_CloudDir):
         bucket does not exist.
     :raises InvalidPathError: The provided path \
         does not exist.
+    :raises InvalidDirectoryError: The provided path \
+        does not point to a directory.
 
     :note: The provided path must not begin with \
         a separator.
@@ -2654,6 +2684,8 @@ class GCPStorageDir(_CloudDir):
             bucket does not exist.
         :raises InvalidPathError: The provided path \
             does not exist.
+        :raises InvalidDirectoryError: The provided path \
+            does not point to a directory.
 
         :note: The provided path must not begin with \
             a separator.
