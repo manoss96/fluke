@@ -15,6 +15,11 @@ All notable changes to this project will be documented in this file.
 
 - Added a new dependency: ``google-cloud-storage==2.10.0``
   (https://github.com/manoss96/fluke/issues/10)
+
+- Class constructors ``fluke.storage.{AmazonS3File,AzureBlobFile,GCPStorageFile}``
+  now receive a ``load_metadata`` parameter that can be used in order to load
+  an object's metadata during instantiation.
+  (https://github.com/manoss96/fluke/issues/46)
   
 
 ## [0.4.1] - 2023/07/25
