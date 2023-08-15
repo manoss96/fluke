@@ -25,6 +25,7 @@ in order to interact with data:
      * `RemoteFile <../documentation/storage.html#fluke.storage.RemoteFile>`_
      * `AmazonS3File <../documentation/storage.html#fluke.storage.AmazonS3File>`_
      * `AzureBlobFile <../documentation/storage.html#fluke.storage.AzureBlobFile>`_
+     * `GCPStorageFile <../documentation/storage.html#fluke.storage.GCPStorageFile>`_
 
 #. **Dir API**: Used for handling entire directories of files/objects. This API includes:
 
@@ -32,6 +33,7 @@ in order to interact with data:
      * `RemoteDir <../documentation/storage.html#fluke.storage.RemoteDir>`_
      * `AmazonS3Dir <../documentation/storage.html#fluke.storage.AmazonS3Dir>`_
      * `AzureBlobDir <../documentation/storage.html#fluke.storage.AzureBlobDir>`_
+     * `GCPStorageDir <../documentation/storage.html#fluke.storage.GCPStorageDir>`_
 
 ----------------------------------------
 Accessing local entities
@@ -490,7 +492,11 @@ assigned to it. Let's do just that and see what happens:
   from fluke.storage import AmazonS3File
 
   # Gain access to 'file.txt' on Amazon S3 and print its metadata.
-  with AmazonS3File(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir/file.txt') as aws_obj:
+  with AmazonS3File(
+    auth=AWSAuth(**aws_credentials),
+    bucket='bucket',
+    path='dir/file.txt'
+  ) as aws_obj:
       print(aws_obj.get_metadata())
 
 By executing the above code, we get the following output:
@@ -510,10 +516,11 @@ Similarly, invoking an instance's ``get_metadata`` method won't fetch the object
 though it will search for any metadata we may have assigned to it locally.
 
 So how can we inspect the actual metadata of an object? This can be easily done
-by invoking an instance's ``load_metadata`` method, which goes on to fetch
-the object's actual metadata via HTTP and store them locally. Thus, going back to our
-example, we would be able to display the object's true metadata if we would just
-add the aforementioned line of code:
+by setting the constructor's parameter ``load_metadata``. On top of opening a
+connection to the file, setting this parameter to ``True`` will result in
+the object's actual metadata being fetched via HTTPS and stored in memory.
+Thus, going back to our example, we would be able to display the object's
+metadata if we would just set the aformentioned parameter:
 
 .. code-block:: python
 
@@ -521,8 +528,32 @@ add the aforementioned line of code:
   from fluke.storage import AmazonS3File
 
   # Gain access to 'file.txt' on Amazon S3 and print its metadata.
-  with AmazonS3File(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir/file.txt') as aws_obj:
-      # Load metadata first.
+  with AmazonS3File(
+    auth=AWSAuth(**aws_credentials),
+    bucket='bucket',
+    path='dir/file.txt',
+    load_metadata=True
+  ) as aws_obj:
+      # Then print it.
+      print(aws_obj.get_metadata())
+
+Note that even if you don't set ``load_metadata`` to ``True`` during the
+file's instantiation, you can always invoke method ``load_metadata``
+manually at a later time and achieve the same result:
+
+.. code-block:: python
+
+  from fluke.auth import AWSAuth
+  from fluke.storage import AmazonS3File
+
+  # Gain access to 'file.txt' on Amazon S3 and print its metadata.
+  with AmazonS3File(
+    auth=AWSAuth(**aws_credentials),
+    bucket='bucket',
+    path='dir/file.txt',
+    load_metadata=False
+  ) as aws_obj:
+      # Load metadata.
       aws_obj.load_metadata()
       # Then print it.
       print(aws_obj.get_metadata())
@@ -539,8 +570,8 @@ the transfer. Nevertheless, if no metadata have been assigned to a file through
 ``set_metadata``, then ``transfer_to`` will actually go on to fetch any potentially
 existing metadata associated with the file so that it may assign them to the resulting file.
 This means that in the following example, any actual metadata associated with *file.txt*
-will actually be carried over from Amazon S3 to Azure despite the fact that ``load_metadata``
-has not been invoked:
+will actually be carried over from Amazon S3 to Azure Blob Storage despite the fact that
+they have not been loaded beforehand.
 
 .. code-block:: python
 
@@ -548,12 +579,20 @@ has not been invoked:
   from fluke.storage import AmazonS3File, AzureBlobFile
 
   with (
-      AmazonS3File(auth=AWSAuth(**aws_credentials), bucket='bucket', path='dir/file.txt') as aws_obj,
-      AzureBlobDir(auth=AzureAuth.from_service_principal(**azr_credentials), container='container', path='file.txt') as azr_dir
+      AmazonS3File(
+        auth=AWSAuth(**aws_credentials),
+        bucket='bucket',
+        path='dir/file.txt'
+      ) as aws_obj,
+      AzureBlobDir(
+        auth=AzureAuth.from_service_principal(**azr_credentials),
+        container='container',
+        path='file.txt'
+      ) as azr_dir
   ):
       aws_obj.transfer_to(dst=azr_dir, include_metadata=True)
 
-..  _speeding-things-up-with-caching:
+..  _caching_data:
 
 ========================================
 Catching data
@@ -587,15 +626,15 @@ setting parameter ``cache`` to ``True`` during its instantiation:
   auth = AWSAuth(**aws_credentials)
 
   with AmazonS3Dir(auth=auth, bucket='bucket', path='dir', cache=True) as s3_dir:
-    # Fetch metadata via HTTP.
-    t = time.time()
+    # Fetch metadata via HTTPS.
+    t = time.perf_counter()
     s3_dir.load_metadata()
-    print(f"Fetched metadata in {time.time() - t:.2f} seconds!")
+    print(f"Fetched metadata in {time.perf_counter() - t:.2f} seconds!")
 
     # Fetch metadata from cache.
-    t = time.time()
+    t = time.perf_counter()
     s3_dir.load_metadata()
-    print(f"Fetched metadata in {time.time() - t:.2f} seconds!")
+    print(f"Fetched metadata in {time.perf_counter() - t:.2f} seconds!")
 
 Executing the above code block outputs the following:
 
@@ -656,9 +695,9 @@ them. Consider the following example:
   # Access an AWS S3 directory and render it "cacheable".
   with AmazonS3Dir(auth=aws_auth, bucket="bucket", path='dir', cache=True) as s3_dir:
     # Fetch the directory's total size and time it.
-    t = time.time()
+    t = time.perf_counter()
     _ = s3_dir.get_size(recursively=True)
-    print(f"Fetched size in {time.time() - t:.2f} seconds!")
+    print(f"Fetched size in {time.perf_counter() - t:.2f} seconds!")
 
     # Now purge the directory's cache.
     s3_dir.purge()
@@ -668,9 +707,9 @@ them. Consider the following example:
     _ = s3_dir.get_subdir('subdir').get_size(recursively=True)
 
     # Fetch the directory's total size and time it again.
-    t = time.time()
+    t = time.perf_counter()
     _ = s3_dir.get_size(recursively=True)
-    print(f"Fetched size in {time.time() - t:.2f} seconds!")
+    print(f"Fetched size in {time.perf_counter() - t:.2f} seconds!")
 
 The above code produces the following output when executed:
 

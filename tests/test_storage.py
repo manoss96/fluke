@@ -980,15 +980,15 @@ class TestRemoteFile(unittest.TestCase):
             # Fetch size via HTTP.
             _ = file.get_size()
             # Fetch size from cache and time it.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Purge cache.
             file.purge()
             # Re-fetch size via HTTP and time it.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             self.assertGreater(normal_time, cache_time)
 
     def test_get_size_from_cache_on_value(self):
@@ -1000,13 +1000,13 @@ class TestRemoteFile(unittest.TestCase):
     def test_get_size_from_cache_on_time(self):
         with self.build_file(cache=True) as file:
             # Fetch object size via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object size from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -1053,18 +1053,28 @@ class TestAmazonS3File(unittest.TestCase):
     def build_file(
         path: str = REL_FILE_PATH,
         bucket: str = BUCKET,
+        load_metadata: bool = False,
         cache: bool = False
     ) -> AmazonS3File:
         return AmazonS3File(**{
             'auth': get_aws_auth_instance(),
             'bucket': bucket,
             'path': path,
+            'load_metadata': load_metadata,
             'cache': cache
         })
 
     def test_constructor(self):
         with self.build_file() as file:
             self.assertEqual(file.get_path(), REL_FILE_PATH)
+
+    def test_constructor_on_load_metadata_set_to_false(self):
+        with self.build_file(load_metadata=False) as file:
+            self.assertEqual(file.get_metadata(), {})
+
+    def test_constructor_on_load_metadata_set_to_true(self):
+        with self.build_file(load_metadata=True) as file:
+            self.assertEqual(file.get_metadata(), METADATA)
 
     def test_constructor_on_invalid_path_error(self):
         self.assertRaises(InvalidPathError, self.build_file, path="NON_EXISTING_PATH")
@@ -1290,15 +1300,15 @@ class TestAmazonS3File(unittest.TestCase):
             # Load metadata via HTTP.
             file.load_metadata()
             # Load metadata via cache and time it.
-            t = time.time()
+            t = time.perf_counter()
             file.load_metadata()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Purge cache.
             file.purge()
             # Load metadata via HTTP and time it.
-            t = time.time()
+            t = time.perf_counter()
             file.load_metadata()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             self.assertGreater(normal_time, cache_time)
 
     def test_load_metadata_from_cache_on_value(self):
@@ -1312,13 +1322,13 @@ class TestAmazonS3File(unittest.TestCase):
     def test_load_metadata_from_cache_on_time(self):
         with self.build_file(cache=True) as file:
             # Fetch object metadata via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.load_metadata()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object metadata from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.load_metadata()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -1330,13 +1340,13 @@ class TestAmazonS3File(unittest.TestCase):
     def test_get_size_from_cache_on_time(self):
         with self.build_file(cache=True) as file:
             # Fetch object size via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object size from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -1348,12 +1358,14 @@ class TestAzureBlobFile(unittest.TestCase):
         path: str = REL_FILE_PATH,
         container: str = CONTAINER,
         cache: bool = False,
+        load_metadata: bool = False,
         from_conn_string: bool = False
     ) -> AzureBlobFile:
         return AzureBlobFile(**{
             'auth': get_azure_auth_instance(from_conn_string),
             'container': container,
             'path': path,
+            'load_metadata': load_metadata,
             'cache': cache
         })
 
@@ -1375,6 +1387,14 @@ class TestAzureBlobFile(unittest.TestCase):
     def test_constructor_from_conn_string(self):
         with self.build_file(from_conn_string=True) as file:
             self.assertEqual(file.get_path(), REL_FILE_PATH)
+
+    def test_constructor_on_load_metadata_set_to_false(self):
+        with self.build_file(load_metadata=False) as file:
+            self.assertEqual(file.get_metadata(), {})
+
+    def test_constructor_on_load_metadata_set_to_true(self):
+        with self.build_file(load_metadata=True) as file:
+            self.assertEqual(file.get_metadata(), METADATA)
 
     def test_constructor_on_invalid_path_error(self):
         self.assertRaises(InvalidPathError, self.build_file, path="NON_EXISTING_PATH")
@@ -1619,15 +1639,15 @@ class TestAzureBlobFile(unittest.TestCase):
             # Load metadata via HTTP.
             file.load_metadata()
             # Load metadata via cache and time it.
-            t = time.time()
+            t = time.perf_counter()
             file.load_metadata()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Purge cache.
             file.purge()
             # Load metadata via HTTP and time it.
-            t = time.time()
+            t = time.perf_counter()
             file.load_metadata()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             self.assertGreater(normal_time, cache_time)
 
     def test_load_metadata_from_cache_on_value(self):
@@ -1641,13 +1661,13 @@ class TestAzureBlobFile(unittest.TestCase):
     def test_load_metadata_from_cache_on_time(self):
         with self.build_file(cache=True) as file:
             # Fetch object metadata via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.load_metadata()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object metadata from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.load_metadata()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -1659,13 +1679,13 @@ class TestAzureBlobFile(unittest.TestCase):
     def test_get_size_from_cache_on_time(self):
         with self.build_file(cache=True) as file:
             # Fetch object size via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object size from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -1711,18 +1731,28 @@ class TestGCPStorageFile(unittest.TestCase):
     def build_file(
         path: str = REL_FILE_PATH,
         bucket: str = BUCKET,
+        load_metadata: bool = False,
         cache: bool = False
     ) -> GCPStorageFile:
         return GCPStorageFile(**{
             'auth': get_gcp_auth_instance(),
             'bucket': bucket,
             'path': path,
+            'load_metadata': load_metadata,
             'cache': cache
         })
 
     def test_constructor(self):
         with self.build_file() as file:
             self.assertEqual(file.get_path(), REL_FILE_PATH)
+
+    def test_constructor_on_load_metadata_set_to_false(self):
+        with self.build_file(load_metadata=False) as file:
+            self.assertEqual(file.get_metadata(), {})
+
+    def test_constructor_on_load_metadata_set_to_true(self):
+        with self.build_file(load_metadata=True) as file:
+            self.assertEqual(file.get_metadata(), METADATA)
 
     def test_constructor_on_invalid_path_error(self):
         self.assertRaises(InvalidPathError, self.build_file, path="NON_EXISTING_PATH")
@@ -1965,15 +1995,15 @@ class TestGCPStorageFile(unittest.TestCase):
             # Load metadata via HTTP.
             file.load_metadata()
             # Load metadata via cache and time it.
-            t = time.time()
+            t = time.perf_counter()
             file.load_metadata()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Purge cache.
             file.purge()
             # Load metadata via HTTP and time it.
-            t = time.time()
+            t = time.perf_counter()
             file.load_metadata()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             self.assertGreater(normal_time, cache_time)
 
     def test_load_metadata_from_cache_on_value(self):
@@ -1987,13 +2017,13 @@ class TestGCPStorageFile(unittest.TestCase):
     def test_load_metadata_from_cache_on_time(self):
         with self.build_file(cache=True) as file:
             # Fetch object metadata via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.load_metadata()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object metadata from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.load_metadata()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -2005,13 +2035,13 @@ class TestGCPStorageFile(unittest.TestCase):
     def test_get_size_from_cache_on_time(self):
         with self.build_file(cache=True) as file:
             # Fetch object size via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object size from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = file.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -3019,15 +3049,15 @@ class TestRemoteDir(unittest.TestCase):
             # Fetch size via HTTP.
             dir.get_size()
             # Fetch size from cache and time it.
-            t = time.time()
+            t = time.perf_counter()
             dir.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Purge cache.
             dir.purge()
             # Re-fetch size via HTTP and time it.
-            t = time.time()
+            t = time.perf_counter()
             dir.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             self.assertGreater(normal_time, cache_time)
 
     def test_traverse_from_cache_on_value(self):
@@ -3053,26 +3083,26 @@ class TestRemoteDir(unittest.TestCase):
     def test_traverse_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch contents from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
     def test_traverse_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch contents from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -3090,26 +3120,26 @@ class TestRemoteDir(unittest.TestCase):
     def test_get_size_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object size via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object size from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
     def test_get_size_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object size via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size(recursively=True)
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object size from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size(recursively=True)
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -3125,13 +3155,13 @@ class TestRemoteDir(unittest.TestCase):
             _ = no_cache_dir.get_size()
             _ = cache_dir.get_size()
             # Time no-cache-file's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_file.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-file's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_file.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -3148,13 +3178,13 @@ class TestRemoteDir(unittest.TestCase):
                 except:
                     continue
             # Time no-cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_dir.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_dir.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -3170,13 +3200,13 @@ class TestRemoteDir(unittest.TestCase):
             _ = no_cache_dir.get_size(recursively=True)
             _ = cache_dir.get_size(recursively=True)
             # Time no-cache-subdir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_subdir.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-subdir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_subdir.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -3189,13 +3219,13 @@ class TestRemoteDir(unittest.TestCase):
             _ = no_cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
             _ = cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
             # Time no-cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_dir.get_size(recursively=True)
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_dir.get_size(recursively=True)
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -3893,15 +3923,15 @@ class TestAmazonS3Dir(unittest.TestCase):
             # Fetch size via HTTP.
             dir.load_metadata()
             # Fetch size from cache and time it.
-            t = time.time()
+            t = time.perf_counter()
             dir.load_metadata()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Purge cache.
             dir.purge()
             # Re-fetch size via HTTP and time it.
-            t = time.time()
+            t = time.perf_counter()
             dir.load_metadata()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             self.assertGreater(normal_time, cache_time)
 
     def test_traverse_from_cache_on_value(self):
@@ -3925,26 +3955,26 @@ class TestAmazonS3Dir(unittest.TestCase):
     def test_traverse_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch contents from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
     def test_traverse_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch contents from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -3976,52 +4006,52 @@ class TestAmazonS3Dir(unittest.TestCase):
     def test_load_metadata_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object metadata via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.load_metadata()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object metadata from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.load_metadata()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
     def test_get_size_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object size via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object size from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
     def test_load_metadata_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object metadata via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.load_metadata(recursively=True)
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object metadata from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.load_metadata(recursively=True)
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
     def test_get_size_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object size via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size(recursively=True)
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object size from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size(recursively=True)
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -4037,13 +4067,13 @@ class TestAmazonS3Dir(unittest.TestCase):
             _ = no_cache_dir.get_size()
             _ = cache_dir.get_size()
             # Time no-cache-file's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_file.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-file's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_file.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -4060,13 +4090,13 @@ class TestAmazonS3Dir(unittest.TestCase):
                 except:
                     continue
             # Time no-cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_dir.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_dir.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -4082,13 +4112,13 @@ class TestAmazonS3Dir(unittest.TestCase):
             _ = no_cache_dir.get_size(recursively=True)
             _ = cache_dir.get_size(recursively=True)
             # Time no-cache-subdir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_subdir.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-subdir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_subdir.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -4101,13 +4131,13 @@ class TestAmazonS3Dir(unittest.TestCase):
             _ = no_cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
             _ = cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
             # Time no-cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_dir.get_size(recursively=True)
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_dir.get_size(recursively=True)
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -4754,15 +4784,15 @@ class TestAzureBlobDir(unittest.TestCase):
             # Fetch size via HTTP.
             dir.load_metadata()
             # Fetch size from cache and time it.
-            t = time.time()
+            t = time.perf_counter()
             dir.load_metadata()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Purge cache.
             dir.purge()
             # Re-fetch size via HTTP and time it.
-            t = time.time()
+            t = time.perf_counter()
             dir.load_metadata()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             self.assertGreater(normal_time, cache_time)
 
     def test_traverse_from_cache_on_value(self):
@@ -4788,26 +4818,26 @@ class TestAzureBlobDir(unittest.TestCase):
     def test_traverse_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch contents from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
     def test_traverse_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch contents from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -4838,52 +4868,52 @@ class TestAzureBlobDir(unittest.TestCase):
     def test_load_metadata_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object metadata via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.load_metadata()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object metadata from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.load_metadata()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
     def test_get_size_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object size via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object size from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
     def test_load_metadata_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object metadata via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.load_metadata(recursively=True)
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object metadata from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.load_metadata(recursively=True)
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
     def test_get_size_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object size via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size(recursively=True)
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object size from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size(recursively=True)
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -4899,13 +4929,13 @@ class TestAzureBlobDir(unittest.TestCase):
             _ = no_cache_dir.get_size()
             _ = cache_dir.get_size()
             # Time no-cache-file's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_file.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-file's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_file.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -4922,13 +4952,13 @@ class TestAzureBlobDir(unittest.TestCase):
                 except:
                     continue
             # Time no-cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_dir.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_dir.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -4944,13 +4974,13 @@ class TestAzureBlobDir(unittest.TestCase):
             _ = no_cache_dir.get_size(recursively=True)
             _ = cache_dir.get_size(recursively=True)
             # Time no-cache-subdir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_subdir.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-subdir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_subdir.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -4963,13 +4993,13 @@ class TestAzureBlobDir(unittest.TestCase):
             _ = no_cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
             _ = cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
             # Time no-cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_dir.get_size(recursively=True)
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_dir.get_size(recursively=True)
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -5651,15 +5681,15 @@ class TestGCPStorageDir(unittest.TestCase):
             # Fetch size via HTTP.
             dir.load_metadata()
             # Fetch size from cache and time it.
-            t = time.time()
+            t = time.perf_counter()
             dir.load_metadata()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Purge cache.
             dir.purge()
             # Re-fetch size via HTTP and time it.
-            t = time.time()
+            t = time.perf_counter()
             dir.load_metadata()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             self.assertGreater(normal_time, cache_time)
 
     def test_traverse_from_cache_on_value(self):
@@ -5685,26 +5715,26 @@ class TestGCPStorageDir(unittest.TestCase):
     def test_traverse_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch contents from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
     def test_traverse_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch contents via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch contents from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = (_ for _ in dir.traverse())
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -5735,52 +5765,52 @@ class TestGCPStorageDir(unittest.TestCase):
     def test_load_metadata_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object metadata via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.load_metadata()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object metadata from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.load_metadata()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
     def test_get_size_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object size via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object size from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
     def test_load_metadata_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object metadata via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.load_metadata(recursively=True)
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object metadata from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.load_metadata(recursively=True)
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
     def test_get_size_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
             # Fetch object size via HTTP.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size(recursively=True)
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Fetch object size from cache.
-            t = time.time()
+            t = time.perf_counter()
             _ = dir.get_size(recursively=True)
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -5796,13 +5826,13 @@ class TestGCPStorageDir(unittest.TestCase):
             _ = no_cache_dir.get_size()
             _ = cache_dir.get_size()
             # Time no-cache-file's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_file.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-file's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_file.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -5819,13 +5849,13 @@ class TestGCPStorageDir(unittest.TestCase):
                 except:
                     continue
             # Time no-cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_dir.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_dir.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -5841,13 +5871,13 @@ class TestGCPStorageDir(unittest.TestCase):
             _ = no_cache_dir.get_size(recursively=True)
             _ = cache_dir.get_size(recursively=True)
             # Time no-cache-subdir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_subdir.get_size()
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-subdir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_subdir.get_size()
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 
@@ -5860,13 +5890,13 @@ class TestGCPStorageDir(unittest.TestCase):
             _ = no_cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
             _ = cache_dir.get_subdir(DIR_SUBDIR_NAME).get_size()
             # Time no-cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = no_cache_dir.get_size(recursively=True)
-            normal_time = time.time() - t
+            normal_time = time.perf_counter() - t
             # Time cache-dir's "get_size"
-            t = time.time()
+            t = time.perf_counter()
             _ = cache_dir.get_size(recursively=True)
-            cache_time = time.time() - t
+            cache_time = time.perf_counter() - t
             # Compare fetch times.
             self.assertGreater(normal_time, cache_time)
 

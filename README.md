@@ -8,8 +8,8 @@
 <!-- What is Fluke? -->
 ## What is Fluke?
 
-Fluke is a Python package that is to be used as a higher-level API to
-cloud services that primarily relate to object storage and message queues.
+Fluke is a Python package that acts as a higher-level API to
+cloud services that primarily relate to object storage and messaging.
 Fluke manages to hide away much of the complexity that derives from working
 with said services, aiding you in completing your tasks fast and hassle-free!
 Fluke achieves this by:
@@ -17,10 +17,10 @@ Fluke achieves this by:
 * Treating object storage services as traditional file systems,
   unifying the two under a single *File/Dir* API, through which
   you are able to manage your data no matter where they reside,
-  be it a local/remote file system or a bucket in the cloud.
+  be it the local file system or a bucket in the cloud.
 
 * Greatly reducing the intricacies of interacting with message queues
-  by thinking of them as mere data structures that support three elementary
+  by viewing them as mere data structures that support three elementary
   operations, that is, push/peek/poll.
 
 
@@ -40,13 +40,13 @@ pip install fluke-api
 
 In this example, we will be using Fluke in order to:
 
-1. Poll an Amazon SQS queue every minute for new messages. Each of these messages contains the
-   path of a newly uploaded file to an Amazon S3 bucket.
-2. Use the content of these messages in order to locate and access said files within the bucket.
-3. If a file's metadata field ``transfer`` has been set to ``True``, then transfer it to a remote server.
+1. Poll an Amazon SQS queue every minute for new messages. Each of these messages
+   contains the path of a newly uploaded file to an Amazon S3 bucket.
+2. Read the messages in order to locate said files and transfer them to a remote server.
 
 First things first, we need to be able to authenticate with both AWS
-and the remote server. In order to achieve this, we will be importing from ``fluke.auth``:
+and the remote server. In order to achieve this, we will be importing
+from ``fluke.auth``:
 
 ```python
 from fluke.auth import AWSAuth, RemoteAuth
@@ -80,11 +80,7 @@ with (
 ):
     for batch in queue.poll(polling_frequency=60):
         for msg in batch:
-            file = bucket.get_file(path=msg)
-            file.load_metadata()
-            metadata = file.get_metadata()
-            if bool(metadata['transfer']):
-                file.transfer_to(dst=rmt_dir)
+            bucket.get_file(path=msg).transfer_to(dst=rmt_dir)
 ```
 
 And that's basically it!
