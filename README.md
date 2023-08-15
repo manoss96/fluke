@@ -42,7 +42,8 @@ In this example, we will be using Fluke in order to:
 
 1. Poll an Amazon SQS queue every minute for new messages. Each of these messages
    contains the path of a newly uploaded file to an Amazon S3 bucket.
-2. Read the messages in order to locate said files and transfer them to a remote server.
+2. Use said messages in order to locate the corresponding files and transfer
+   them to a remote server.
 
 First things first, we need to be able to authenticate with both AWS
 and the remote server. In order to achieve this, we will be importing
