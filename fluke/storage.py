@@ -670,15 +670,26 @@ class _CloudFile(_NonLocalFile, _ABC):
     all file-like classes that represent files in the cloud.
 
     :param str path: A path pointing to the file.
+    :param bool load_metadata: Indicates whether any \
+        any existing metadata should be loaded during the \
+        the file's instantiation.
     :param ClientHandler handler: A ``ClientHandler`` class \
         instance used for interacting with the underlying handler.
     '''
-    def __init__(self, path: str, handler: _ClientHandler) -> None:
+    def __init__(
+        self,
+        path: str,
+        load_metadata: bool,
+        handler: _ClientHandler
+    ) -> None:
         '''
         An abstract class which serves as the base class for \
         all file-like classes that represent files in the cloud.
 
         :param str path: A path pointing to the file.
+        :param bool load_metadata: Indicates whether any \
+            any existing metadata should be loaded during the \
+            the file's instantiation.
         :param ClientHandler handler: A ``ClientHandler`` class \
             instance used for interacting with the underlying handler.
         '''
@@ -686,7 +697,11 @@ class _CloudFile(_NonLocalFile, _ABC):
         sep = _infer_sep(path=path)
         if path.startswith(sep):
             raise _IPE(path=path)
+        # Invoke constuctor, thereby opening a connection.
         super().__init__(path, handler)
+        # Load metadata if instructed to do so.
+        if load_metadata:
+            self.load_metadata()
 
 
     def load_metadata(self) -> None:
@@ -696,12 +711,11 @@ class _CloudFile(_NonLocalFile, _ABC):
         ``get_metadata`` method.
 
         :note: Any metadata set via the ``set_metadata`` \
-            method will be overriden after invoking this \
+            method will be overridden after invoking this \
             method.
         '''
-        metadata = self._get_handler().get_file_metadata(
-            self.get_path())
-        self.set_metadata(metadata=metadata)
+        self.set_metadata(metadata=self._get_handler()
+            .get_file_metadata(file_path=self.get_path()))
 
 
 class AmazonS3File(_CloudFile):
@@ -714,6 +728,9 @@ class AmazonS3File(_CloudFile):
     :param str bucket: The name of the bucket in which \
         the file resides.
     :param str path: The path pointing to the file.
+    :param bool load_metadata: Indicates whether any \
+        existing metadata should be loaded during the \
+        the file's instantiation. Defaults to ``False``.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
         access. Defaults to ``False``.
@@ -737,6 +754,7 @@ class AmazonS3File(_CloudFile):
         auth: _AWSAuth,
         bucket: str,
         path: str,
+        load_metadata: bool = False,
         cache: bool = False
     ):
         '''
@@ -748,6 +766,9 @@ class AmazonS3File(_CloudFile):
         :param str bucket: The name of the bucket in which \
             the file resides.
         :param str path: The path pointing to the file.
+        :param bool load_metadata: Indicates whether any \
+            existing metadata should be loaded during the \
+            the file's instantiation. Defaults to ``False``.
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
             access. Defaults to ``False``.
@@ -767,6 +788,7 @@ class AmazonS3File(_CloudFile):
         '''
         super().__init__(
             path=path,
+            load_metadata=load_metadata,
             handler=_AWSClientHandler(
                 auth=auth,
                 bucket=bucket,
@@ -831,6 +853,9 @@ class AzureBlobFile(_CloudFile):
     :param str container: The name of the container in \
         which the blob resides.
     :param str path: The path pointing to the file.
+    :param bool load_metadata: Indicates whether any \
+        existing metadata should be loaded during the \
+        the file's instantiation. Defaults to ``False``.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
         access. Defaults to ``False``.
@@ -854,6 +879,7 @@ class AzureBlobFile(_CloudFile):
         auth: _AzureAuth,
         container: str,
         path: str,
+        load_metadata: bool = False,
         cache: bool = False,
     ):
         '''
@@ -865,6 +891,9 @@ class AzureBlobFile(_CloudFile):
         :param str container: The name of the container in \
             which the blob resides.
         :param str path: The path pointing to the file.
+        :param bool load_metadata: Indicates whether any \
+            existing metadata should be loaded during the \
+            the file's instantiation. Defaults to ``False``.
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
             access. Defaults to ``False``.
@@ -886,6 +915,7 @@ class AzureBlobFile(_CloudFile):
         self.__storage_account = auth._get_storage_account()
         super().__init__(
             path=path,
+            load_metadata=load_metadata,
             handler=_AzureClientHandler(
                 auth=auth,
                 container=container,
@@ -956,6 +986,9 @@ class GCPStorageFile(_CloudFile):
     :param str bucket: The name of the bucket in which \
         the file resides.
     :param str path: The path pointing to the file.
+    :param bool load_metadata: Indicates whether any \
+        existing metadata should be loaded during the \
+        the file's instantiation. Defaults to ``False``.
     :param bool cache: Indicates whether it is allowed for \
         any fetched data to be cached for faster subsequent \
         access. Defaults to ``False``.
@@ -978,6 +1011,7 @@ class GCPStorageFile(_CloudFile):
         auth: _GCPAuth,
         bucket: str,
         path: str,
+        load_metadata: bool = False,
         cache: bool = False
     ):
         '''
@@ -989,6 +1023,9 @@ class GCPStorageFile(_CloudFile):
         :param str bucket: The name of the bucket in which \
             the file resides.
         :param str path: The path pointing to the file.
+        :param bool load_metadata: Indicates whether any \
+            existing metadata should be loaded during the \
+            the file's instantiation. Defaults to ``False``.
         :param bool cache: Indicates whether it is allowed for \
             any fetched data to be cached for faster subsequent \
             access. Defaults to ``False``.
@@ -1008,6 +1045,7 @@ class GCPStorageFile(_CloudFile):
         '''
         super().__init__(
             path=path,
+            load_metadata=load_metadata,
             handler=_GCPClientHandler(
                 auth=auth,
                 bucket=bucket,
@@ -2171,7 +2209,7 @@ class _CloudDir(_NonLocalDir, _ABC):
             - The number of the loaded metadata may vary depending \
               on the value of parameter ``recursively``.
             - Any metadata set via the ``set_metadata`` \
-              method will be overriden after invoking this \
+              method will be overridden after invoking this \
               method.
         '''
         handler = self._get_handler()
@@ -2743,7 +2781,6 @@ class GCPStorageDir(_CloudDir):
             raise _IFE(path=path)
         
         path = self._to_absolute(path, replace_sep=False)
-
         return GCPStorageFile._create_file(
             path=path,
             handler=self._get_handler(),

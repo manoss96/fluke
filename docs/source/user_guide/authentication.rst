@@ -148,7 +148,6 @@ request access to:
   auth = AzureAuth.from_conn_string(conn_string)
 
 
-
 ==========================================
 Authenticating with GCP
 ==========================================
