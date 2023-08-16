@@ -31,6 +31,7 @@ from fluke._exceptions import NonStringMetadataKeyError
 from fluke._exceptions import NonStringMetadataValueError
 from fluke._exceptions import BucketNotFoundError
 from fluke._exceptions import ContainerNotFoundError
+from fluke._exceptions import InvalidChunkSizeError
 
 
 '''
@@ -2790,7 +2791,7 @@ class TestRemoteDir(unittest.TestCase):
         # Copy the directory's contents into this tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
-                dst=LocalDir(path=tmp_dir_path),
+                dst=TestLocalDir.build_dir(path=tmp_dir_path),
                 chunk_size=1)
         # Assert that the two directories contains the same contents.
         original = [s for s in sorted(os.listdir(ABS_DIR_PATH)) if s.endswith('.txt')]
@@ -3175,7 +3176,7 @@ class TestRemoteDir(unittest.TestCase):
                 try:
                     _ = no_cache_dir.get_file(path).get_size()
                     _ = cache_dir.get_file(path).get_size()
-                except:
+                except Exception:
                     continue
             # Time no-cache-dir's "get_size"
             t = time.perf_counter()
@@ -3312,7 +3313,7 @@ class TestAmazonS3Dir(unittest.TestCase):
             try:
                 obj.load()
                 obj.delete()
-            except:
+            except Exception:
                 self.fail(f"Directory {dir_path} was not created!")
 
     def test_constructor_on_invalid_path_error(self):
@@ -3776,7 +3777,7 @@ class TestAmazonS3Dir(unittest.TestCase):
         tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
         with self.build_dir(path=tmp_dir_path) as s3_dir:
             # Copy file into dir.
-            src_file.transfer_to(dst=s3_dir, chunk_size=1000)
+            src_file.transfer_to(dst=s3_dir, chunk_size=5000000)
             # Fetch transferred object.
             copy_path = join_paths(tmp_dir_path, FILE_NAME)
             obj = get_aws_s3_object(BUCKET, copy_path)
@@ -3822,7 +3823,7 @@ class TestAmazonS3Dir(unittest.TestCase):
             src_file.transfer_to(
                 dst=s3_dir,
                 include_metadata=True,
-                chunk_size=1000)
+                chunk_size=5000000)
             # Fetch transferred object.
             copy_path = join_paths(tmp_dir_path, FILE_NAME)
             obj = get_aws_s3_object(BUCKET, copy_path)
@@ -3830,6 +3831,18 @@ class TestAmazonS3Dir(unittest.TestCase):
             self.assertEqual(obj.metadata, metadata)
             # Delete object.
             obj.delete()
+
+    def test_transfer_to_as_dst_on_invalid_chunk_size_error(self):
+        # Get source file.
+        src_file = TestLocalFile.build_file()
+        # Get tmp dir path (already created in bucket).
+        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
+        with self.build_dir(path=tmp_dir_path) as s3_dir:
+            self.assertRaises(
+                InvalidChunkSizeError,
+                src_file.transfer_to,
+                dst=s3_dir,
+                chunk_size=1000)
         
     def test_get_file(self):
         with self.build_dir() as dir:
@@ -4087,7 +4100,7 @@ class TestAmazonS3Dir(unittest.TestCase):
                 try:
                     _ = no_cache_dir.get_file(path).get_size()
                     _ = cache_dir.get_file(path).get_size()
-                except:
+                except Exception:
                     continue
             # Time no-cache-dir's "get_size"
             t = time.perf_counter()
@@ -4474,7 +4487,7 @@ class TestAzureBlobDir(unittest.TestCase):
         # Copy the directory's contents into this tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
-                dst=LocalDir(path=tmp_dir_path),
+                dst=TestLocalDir.build_dir(path=tmp_dir_path),
                 chunk_size=1)
         # Assert that the two directories contains the same contents.
         original = [s for s in sorted(os.listdir(ABS_DIR_PATH)) if s.endswith('.txt')]
@@ -4643,7 +4656,7 @@ class TestAzureBlobDir(unittest.TestCase):
         os.mkdir(tmp_dir_path)
         with self.build_dir(path=tmp_dir_path) as azr_dir:
             # Copy file into dir.
-            src_file.transfer_to(dst=azr_dir, chunk_size=1)
+            src_file.transfer_to(dst=azr_dir, chunk_size=1000)
             # Confirm that file was indeed copied.
             copy_path = join_paths(tmp_dir_path, FILE_NAME)
             with (
@@ -4684,12 +4697,26 @@ class TestAzureBlobDir(unittest.TestCase):
             src_file.transfer_to(
                 dst=azr_dir,
                 include_metadata=True,
-                chunk_size=1)
+                chunk_size=1000)
             # Confirm that metadata was indeed assigned.
             copy_path = join_paths(tmp_dir_path, FILE_NAME)
             self.assertEqual(
                 azr_dir.get_metadata(file_path=copy_path),
                 metadata)
+        shutil.rmtree(tmp_dir_path)
+
+    def test_transfer_to_as_dst_on_invalid_chunk_size_error(self):
+        # Get source file.
+        src_file = TestLocalFile.build_file()
+        # Get tmp dir path (already created in bucket).
+        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
+        os.mkdir(tmp_dir_path)
+        with self.build_dir(path=tmp_dir_path) as azr_dir:
+            self.assertRaises(
+                InvalidChunkSizeError,
+                src_file.transfer_to,
+                dst=azr_dir,
+                chunk_size=4*1024*1024 + 1)
         shutil.rmtree(tmp_dir_path)
         
     def test_get_file(self):
@@ -4949,7 +4976,7 @@ class TestAzureBlobDir(unittest.TestCase):
                 try:
                     _ = no_cache_dir.get_file(path).get_size()
                     _ = cache_dir.get_file(path).get_size()
-                except:
+                except Exception:
                     continue
             # Time no-cache-dir's "get_size"
             t = time.perf_counter()
@@ -5362,7 +5389,7 @@ class TestGCPStorageDir(unittest.TestCase):
         # Copy the directory's contents into this tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
-                dst=LocalDir(path=tmp_dir_path),
+                dst=TestLocalDir.build_dir(path=tmp_dir_path),
                 chunk_size=1)
         # Assert that the two directories contains the same contents.
         original = [s for s in sorted(os.listdir(ABS_DIR_PATH)) if s.endswith('.txt')]
@@ -5534,7 +5561,7 @@ class TestGCPStorageDir(unittest.TestCase):
         tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
         with self.build_dir(path=tmp_dir_path) as gcp_dir:
             # Copy file into dir.
-            src_file.transfer_to(dst=gcp_dir, chunk_size=1024*1024)
+            src_file.transfer_to(dst=gcp_dir, chunk_size=256*1024)
             # Fetch transferred object.
             copy_path = join_paths(tmp_dir_path, FILE_NAME)
             obj = self.__client.bucket(BUCKET).get_blob(copy_path)
@@ -5580,7 +5607,7 @@ class TestGCPStorageDir(unittest.TestCase):
             src_file.transfer_to(
                 dst=gcp_dir,
                 include_metadata=True,
-                chunk_size=1024*1024)
+                chunk_size=256*1024)
             # Fetch transferred object.
             copy_path = join_paths(tmp_dir_path, FILE_NAME)
             obj = self.__client.bucket(BUCKET).get_blob(copy_path)
@@ -5588,6 +5615,18 @@ class TestGCPStorageDir(unittest.TestCase):
             self.assertEqual(obj.metadata, metadata)
             # Delete object.
             obj.delete()
+
+    def test_transfer_to_as_dst_on_invalid_chunk_size_error(self):
+        # Get source file.
+        src_file = TestLocalFile.build_file()
+        # Get tmp dir path (already created in bucket).
+        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
+        with self.build_dir(path=tmp_dir_path) as gcp_dir:
+            self.assertRaises(
+                InvalidChunkSizeError,
+                src_file.transfer_to,
+                dst=gcp_dir,
+                chunk_size=1000)
         
     def test_get_file(self):
         with self.build_dir() as dir:
@@ -5846,7 +5885,7 @@ class TestGCPStorageDir(unittest.TestCase):
                 try:
                     _ = no_cache_dir.get_file(path).get_size()
                     _ = cache_dir.get_file(path).get_size()
-                except:
+                except Exception:
                     continue
             # Time no-cache-dir's "get_size"
             t = time.perf_counter()

@@ -347,7 +347,7 @@ class TestAzureStorageQueue(unittest.TestCase):
                 try:
                     self.queue.delete_message(msg.id, msg.pop_recipt)
                     messages.append(msg.content)
-                except:
+                except Exception:
                     continue
             
         return messages
