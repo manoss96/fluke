@@ -668,7 +668,7 @@ class AzureStorageQueue(_Queue):
                             try:
                                 self.__queue.delete_message(msg.id, msg.pop_receipt)
                                 messages.append(msg.content)
-                            except:
+                            except Exception:
                                 if not suppress_output:
                                     print(f'Failed to delete message "{msg}".')
                         # Then deliver messages.
@@ -683,7 +683,7 @@ class AzureStorageQueue(_Queue):
                         for msg in messages:
                             try:
                                 self.__queue.delete_message(msg.id, msg.pop_receipt)
-                            except:
+                            except Exception:
                                 if not suppress_output:
                                     print(f'Failed to delete message "{msg}".')
                     # Indicate there are still messages left.

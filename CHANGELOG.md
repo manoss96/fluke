@@ -20,6 +20,14 @@ All notable changes to this project will be documented in this file.
   now receive a ``load_metadata`` parameter that can be used in order to load
   an object's metadata during instantiation.
   (https://github.com/manoss96/fluke/issues/46)
+
+
+### Changed
+
+- Methods ``Dir/File.transfer_to`` will now throw an ``InvalidChunkSizeError``
+  exceptions if a chunk size that is not supported by the "destination"
+  directory has been specified.
+  (https://github.com/manoss96/fluke/issues/48)
   
 
 ## [0.4.1] - 2023/07/25

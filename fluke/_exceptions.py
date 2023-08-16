@@ -181,3 +181,23 @@ class OverwriteError(Exception):
         msg = f'There already exists file "{file_path}". '
         msg += 'Try setting "overwrite" to "True".'
         super().__init__(msg)
+
+
+class InvalidChunkSizeError(Exception):
+    '''
+    This exception is thrown whenever the user tries \
+    to upload a file to the cloud in chunks, whose size \
+    is not supported by the cloud provider.
+
+    :param str msg: The message to be displayed.
+    '''
+
+    def __init__(self, msg: str):
+        '''
+        This exception is thrown whenever the user tries \
+        to upload a file to the cloud in chunks, whose size \
+        is not supported by the cloud provider.
+
+        :param str msg: The message to be displayed.
+        '''
+        super().__init__(msg)

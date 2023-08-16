@@ -820,7 +820,7 @@ class SSHClientHandler(ClientHandler):
                                 sftp=sftp,
                                 attr=sub_attr,
                                 parent_dir=abs_path)
-                    except:
+                    except Exception:
                         pass
                 else:
                     yield abs_path

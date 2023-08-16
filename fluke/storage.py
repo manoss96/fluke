@@ -42,6 +42,7 @@ from ._exceptions import InvalidDirectoryError as _IDE
 from ._exceptions import OverwriteError as _OverwriteError
 from ._exceptions import NonStringMetadataKeyError as _NSMKE
 from ._exceptions import NonStringMetadataValueError as _NSMVE
+from ._exceptions import InvalidChunkSizeError as _ICSE
 
 
 class _File(_ABC):
@@ -263,7 +264,13 @@ class _File(_ABC):
             value. Defaults to ``None``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
+
+        :raises InvalidChunkSizeError: Transferring files in chunks of \
+            the given size is not supported by the specified destination.
         '''
+        if chunk_size is not None:
+            dst._validate_chunk_size(chunk_size)
+
         source = self.get_uri() \
             if isinstance(self, _NonLocalFile) \
             else self.get_path()
@@ -1418,7 +1425,12 @@ class _Directory(_ABC):
             transfer (``True``) or not (``False``). Defaults to ``None``.
         :param bool suppress_output: If set to ``True``, then \
             suppresses all output. Defaults to ``False``.
+
+        :raises InvalidChunkSizeError: Transferring files in chunks of \
+            the given size is not supported by the specified destination.
         '''
+        if chunk_size is not None:
+            dst._validate_chunk_size(chunk_size)
         if filter is None:
             filter = lambda _: True
 
@@ -1678,6 +1690,20 @@ class _Directory(_ABC):
         pass
 
 
+    @_absmethod
+    def _validate_chunk_size(self, chunk_size: int) -> None:
+        '''
+        This method goes on to throw an ``InvalidChunkSizeError``, \
+        displaying an appropriate message, if file uploading to \
+        the directory is not supported for the provided chunk size. \
+        Else, this method does nothing.
+
+        :raises InvalidChunkSizeError: File uploading in chunks is not \
+            supported for the provided chunk size.
+        '''
+        pass
+
+
 class LocalDir(_Directory):
     '''
     This class represents a directory which resides \
@@ -1834,6 +1860,21 @@ class LocalDir(_Directory):
             path=dir_path,
             handler=self._get_handler(),
             metadata=self._get_metadata_ref())
+    
+
+    def _validate_chunk_size(self, chunk_size: int) -> None:
+        '''
+        This method goes on to throw an ``InvalidChunkSizeError``, \
+        displaying an appropriate message, if file uploading to \
+        the directory is not supported for the provided chunk size. \
+        Else, this method does nothing.
+
+        :raises InvalidChunkSizeError: File uploading in chunks is not \
+            supported for the provided chunk size.
+
+        :note: Does nothing as all chunk sizes are supported.
+        '''
+        pass
 
 
 class _NonLocalDir(_Directory, _ABC):
@@ -2141,6 +2182,21 @@ class RemoteDir(_NonLocalDir):
             metadata=self._get_metadata_ref())
     
 
+    def _validate_chunk_size(self, chunk_size: int) -> None:
+        '''
+        This method goes on to throw an ``InvalidChunkSizeError``, \
+        displaying an appropriate message, if file uploading to \
+        the directory is not supported for the provided chunk size. \
+        Else, this method does nothing.
+
+        :raises InvalidChunkSizeError: File uploading in chunks is not \
+            supported for the provided chunk size.
+
+        :note: Does nothing as all chunk sizes are supported.
+        '''
+        pass
+    
+
     def __enter__(self) -> 'RemoteDir':
         '''
         Enter the runtime context related to this instance.
@@ -2430,6 +2486,22 @@ class AmazonS3Dir(_CloudDir):
             metadata=self._get_metadata_ref())
     
 
+    def _validate_chunk_size(self, chunk_size: int) -> None:
+        '''
+        This method goes on to throw an ``InvalidChunkSizeError``, \
+        displaying an appropriate message, if file uploading to \
+        the directory is not supported for the provided chunk size. \
+        Else, this method does nothing.
+
+        :raises InvalidChunkSizeError: File uploading in chunks is not \
+            supported for the provided chunk size.
+        '''
+        if chunk_size < 5000000:
+            msg = "Uploading a file to Amazon S3 in chunks"
+            msg += " requires a chunk size of greater than 5 MB."
+            raise _ICSE(msg)
+    
+
     def __enter__(self) -> 'AmazonS3Dir':
         '''
         Enter the runtime context related to this instance.
@@ -2649,6 +2721,22 @@ class AzureBlobDir(_CloudDir):
             storage_account=self.__storage_account,
             handler=self._get_handler(),
             metadata=self._get_metadata_ref())
+    
+
+    def _validate_chunk_size(self, chunk_size: int) -> None:
+        '''
+        This method goes on to throw an ``InvalidChunkSizeError``, \
+        displaying an appropriate message, if file uploading to \
+        the directory is not supported for the provided chunk size. \
+        Else, this method does nothing.
+
+        :raises InvalidChunkSizeError: File uploading in chunks is not \
+            supported for the provided chunk size.
+        '''
+        if chunk_size > 4194304:
+            msg = "Uploading a file to Azure Blob Storage in chunks"
+            msg += " requires a chunk size of less than 4 MiB."
+            raise _ICSE(msg)
 
     
     def __enter__(self) -> 'AzureBlobDir':
@@ -2858,6 +2946,23 @@ class GCPStorageDir(_CloudDir):
             path=abs_dir_path,
             handler=self._get_handler(),
             metadata=self._get_metadata_ref())
+    
+
+    def _validate_chunk_size(self, chunk_size: int) -> None:
+        '''
+        This method goes on to throw an ``InvalidChunkSizeError``, \
+        displaying an appropriate message, if file uploading to \
+        the directory is not supported for the provided chunk size. \
+        Else, this method does nothing.
+
+        :raises InvalidChunkSizeError: File uploading in chunks is not \
+            supported for the provided chunk size.
+        '''
+        if chunk_size % 262144:
+            msg = "Uploading a file to Google Cloud Storage"
+            msg += " requires a chunk size that is a multiple"
+            msg += " of 256 KiB, that is, 256 x 1024 bytes."
+            raise _ICSE(msg)
     
 
     def __enter__(self) -> 'GCPStorageDir':
