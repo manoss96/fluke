@@ -2209,7 +2209,7 @@ class TestLocalDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(CONTENTS) + '\n'
+            ls_expected_output = '\n' + '\n'.join(CONTENTS) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path(self):
@@ -2220,7 +2220,7 @@ class TestLocalDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(get_abs_contents(recursively=False)) + '\n'
+            ls_expected_output = '\n' + '\n'.join(get_abs_contents(recursively=False)) + '\n'
 
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
@@ -2679,7 +2679,7 @@ class TestRemoteDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(CONTENTS) + '\n'
+            ls_expected_output = '\n' + '\n'.join(CONTENTS) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
 
@@ -2694,7 +2694,7 @@ class TestRemoteDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(get_abs_contents(recursively=False)) + '\n'
+            ls_expected_output = '\n' + '\n'.join(get_abs_contents(recursively=False)) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_recursively(self):
@@ -3487,7 +3487,7 @@ class TestAmazonS3Dir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(CONTENTS) + '\n'
+            ls_expected_output = '\n' + '\n'.join(CONTENTS) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
 
@@ -3502,7 +3502,7 @@ class TestAmazonS3Dir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(
+            ls_expected_output = '\n' + '\n'.join(
                 self.get_abs_contents(recursively=False)) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
@@ -4373,7 +4373,7 @@ class TestAzureBlobDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(CONTENTS) + '\n'
+            ls_expected_output = '\n' + '\n'.join(CONTENTS) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path(self):
@@ -4387,7 +4387,7 @@ class TestAzureBlobDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(
+            ls_expected_output = '\n' + '\n'.join(
                 self.get_abs_contents(recursively=False)) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
@@ -5274,7 +5274,7 @@ class TestGCPStorageDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(CONTENTS) + '\n'
+            ls_expected_output = '\n' + '\n'.join(CONTENTS) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path(self):
@@ -5288,7 +5288,7 @@ class TestGCPStorageDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(
+            ls_expected_output = '\n' + '\n'.join(
                 self.get_abs_contents(recursively=False)) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
