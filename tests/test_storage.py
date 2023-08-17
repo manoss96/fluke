@@ -284,6 +284,7 @@ RECURSIVE_CONTENTS = [
     DIR_FILE_NAME,
     f'{DIR_SUBDIR_NAME}{DIR_SUBDIR_FILE_NAME}',
     f'{DIR_SUBDIR_NAME}file4.txt']
+
 LS_RECURSIVE_OUTPUT = """
 |__file2.txt
 |__subdir/
@@ -2290,7 +2291,7 @@ class TestLocalDir(unittest.TestCase):
         self.assertEqual(self.build_dir(path=ABS_DIR_PATH).get_size(), 4)
 
     def test_get_size_on_recursively(self):
-        self.assertEqual(self.build_dir(path=ABS_DIR_PATH).get_size(recursively=True), 16)
+        self.assertEqual(self.build_dir(path=ABS_DIR_PATH).get_size(recursively=True), 12)
 
     @create_tmp_dir
     def test_transfer_to(self, tmp_dir_path):
@@ -2736,7 +2737,7 @@ class TestRemoteDir(unittest.TestCase):
 
     def test_get_size_on_recursively(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_size(recursively=True), 16)
+            self.assertEqual(dir.get_size(recursively=True), 12)
 
     @create_tmp_dir
     def test_transfer_to(self, tmp_dir_path):
@@ -3083,7 +3084,7 @@ class TestRemoteDir(unittest.TestCase):
         with self.build_dir(cache=True) as dir:
             _ = dir.get_size(recursively=True)
             self.assertEqual(
-                dir.get_size(recursively=True), 16)
+                dir.get_size(recursively=True), 12)
 
     def test_get_size_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -3526,7 +3527,7 @@ class TestAmazonS3Dir(unittest.TestCase):
 
     def test_get_size_on_recursively(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_size(recursively=True), 16)
+            self.assertEqual(dir.get_size(recursively=True), 12)
 
     @create_tmp_dir
     def test_transfer_to(self, tmp_dir_path):
@@ -3958,7 +3959,7 @@ class TestAmazonS3Dir(unittest.TestCase):
     def test_get_size_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             _ = dir.get_size(recursively=True)
-            self.assertEqual(dir.get_size(recursively=True), 16)
+            self.assertEqual(dir.get_size(recursively=True), 12)
 
     def test_load_metadata_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -4388,7 +4389,7 @@ class TestAzureBlobDir(unittest.TestCase):
 
     def test_get_size_on_recursively(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_size(recursively=True), 16)
+            self.assertEqual(dir.get_size(recursively=True), 12)
 
     @create_tmp_dir
     def test_transfer_to(self, tmp_dir_path):
@@ -4804,7 +4805,7 @@ class TestAzureBlobDir(unittest.TestCase):
     def test_get_size_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             _ = dir.get_size(recursively=True)
-            self.assertEqual(dir.get_size(recursively=True), 16)
+            self.assertEqual(dir.get_size(recursively=True), 12)
 
     def test_load_metadata_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -5257,7 +5258,7 @@ class TestGCPStorageDir(unittest.TestCase):
 
     def test_get_size_on_recursively(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_size(recursively=True), 16)
+            self.assertEqual(dir.get_size(recursively=True), 12)
 
     @create_tmp_dir
     def test_transfer_to(self, tmp_dir_path):
@@ -5691,7 +5692,7 @@ class TestGCPStorageDir(unittest.TestCase):
     def test_get_size_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             _ = dir.get_size(recursively=True)
-            self.assertEqual(dir.get_size(recursively=True), 16)
+            self.assertEqual(dir.get_size(recursively=True), 12)
 
     def test_load_metadata_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
