@@ -254,6 +254,12 @@ RECURSIVE_CONTENTS = [
     f'{DIR_SUBDIR_NAME}{DIR_SUBDIR_FILE_NAME}',
     f'{DIR_SUBDIR_NAME}file4.txt']
 TMP_DIR_NAME = 'TMP_DIR'
+LS_RECURSIVE_OUTPUT = """
+|__file2.txt
+|__subdir/
+   |__file3.txt
+   |__file4.txt
+"""
 
 
 def get_abs_contents(recursively: bool):
@@ -2226,7 +2232,8 @@ class TestLocalDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(RECURSIVE_CONTENTS) + '\n'
+            ls_expected_output = '\n' + DIR_NAME + SEPARATOR + LS_RECURSIVE_OUTPUT
+
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path_and_recursively(self):
@@ -2239,7 +2246,7 @@ class TestLocalDir(unittest.TestCase):
             
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(get_abs_contents(recursively=True)) + '\n'
+            ls_expected_output = '\n' + ABS_DIR_PATH + LS_RECURSIVE_OUTPUT
 
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
@@ -2701,7 +2708,7 @@ class TestRemoteDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(RECURSIVE_CONTENTS) + '\n'
+            ls_expected_output = '\n' + DIR_NAME + SEPARATOR + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path_and_recursively(self):
@@ -2715,7 +2722,7 @@ class TestRemoteDir(unittest.TestCase):
             
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(get_abs_contents(recursively=True)) + '\n'
+            ls_expected_output = '\n' + ABS_DIR_PATH + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_count(self):
@@ -3510,7 +3517,7 @@ class TestAmazonS3Dir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(RECURSIVE_CONTENTS) + '\n'
+            ls_expected_output = '\n' + DIR_NAME + SEPARATOR + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path_and_recursively(self):
@@ -3524,8 +3531,7 @@ class TestAmazonS3Dir(unittest.TestCase):
             
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(
-                self.get_abs_contents(recursively=True)) + '\n'
+            ls_expected_output = '\n' + REL_DIR_PATH + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_count(self):
@@ -4396,7 +4402,7 @@ class TestAzureBlobDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(RECURSIVE_CONTENTS) + '\n'
+            ls_expected_output = '\n' + DIR_NAME + SEPARATOR + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path_and_recursively(self):
@@ -4410,8 +4416,7 @@ class TestAzureBlobDir(unittest.TestCase):
             
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(
-                self.get_abs_contents(recursively=True)) + '\n'
+            ls_expected_output = '\n' + REL_DIR_PATH + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_count(self):
@@ -5298,7 +5303,7 @@ class TestGCPStorageDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(RECURSIVE_CONTENTS) + '\n'
+            ls_expected_output = '\n' + DIR_NAME + SEPARATOR + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path_and_recursively(self):
@@ -5312,8 +5317,7 @@ class TestGCPStorageDir(unittest.TestCase):
             
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(
-                self.get_abs_contents(recursively=True)) + '\n'
+            ls_expected_output = '\n' + REL_DIR_PATH + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_count(self):

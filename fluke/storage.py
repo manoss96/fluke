@@ -1330,9 +1330,13 @@ class _Directory(_ABC):
         if recursively:
 
             fs = dict()
+            fs_path = self.get_path()
             sep = self._get_separator()
 
-            for path in iterator:
+            for path in map(
+                lambda p: p.removeprefix(fs_path),
+                iterator
+            ):
                 parent = fs
                 for i in range(num_entities := len(
                     entities := path.split(sep=sep)
@@ -1359,9 +1363,11 @@ class _Directory(_ABC):
                         print_entities(d=val, level=level+1)
             print()
             print_entities(d={
-                ('' if (name := self.get_name()) is None
-                else name
-                ) + sep: fs
+                (sep if (name := self.get_name()) is None
+                else (
+                    self.get_path() if show_abs_path
+                    else name + sep)
+                ): fs
             }, level=0)
         else:
             print()
