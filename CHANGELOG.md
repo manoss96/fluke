@@ -28,6 +28,10 @@ All notable changes to this project will be documented in this file.
   exceptions if a chunk size that is not supported by the "destination"
   directory has been specified.
   (https://github.com/manoss96/fluke/issues/48)
+
+- Method ``Dir.ls`` will now print a prettier output when
+  parameter ``recursively`` has been set to ``True``.
+  (https://github.com/manoss96/fluke/issues/50)
   
 
 ## [0.4.1] - 2023/07/25

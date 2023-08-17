@@ -4,6 +4,7 @@ import sys
 import time
 import shutil
 import unittest
+from uuid import uuid4
 from unittest.mock import Mock, patch
 from typing import Optional, Iterator, Callable
 
@@ -51,6 +52,46 @@ def to_abs(path: str) -> str:
     Convert a relative path to an absolute path.
     '''
     return join_paths(os.getcwd().replace(os.sep, SEPARATOR), path)
+
+
+def get_tmp_dir_name() -> str:
+    '''
+    Returns a random UUID to be used as a \
+    temporary directory name.
+    '''
+    return uuid4().hex
+
+
+def create_tmp_dir(func: Callable):
+    '''
+    A decorator function used for creating \
+    and deleting temporary directories.
+    '''
+    def wrapper(*args, **kwargs):
+        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, get_tmp_dir_name()))
+        kwargs.update({'tmp_dir_path': tmp_dir_path})
+        os.mkdir(tmp_dir_path)
+        try:
+            func(*args, **kwargs)
+        except Exception as e:
+            raise e
+        finally:
+            shutil.rmtree(tmp_dir_path)
+    return wrapper
+
+
+def clone_tmp_dir(func: Callable):
+    '''
+    A decorator function used for creating \
+    and deleting clone directories.
+    '''
+    def wrapper(*args, **kwargs):
+        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, get_tmp_dir_name()))
+        kwargs.update({'tmp_dir_path': tmp_dir_path})
+        shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
+        func(*args, **kwargs)
+        shutil.rmtree(tmp_dir_path)
+    return wrapper
 
 
 def get_remote_auth_instance(hostname: str) -> RemoteAuth:
@@ -128,11 +169,6 @@ def create_aws_s3_bucket(mock_s3, bucket_name: str, metadata: dict[str, str]):
                     Key=file_path.replace(os.sep, SEPARATOR),
                     Fileobj=file,
                     ExtraArgs={ "Metadata": metadata })
-    # Finally, create a TMP dir.
-    with io.BytesIO() as empty_buffer:
-        bucket.upload_fileobj(
-            Key=join_paths(TEST_FILES_DIR, TMP_DIR_NAME, 'DUMMY'),
-            Fileobj=empty_buffer)
 
         
 def get_aws_s3_object(bucket_name: str, path: str):
@@ -171,11 +207,6 @@ def set_up_gcs_bucket():
     for obj in client.bucket(BUCKET).list_blobs():
         obj.metadata = METADATA
         obj.patch()
-
-    # And create an empty TMP_DIR.
-    client.bucket(BUCKET).blob(
-        blob_name=join_paths(TEST_FILES_DIR, TMP_DIR_NAME, 'DUMMY')
-    ).upload_from_string(data=b'')
 
     # Patch methods.
     def get_resumable_upload_session(*args, **kwargs):
@@ -253,7 +284,13 @@ RECURSIVE_CONTENTS = [
     DIR_FILE_NAME,
     f'{DIR_SUBDIR_NAME}{DIR_SUBDIR_FILE_NAME}',
     f'{DIR_SUBDIR_NAME}file4.txt']
-TMP_DIR_NAME = 'TMP_DIR'
+
+LS_RECURSIVE_OUTPUT = """
+|__file2.txt
+|__subdir/
+   |__file3.txt
+   |__file4.txt
+"""
 
 
 def get_abs_contents(recursively: bool):
@@ -2203,7 +2240,7 @@ class TestLocalDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(CONTENTS) + '\n'
+            ls_expected_output = '\n' + '\n'.join(CONTENTS) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path(self):
@@ -2214,7 +2251,7 @@ class TestLocalDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(get_abs_contents(recursively=False)) + '\n'
+            ls_expected_output = '\n' + '\n'.join(get_abs_contents(recursively=False)) + '\n'
 
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
@@ -2226,7 +2263,8 @@ class TestLocalDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(RECURSIVE_CONTENTS) + '\n'
+            ls_expected_output = '\n' + DIR_NAME + SEPARATOR + LS_RECURSIVE_OUTPUT
+
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path_and_recursively(self):
@@ -2239,7 +2277,7 @@ class TestLocalDir(unittest.TestCase):
             
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(get_abs_contents(recursively=True)) + '\n'
+            ls_expected_output = '\n' + ABS_DIR_PATH + LS_RECURSIVE_OUTPUT
 
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
@@ -2253,12 +2291,10 @@ class TestLocalDir(unittest.TestCase):
         self.assertEqual(self.build_dir(path=ABS_DIR_PATH).get_size(), 4)
 
     def test_get_size_on_recursively(self):
-        self.assertEqual(self.build_dir(path=ABS_DIR_PATH).get_size(recursively=True), 16)
+        self.assertEqual(self.build_dir(path=ABS_DIR_PATH).get_size(recursively=True), 12)
 
-    def test_transfer_to(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
-        os.mkdir(tmp_dir_path)
+    @create_tmp_dir
+    def test_transfer_to(self, tmp_dir_path):
         # Copy the directory's contents into this tmp directory.
         self.build_dir(path=ABS_DIR_PATH).transfer_to(
             dst=self.build_dir(path=tmp_dir_path))
@@ -2275,14 +2311,9 @@ class TestLocalDir(unittest.TestCase):
                 open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_recursively(self):
-        # Create a temporary dictionary.
-        tmp_dir_name = TMP_DIR_NAME
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', tmp_dir_name))
-        os.mkdir(tmp_dir_path)
+    @create_tmp_dir
+    def test_transfer_to_on_recursively(self, tmp_dir_path):
         # Recursively copy the directory's contents
         # into this tmp directory.
         self.build_dir(path=ABS_DIR_PATH).transfer_to(
@@ -2303,13 +2334,9 @@ class TestLocalDir(unittest.TestCase):
                 open(file=cfp, mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_chunk_size(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
-        os.mkdir(tmp_dir_path)
+    @create_tmp_dir
+    def test_transfer_to_on_chunk_size(self, tmp_dir_path):
         # Copy the directory's contents into this tmp directory.
         self.build_dir(path=ABS_DIR_PATH).transfer_to(
             dst=self.build_dir(path=tmp_dir_path),
@@ -2327,13 +2354,9 @@ class TestLocalDir(unittest.TestCase):
                 open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_filter(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
-        os.mkdir(tmp_dir_path)
+    @create_tmp_dir
+    def test_transfer_to_on_filter(self, tmp_dir_path):
         # Copy the directory's contents into this tmp directory.
         self.build_dir(path=ABS_DIR_PATH).transfer_to(
             dst=self.build_dir(path=tmp_dir_path),
@@ -2352,14 +2375,9 @@ class TestLocalDir(unittest.TestCase):
                 open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_overwrite_set_to_false(self):
-        # Create a copy of the directory.
-        tmp_dir_name = TMP_DIR_NAME
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', tmp_dir_name))
-        shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
+    @clone_tmp_dir
+    def test_transfer_to_on_overwrite_set_to_false(self, tmp_dir_path):
         # While capturing stdout...
         with io.StringIO() as stdo:
             sys.stdout = stdo
@@ -2371,14 +2389,9 @@ class TestLocalDir(unittest.TestCase):
             sys.stdout = sys.__stdout__
 
             self.assertTrue("Operation unsuccessful" in stdo.getvalue())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_overwrite_set_to_true(self):
-        # Create a copy of the directory.
-        tmp_dir_name = TMP_DIR_NAME
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', tmp_dir_name))
-        shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
+    @clone_tmp_dir
+    def test_transfer_to_on_overwrite_set_to_true(self, tmp_dir_path):
         # While capturing stdout...
         with io.StringIO() as stdo:
             sys.stdout = stdo
@@ -2390,34 +2403,28 @@ class TestLocalDir(unittest.TestCase):
             sys.stdout = sys.__stdout__
 
             self.assertTrue("Operation successful" in stdo.getvalue())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_include_metadata_set_to_false(self):
+    @create_tmp_dir
+    def test_transfer_to_on_include_metadata_set_to_false(self, tmp_dir_path):
         # Set metadata for a directory's file.
         filename, metadata = DIR_FILE_NAME, {'1': '1'}
         dir = self.build_dir(path=ABS_DIR_PATH)
         dir.set_metadata(file_path=filename, metadata=metadata)
         # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
-        os.mkdir(tmp_dir_path)
         tmp_dir = self.build_dir(path=tmp_dir_path)
         # Copy the directory's contents into this
         # tmp directory without including metadata.
         dir.transfer_to(dst=tmp_dir, include_metadata=False)
         # Assert that no metadata were transfered.
         self.assertEqual(tmp_dir.get_metadata(file_path=filename), {})
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_include_metadata_set_to_true(self):
+    @create_tmp_dir
+    def test_transfer_to_on_include_metadata_set_to_true(self, tmp_dir_path):
         # Set metadata for a directory's file.
         filename, metadata = DIR_FILE_NAME, {'1': '1'}
         dir = self.build_dir(path=ABS_DIR_PATH)
         dir.set_metadata(file_path=filename, metadata=metadata)
         # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
-        os.mkdir(tmp_dir_path)
         tmp_dir = self.build_dir(path=tmp_dir_path)
         # Copy the directory's contents into this
         # tmp directory while including metadata.
@@ -2426,8 +2433,6 @@ class TestLocalDir(unittest.TestCase):
         self.assertEqual(
             tmp_dir.get_metadata(file_path=filename),
             metadata)
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
     def test_transfer_to_on_aws_cloud_dir_include_metadata_set_to_true(self):
         # Set metadata for a directory's file.
@@ -2672,7 +2677,7 @@ class TestRemoteDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(CONTENTS) + '\n'
+            ls_expected_output = '\n' + '\n'.join(CONTENTS) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
 
@@ -2687,7 +2692,7 @@ class TestRemoteDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(get_abs_contents(recursively=False)) + '\n'
+            ls_expected_output = '\n' + '\n'.join(get_abs_contents(recursively=False)) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_recursively(self):
@@ -2701,7 +2706,7 @@ class TestRemoteDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(RECURSIVE_CONTENTS) + '\n'
+            ls_expected_output = '\n' + DIR_NAME + SEPARATOR + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path_and_recursively(self):
@@ -2715,7 +2720,7 @@ class TestRemoteDir(unittest.TestCase):
             
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(get_abs_contents(recursively=True)) + '\n'
+            ls_expected_output = '\n' + ABS_DIR_PATH + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_count(self):
@@ -2732,13 +2737,11 @@ class TestRemoteDir(unittest.TestCase):
 
     def test_get_size_on_recursively(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_size(recursively=True), 16)
+            self.assertEqual(dir.get_size(recursively=True), 12)
 
-    def test_transfer_to(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(dst=LocalDir(path=tmp_dir_path))
         # Assert that the two directories contains the same contents.
@@ -2754,14 +2757,10 @@ class TestRemoteDir(unittest.TestCase):
                 open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_recursively(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to_on_recursively(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
                 dst=LocalDir(path=tmp_dir_path),
@@ -2781,14 +2780,10 @@ class TestRemoteDir(unittest.TestCase):
                 open(file=cfp, mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_chunk_size(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to_on_chunk_size(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
                 dst=TestLocalDir.build_dir(path=tmp_dir_path),
@@ -2806,14 +2801,10 @@ class TestRemoteDir(unittest.TestCase):
                 open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_filter(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to_on_filter(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
                 dst=LocalDir(path=tmp_dir_path),
@@ -2832,14 +2823,9 @@ class TestRemoteDir(unittest.TestCase):
                 open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_overwrite_set_to_false(self):
-        # Create a copy of the directory.
-        tmp_dir_name = TMP_DIR_NAME
-        tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, tmp_dir_name)
-        shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
+    @clone_tmp_dir
+    def test_transfer_to_on_overwrite_set_to_false(self, tmp_dir_path):
         # While capturing stdout...
         with (
             io.StringIO() as stdo,
@@ -2854,14 +2840,9 @@ class TestRemoteDir(unittest.TestCase):
             sys.stdout = sys.__stdout__
 
             self.assertTrue("Operation unsuccessful" in stdo.getvalue())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_overwrite_set_to_true(self):
-        # Create a copy of the directory.
-        tmp_dir_name = TMP_DIR_NAME
-        tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, tmp_dir_name)
-        shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
+    @clone_tmp_dir
+    def test_transfer_to_on_overwrite_set_to_true(self, tmp_dir_path):
         # While capturing stdout...
         with (
             io.StringIO() as stdo,
@@ -2876,17 +2857,14 @@ class TestRemoteDir(unittest.TestCase):
             sys.stdout = sys.__stdout__
 
             self.assertTrue("Operation successful" in stdo.getvalue())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_include_metadata_set_to_false(self):
+    @create_tmp_dir
+    def test_transfer_to_on_include_metadata_set_to_false(self, tmp_dir_path):
         # Set metadata for a directory's file.
         filename, metadata = ABS_DIR_FILE_PATH, {'1': '1'}
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
             # Create a temporary dictionary.
-            tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-            os.makedirs(tmp_dir_path)
             tmp_dir = LocalDir(path=tmp_dir_path)
             # Copy the directory's contents into this
             # tmp directory without including metadata.
@@ -2894,17 +2872,14 @@ class TestRemoteDir(unittest.TestCase):
         # Assert that no metadata have been transfered.
         self.assertEqual(tmp_dir.get_metadata(
             file_path=filename.replace(ABS_DIR_PATH, '')), {})
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_include_metadata_set_to_true(self):
+    @create_tmp_dir
+    def test_transfer_to_on_include_metadata_set_to_true(self, tmp_dir_path):
         # Set metadata for a directory's file.
         filename, metadata = ABS_DIR_FILE_PATH, {'1': '1'}
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
             # Create a temporary dictionary.
-            tmp_dir_path = ABS_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-            os.mkdir(tmp_dir_path)
             tmp_dir = LocalDir(path=tmp_dir_path)
             # Copy the directory's contents into this
             # tmp directory without including metadata.
@@ -2914,15 +2889,12 @@ class TestRemoteDir(unittest.TestCase):
             tmp_dir.get_metadata(
                 file_path=filename.replace(ABS_DIR_PATH, '')),
             metadata)
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
                 
-    def test_transfer_to_as_dst(self):
+    @create_tmp_dir
+    def test_transfer_to_as_dst(self, tmp_dir_path):
         # Get source file.
         src_file = TestLocalFile.build_file()
         # Create a temporary "remote" dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
-        os.mkdir(tmp_dir_path)
         with self.build_dir(path=tmp_dir_path) as remote_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=remote_dir)
@@ -2933,14 +2905,12 @@ class TestRemoteDir(unittest.TestCase):
                 open(copy_path, mode='rb') as copy
             ):
                 self.assertEqual(file.read(), copy.read())
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_as_dst_on_chunk_size(self):
+    @create_tmp_dir
+    def test_transfer_to_as_dst_on_chunk_size(self, tmp_dir_path):
         # Get source file.
         src_file = TestLocalFile.build_file()
         # Create a temporary "remote" dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
-        os.mkdir(tmp_dir_path)
         with self.build_dir(path=tmp_dir_path) as remote_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=remote_dir, chunk_size=1)
@@ -2951,8 +2921,6 @@ class TestRemoteDir(unittest.TestCase):
                 open(copy_path, mode='rb') as copy
             ):
                 self.assertEqual(file.read(), copy.read())
-        shutil.rmtree(tmp_dir_path)
-
         
     def test_get_file(self):
         with self.build_dir() as dir:
@@ -3116,7 +3084,7 @@ class TestRemoteDir(unittest.TestCase):
         with self.build_dir(cache=True) as dir:
             _ = dir.get_size(recursively=True)
             self.assertEqual(
-                dir.get_size(recursively=True), 16)
+                dir.get_size(recursively=True), 12)
 
     def test_get_size_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -3234,6 +3202,24 @@ class TestRemoteDir(unittest.TestCase):
 class TestAmazonS3Dir(unittest.TestCase):
 
     MOCK_S3 = mock_s3()
+
+    def create_tmp_s3_dir(func: Callable):
+        '''
+        A decorator function used for creating \
+        and deleting temporary directories.
+        '''
+        def wrapper(*args, **kwargs):
+            tmp_dir_name = get_tmp_dir_name()
+            tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name)
+            kwargs.update({'tmp_dir_path': tmp_dir_path})
+            # Finally, create a TMP dir.
+            with io.BytesIO() as empty_buffer:
+                bucket = boto3.resource("s3").Bucket(BUCKET)
+                bucket.upload_fileobj(
+                    Key=join_paths(TEST_FILES_DIR, tmp_dir_name, 'DUMMY'),
+                    Fileobj=empty_buffer)
+            func(*args, **kwargs)
+        return wrapper
 
     def get_abs_contents(self, recursively: bool):
         return [join_paths(REL_DIR_PATH, p) for p in (
@@ -3480,7 +3466,7 @@ class TestAmazonS3Dir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(CONTENTS) + '\n'
+            ls_expected_output = '\n' + '\n'.join(CONTENTS) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
 
@@ -3495,7 +3481,7 @@ class TestAmazonS3Dir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(
+            ls_expected_output = '\n' + '\n'.join(
                 self.get_abs_contents(recursively=False)) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
@@ -3510,7 +3496,7 @@ class TestAmazonS3Dir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(RECURSIVE_CONTENTS) + '\n'
+            ls_expected_output = '\n' + DIR_NAME + SEPARATOR + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path_and_recursively(self):
@@ -3524,8 +3510,7 @@ class TestAmazonS3Dir(unittest.TestCase):
             
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(
-                self.get_abs_contents(recursively=True)) + '\n'
+            ls_expected_output = '\n' + REL_DIR_PATH + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_count(self):
@@ -3542,13 +3527,11 @@ class TestAmazonS3Dir(unittest.TestCase):
 
     def test_get_size_on_recursively(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_size(recursively=True), 16)
+            self.assertEqual(dir.get_size(recursively=True), 12)
 
-    def test_transfer_to(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME))
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(dst=TestLocalDir.build_dir(path=tmp_dir_path))
         # Assert that the two directories contains the same contents.
@@ -3565,14 +3548,10 @@ class TestAmazonS3Dir(unittest.TestCase):
             ):
                 get_aws_s3_object(BUCKET, ofp).download_fileobj(buffer)
                 self.assertEqual(buffer.getvalue(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_recursively(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME))
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to_on_recursively(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
                 dst=TestLocalDir.build_dir(path=tmp_dir_path),
@@ -3593,14 +3572,10 @@ class TestAmazonS3Dir(unittest.TestCase):
             ):
                 get_aws_s3_object(BUCKET, ofp).download_fileobj(buffer)
                 self.assertEqual(buffer.getvalue(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_chunk_size(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME))
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to_on_chunk_size(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
                 dst=TestLocalDir.build_dir(path=tmp_dir_path),
@@ -3619,14 +3594,10 @@ class TestAmazonS3Dir(unittest.TestCase):
             ):
                 get_aws_s3_object(BUCKET, ofp).download_fileobj(buffer)
                 self.assertEqual(buffer.getvalue(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_filter(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to_on_filter(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
                 dst=LocalDir(path=tmp_dir_path),
@@ -3646,14 +3617,9 @@ class TestAmazonS3Dir(unittest.TestCase):
             ):
                 get_aws_s3_object(BUCKET, ofp).download_fileobj(buffer)
                 self.assertEqual(buffer.getvalue(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_overwrite_set_to_false(self):
-        # Create a copy of the directory.
-        tmp_dir_name = TMP_DIR_NAME
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name))
-        shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
+    @clone_tmp_dir
+    def test_transfer_to_on_overwrite_set_to_false(self, tmp_dir_path):
         # While capturing stdout...
         with (
             io.StringIO() as stdo,
@@ -3668,14 +3634,9 @@ class TestAmazonS3Dir(unittest.TestCase):
             sys.stdout = sys.__stdout__
 
             self.assertTrue("Operation unsuccessful" in stdo.getvalue())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_overwrite_set_to_true(self):
-        # Create a copy of the directory.
-        tmp_dir_name = TMP_DIR_NAME
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name))
-        shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
+    @clone_tmp_dir
+    def test_transfer_to_on_overwrite_set_to_true(self, tmp_dir_path):
         # While capturing stdout...
         with (
             io.StringIO() as stdo,
@@ -3690,34 +3651,28 @@ class TestAmazonS3Dir(unittest.TestCase):
             sys.stdout = sys.__stdout__
 
             self.assertTrue("Operation successful" in stdo.getvalue())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_include_metadata_set_to_false(self):
+    @create_tmp_dir
+    def test_transfer_to_on_include_metadata_set_to_false(self, tmp_dir_path):
         # Set metadata for a directory's file.
         filename, metadata = DIR_FILE_NAME, {'1': '1'}
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
             # Create a temporary dictionary.
-            tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, "TMP_DIR"))
-            os.mkdir(tmp_dir_path)
             tmp_dir = TestLocalDir.build_dir(path=tmp_dir_path)
             # Copy the directory's contents into this
             # tmp directory without including metadata.
             dir.transfer_to(dst=tmp_dir, include_metadata=False)
         # Assert that no metadata have been transfered.
         self.assertEqual(tmp_dir.get_metadata(file_path=filename), {})
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_include_metadata_with_set_metadata(self):
+    @create_tmp_dir
+    def test_transfer_to_on_include_metadata_with_set_metadata(self, tmp_dir_path):
         # Set metadata for a directory's file.
         filename, metadata = DIR_FILE_NAME, {'1': '1'}
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
             # Create a temporary dictionary.
-            tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, "TMP_DIR"))
-            os.mkdir(tmp_dir_path)
             tmp_dir = TestLocalDir.build_dir(path=tmp_dir_path)
             # Copy the directory's contents into this
             # tmp directory without including metadata.
@@ -3726,16 +3681,13 @@ class TestAmazonS3Dir(unittest.TestCase):
         self.assertEqual(
             tmp_dir.get_metadata(file_path=filename),
             metadata)
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_include_metadata_without_set_metadata(self):
+    @create_tmp_dir
+    def test_transfer_to_on_include_metadata_without_set_metadata(self, tmp_dir_path):
         # Set metadata for a directory's file.
         filename = DIR_FILE_NAME
         with self.build_dir() as dir:
             # Create a temporary dictionary.
-            tmp_dir_path = to_abs(REL_DIR_PATH.replace(DIR_NAME, "TMP_DIR"))
-            os.mkdir(tmp_dir_path)
             tmp_dir = TestLocalDir.build_dir(path=tmp_dir_path)
             # Copy the directory's contents into this
             # tmp directory without including metadata.
@@ -3744,14 +3696,11 @@ class TestAmazonS3Dir(unittest.TestCase):
         self.assertEqual(
             tmp_dir.get_metadata(file_path=filename),
             METADATA)
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
         
-    def test_transfer_to_as_dst(self):
+    @create_tmp_s3_dir
+    def test_transfer_to_as_dst(self, tmp_dir_path):
         # Get source file.
         src_file = TestLocalFile.build_file()
-        # Get tmp dir path (already created in bucket).
-        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
         with self.build_dir(path=tmp_dir_path) as s3_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=s3_dir)
@@ -3770,11 +3719,10 @@ class TestAmazonS3Dir(unittest.TestCase):
             # Delete object.
             obj.delete()
 
-    def test_transfer_to_as_dst_on_chunk_size(self):
+    @create_tmp_s3_dir
+    def test_transfer_to_as_dst_on_chunk_size(self, tmp_dir_path):
         # Get source file.
         src_file = TestLocalFile.build_file()
-        # Get tmp dir path (already created in bucket).
-        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
         with self.build_dir(path=tmp_dir_path) as s3_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=s3_dir, chunk_size=5000000)
@@ -3793,13 +3741,12 @@ class TestAmazonS3Dir(unittest.TestCase):
             # Delete object.
             obj.delete()
 
-    def test_transfer_to_as_dst_on_include_metadata(self):
+    @create_tmp_s3_dir
+    def test_transfer_to_as_dst_on_include_metadata(self, tmp_dir_path):
         # Get source file and metadata.
         src_file = TestLocalFile.build_file()
         metadata = {'2': '2'}
         src_file.set_metadata(metadata=metadata)
-        # Get tmp dir path (already created in bucket).
-        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
         with self.build_dir(path=tmp_dir_path) as s3_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=s3_dir, include_metadata=True)
@@ -3811,13 +3758,12 @@ class TestAmazonS3Dir(unittest.TestCase):
             # Delete object.
             obj.delete()
         
-    def test_transfer_to_as_dst_on_chunk_size_and_include_metadata(self):
+    @create_tmp_s3_dir
+    def test_transfer_to_as_dst_on_chunk_size_and_include_metadata(self, tmp_dir_path):
         # Get source file and metadata.
         src_file = TestLocalFile.build_file()
         metadata = {'2': '2'}
         src_file.set_metadata(metadata=metadata)
-        # Get tmp dir path (already created in bucket).
-        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
         with self.build_dir(path=tmp_dir_path) as s3_dir:
             # Copy file into dir.
             src_file.transfer_to(
@@ -3832,11 +3778,10 @@ class TestAmazonS3Dir(unittest.TestCase):
             # Delete object.
             obj.delete()
 
-    def test_transfer_to_as_dst_on_invalid_chunk_size_error(self):
+    @create_tmp_s3_dir
+    def test_transfer_to_as_dst_on_invalid_chunk_size_error(self, tmp_dir_path):
         # Get source file.
         src_file = TestLocalFile.build_file()
-        # Get tmp dir path (already created in bucket).
-        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
         with self.build_dir(path=tmp_dir_path) as s3_dir:
             self.assertRaises(
                 InvalidChunkSizeError,
@@ -4014,7 +3959,7 @@ class TestAmazonS3Dir(unittest.TestCase):
     def test_get_size_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             _ = dir.get_size(recursively=True)
-            self.assertEqual(dir.get_size(recursively=True), 16)
+            self.assertEqual(dir.get_size(recursively=True), 12)
 
     def test_load_metadata_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -4161,6 +4106,23 @@ class TestAzureBlobDir(unittest.TestCase):
         return [join_paths(REL_DIR_PATH, p) for p in (
             RECURSIVE_CONTENTS if recursively else CONTENTS
         )]
+
+    def create_tmp_azure_dir(func: Callable):
+        '''
+        A decorator function used for creating \
+        and deleting temporary directories.
+        '''
+        def wrapper(*args, **kwargs):
+            tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, get_tmp_dir_name())
+            kwargs.update({'tmp_dir_path': tmp_dir_path})
+            os.mkdir(tmp_dir_path)
+            try:
+                func(*args, **kwargs)
+            except Exception as e:
+                raise e
+            finally:
+                shutil.rmtree(tmp_dir_path)
+        return wrapper
 
     @classmethod
     def setUpClass(cls):
@@ -4367,7 +4329,7 @@ class TestAzureBlobDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(CONTENTS) + '\n'
+            ls_expected_output = '\n' + '\n'.join(CONTENTS) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path(self):
@@ -4381,7 +4343,7 @@ class TestAzureBlobDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(
+            ls_expected_output = '\n' + '\n'.join(
                 self.get_abs_contents(recursively=False)) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
@@ -4396,7 +4358,7 @@ class TestAzureBlobDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(RECURSIVE_CONTENTS) + '\n'
+            ls_expected_output = '\n' + DIR_NAME + SEPARATOR + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path_and_recursively(self):
@@ -4410,8 +4372,7 @@ class TestAzureBlobDir(unittest.TestCase):
             
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(
-                self.get_abs_contents(recursively=True)) + '\n'
+            ls_expected_output = '\n' + REL_DIR_PATH + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_count(self):
@@ -4428,13 +4389,11 @@ class TestAzureBlobDir(unittest.TestCase):
 
     def test_get_size_on_recursively(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_size(recursively=True), 16)
+            self.assertEqual(dir.get_size(recursively=True), 12)
 
-    def test_transfer_to(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(dst=LocalDir(path=tmp_dir_path))
         # Assert that the two directories contains the same contents.
@@ -4450,14 +4409,10 @@ class TestAzureBlobDir(unittest.TestCase):
                 open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_recursively(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to_on_recursively(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
                 dst=LocalDir(path=tmp_dir_path),
@@ -4477,14 +4432,10 @@ class TestAzureBlobDir(unittest.TestCase):
                 open(file=cfp, mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_chunk_size(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to_on_chunk_size(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
                 dst=TestLocalDir.build_dir(path=tmp_dir_path),
@@ -4502,15 +4453,10 @@ class TestAzureBlobDir(unittest.TestCase):
                 open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-
-    def test_transfer_to_on_filter(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to_on_filter(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
                 dst=LocalDir(path=tmp_dir_path),
@@ -4529,14 +4475,9 @@ class TestAzureBlobDir(unittest.TestCase):
                 open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_overwrite_set_to_false(self):
-        # Create a copy of the directory.
-        tmp_dir_name = TMP_DIR_NAME
-        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name)
-        shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
+    @clone_tmp_dir
+    def test_transfer_to_on_overwrite_set_to_false(self, tmp_dir_path):
         # While capturing stdout...
         with (
             io.StringIO() as stdo,
@@ -4551,14 +4492,9 @@ class TestAzureBlobDir(unittest.TestCase):
             sys.stdout = sys.__stdout__
 
             self.assertTrue("Operation unsuccessful" in stdo.getvalue())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_overwrite_set_to_true(self):
-        # Create a copy of the directory.
-        tmp_dir_name = TMP_DIR_NAME
-        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name)
-        shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
+    @clone_tmp_dir
+    def test_transfer_to_on_overwrite_set_to_true(self, tmp_dir_path):
         # While capturing stdout...
         with (
             io.StringIO() as stdo,
@@ -4573,34 +4509,28 @@ class TestAzureBlobDir(unittest.TestCase):
             sys.stdout = sys.__stdout__
 
             self.assertTrue("Operation successful" in stdo.getvalue())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_include_metadata_set_to_false(self):
+    @create_tmp_dir
+    def test_transfer_to_on_include_metadata_set_to_false(self, tmp_dir_path):
         # Set metadata for a directory's file.
         filename, metadata = 'file2.txt', {'1': '1'}
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
             # Create a temporary dictionary.
-            tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-            os.mkdir(tmp_dir_path)
             tmp_dir = TestLocalDir.build_dir(path=tmp_dir_path)
             # Copy the directory's contents into this
             # tmp directory without including metadata.
             dir.transfer_to(dst=tmp_dir, include_metadata=False)
         # Assert that no metadata have been transfered.
         self.assertEqual(tmp_dir.get_metadata(file_path=filename), {})
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_include_metadata_with_set_metadata(self):
+    @create_tmp_dir
+    def test_transfer_to_on_include_metadata_with_set_metadata(self, tmp_dir_path):
         # Set metadata for a directory's file.
         filename, metadata = DIR_FILE_NAME, {'1': '1'}
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
             # Create a temporary dictionary.
-            tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-            os.mkdir(tmp_dir_path)
             tmp_dir = TestLocalDir.build_dir(path=tmp_dir_path)
             # Copy the directory's contents into this
             # tmp directory without including metadata.
@@ -4609,16 +4539,13 @@ class TestAzureBlobDir(unittest.TestCase):
         self.assertEqual(
             tmp_dir.get_metadata(file_path=filename),
             metadata)
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_include_metadata_without_set_metadata(self):
+    @create_tmp_dir
+    def test_transfer_to_on_include_metadata_without_set_metadata(self, tmp_dir_path):
         # Set metadata for a directory's file.
         filename = DIR_FILE_NAME
         with self.build_dir() as dir:
             # Create a temporary dictionary.
-            tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-            os.mkdir(tmp_dir_path)
             tmp_dir = TestLocalDir.build_dir(path=tmp_dir_path)
             # Copy the directory's contents into this
             # tmp directory without including metadata.
@@ -4627,15 +4554,12 @@ class TestAzureBlobDir(unittest.TestCase):
         self.assertEqual(
             tmp_dir.get_metadata(file_path=filename),
             METADATA)
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_as_dst(self):
+    @create_tmp_azure_dir
+    def test_transfer_to_as_dst(self, tmp_dir_path):
         # Get source file.
         src_file = TestLocalFile.build_file()
-        # Create a temporary "blob" dictionary.
-        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
-        os.mkdir(tmp_dir_path)
+        # Create a temporary "blob" directory.
         with self.build_dir(path=tmp_dir_path) as azr_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=azr_dir)
@@ -4646,14 +4570,12 @@ class TestAzureBlobDir(unittest.TestCase):
                 open(copy_path, mode='rb') as copy
             ):
                 self.assertEqual(file.read(), copy.read())
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_as_dst_on_chunk_size(self):
+    @create_tmp_azure_dir
+    def test_transfer_to_as_dst_on_chunk_size(self, tmp_dir_path):
         # Get source file.
         src_file = TestLocalFile.build_file()
-        # Create a temporary "blob" dictionary.
-        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
-        os.mkdir(tmp_dir_path)
+        # Create a temporary "blob" directory.
         with self.build_dir(path=tmp_dir_path) as azr_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=azr_dir, chunk_size=1000)
@@ -4664,16 +4586,14 @@ class TestAzureBlobDir(unittest.TestCase):
                 open(copy_path, mode='rb') as copy
             ):
                 self.assertEqual(file.read(), copy.read())
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_as_dst_on_include_metadata(self):
+    @create_tmp_azure_dir
+    def test_transfer_to_as_dst_on_include_metadata(self, tmp_dir_path):
         # Get source file and metadata.
         src_file = TestLocalFile.build_file()
         metadata = {'2': '2'}
         src_file.set_metadata(metadata=metadata)
-        # Create a temporary "blob" dictionary.
-        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
-        os.mkdir(tmp_dir_path)
+        # Create a temporary "blob" directory.
         with self.build_dir(path=tmp_dir_path) as azr_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=azr_dir, include_metadata=True)
@@ -4682,16 +4602,14 @@ class TestAzureBlobDir(unittest.TestCase):
             self.assertEqual(
                 azr_dir.get_metadata(file_path=copy_path),
                 metadata)
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_as_dst_on_chunk_size_and_include_metadata(self):
+    @create_tmp_azure_dir
+    def test_transfer_to_as_dst_on_chunk_size_and_include_metadata(self, tmp_dir_path):
         # Get source file and metadata.
         src_file = TestLocalFile.build_file()
         metadata = {'2': '2'}
         src_file.set_metadata(metadata=metadata)
-        # Create a temporary "blob" dictionary.
-        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
-        os.mkdir(tmp_dir_path)
+        # Create a temporary "blob" directory.
         with self.build_dir(path=tmp_dir_path) as azr_dir:
             # Copy file into dir.
             src_file.transfer_to(
@@ -4703,21 +4621,18 @@ class TestAzureBlobDir(unittest.TestCase):
             self.assertEqual(
                 azr_dir.get_metadata(file_path=copy_path),
                 metadata)
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_as_dst_on_invalid_chunk_size_error(self):
+    @create_tmp_azure_dir
+    def test_transfer_to_as_dst_on_invalid_chunk_size_error(self, tmp_dir_path):
         # Get source file.
         src_file = TestLocalFile.build_file()
-        # Get tmp dir path (already created in bucket).
-        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
-        os.mkdir(tmp_dir_path)
+        # Create a temporary "blob" directory.
         with self.build_dir(path=tmp_dir_path) as azr_dir:
             self.assertRaises(
                 InvalidChunkSizeError,
                 src_file.transfer_to,
                 dst=azr_dir,
                 chunk_size=4*1024*1024 + 1)
-        shutil.rmtree(tmp_dir_path)
         
     def test_get_file(self):
         with self.build_dir() as dir:
@@ -4890,7 +4805,7 @@ class TestAzureBlobDir(unittest.TestCase):
     def test_get_size_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             _ = dir.get_size(recursively=True)
-            self.assertEqual(dir.get_size(recursively=True), 16)
+            self.assertEqual(dir.get_size(recursively=True), 12)
 
     def test_load_metadata_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -5037,6 +4952,20 @@ class TestGCPStorageDir(unittest.TestCase):
         return [join_paths(REL_DIR_PATH, p) for p in (
             RECURSIVE_CONTENTS if recursively else CONTENTS
         )]
+
+    def create_tmp_gcs_dir(func: Callable):
+        '''
+        A decorator function used for creating \
+        and deleting temporary directories.
+        '''
+        def wrapper(*args, **kwargs):
+            tmp_dir_path = join_paths(TEST_FILES_DIR, get_tmp_dir_name())
+            kwargs.update({'tmp_dir_path': tmp_dir_path})
+            get_gcs_client().bucket(BUCKET).blob(
+                blob_name=join_paths(tmp_dir_path, 'DUMMY')
+            ).upload_from_string(data=b'')
+            func(*args, **kwargs)
+        return wrapper
 
     @classmethod
     def setUpClass(cls):
@@ -5269,7 +5198,7 @@ class TestGCPStorageDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(CONTENTS) + '\n'
+            ls_expected_output = '\n' + '\n'.join(CONTENTS) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path(self):
@@ -5283,7 +5212,7 @@ class TestGCPStorageDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(
+            ls_expected_output = '\n' + '\n'.join(
                 self.get_abs_contents(recursively=False)) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
@@ -5298,7 +5227,7 @@ class TestGCPStorageDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(RECURSIVE_CONTENTS) + '\n'
+            ls_expected_output = '\n' + DIR_NAME + SEPARATOR + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_show_abs_path_and_recursively(self):
@@ -5312,8 +5241,7 @@ class TestGCPStorageDir(unittest.TestCase):
             
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n'.join(
-                self.get_abs_contents(recursively=True)) + '\n'
+            ls_expected_output = '\n' + REL_DIR_PATH + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_count(self):
@@ -5330,13 +5258,11 @@ class TestGCPStorageDir(unittest.TestCase):
 
     def test_get_size_on_recursively(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_size(recursively=True), 16)
+            self.assertEqual(dir.get_size(recursively=True), 12)
 
-    def test_transfer_to(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(dst=LocalDir(path=tmp_dir_path))
         # Assert that the two directories contains the same contents.
@@ -5352,14 +5278,10 @@ class TestGCPStorageDir(unittest.TestCase):
                 open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_recursively(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to_on_recursively(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
                 dst=LocalDir(path=tmp_dir_path),
@@ -5379,14 +5301,10 @@ class TestGCPStorageDir(unittest.TestCase):
                 open(file=cfp, mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_chunk_size(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to_on_chunk_size(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
                 dst=TestLocalDir.build_dir(path=tmp_dir_path),
@@ -5404,14 +5322,10 @@ class TestGCPStorageDir(unittest.TestCase):
                 open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_filter(self):
-        # Create a temporary dictionary.
-        tmp_dir_path = to_abs(REL_DIR_PATH.replace('dir', TMP_DIR_NAME))
-        os.mkdir(tmp_dir_path)
-        # Copy the directory's contents into this tmp directory.
+    @create_tmp_dir
+    def test_transfer_to_on_filter(self, tmp_dir_path):
+        # Copy the directory's contents into a tmp directory.
         with self.build_dir() as dir:
             dir.transfer_to(
                 dst=LocalDir(path=tmp_dir_path),
@@ -5430,14 +5344,9 @@ class TestGCPStorageDir(unittest.TestCase):
                 open(file=join_paths(tmp_dir_path, cfp), mode='rb') as cp
             ):
                 self.assertEqual(of.read(), cp.read())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_overwrite_set_to_false(self):
-        # Create a copy of the directory.
-        tmp_dir_name = TMP_DIR_NAME
-        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name)
-        shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
+    @clone_tmp_dir
+    def test_transfer_to_on_overwrite_set_to_false(self, tmp_dir_path):
         # While capturing stdout...
         with (
             io.StringIO() as stdo,
@@ -5452,14 +5361,9 @@ class TestGCPStorageDir(unittest.TestCase):
             sys.stdout = sys.__stdout__
 
             self.assertTrue("Operation unsuccessful" in stdo.getvalue())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_overwrite_set_to_true(self):
-        # Create a copy of the directory.
-        tmp_dir_name = TMP_DIR_NAME
-        tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, tmp_dir_name)
-        shutil.copytree(src=ABS_DIR_PATH, dst=tmp_dir_path)
+    @clone_tmp_dir
+    def test_transfer_to_on_overwrite_set_to_true(self, tmp_dir_path):
         # While capturing stdout...
         with (
             io.StringIO() as stdo,
@@ -5474,34 +5378,28 @@ class TestGCPStorageDir(unittest.TestCase):
             sys.stdout = sys.__stdout__
 
             self.assertTrue("Operation successful" in stdo.getvalue())
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_include_metadata_set_to_false(self):
+    @create_tmp_dir
+    def test_transfer_to_on_include_metadata_set_to_false(self, tmp_dir_path):
         # Set metadata for a directory's file.
         filename, metadata = 'file2.txt', {'1': '1'}
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
-            # Create a temporary dictionary.
-            tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-            os.mkdir(tmp_dir_path)
+            # Create a temporary directory.
             tmp_dir = TestLocalDir.build_dir(path=tmp_dir_path)
             # Copy the directory's contents into this
             # tmp directory without including metadata.
             dir.transfer_to(dst=tmp_dir, include_metadata=False)
         # Assert that no metadata have been transfered.
         self.assertEqual(tmp_dir.get_metadata(file_path=filename), {})
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_include_metadata_with_set_metadata(self):
+    @create_tmp_dir
+    def test_transfer_to_on_include_metadata_with_set_metadata(self, tmp_dir_path):
         # Set metadata for a directory's file.
         filename, metadata = DIR_FILE_NAME, {'1': '1'}
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
-            # Create a temporary dictionary.
-            tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-            os.mkdir(tmp_dir_path)
+            # Create a temporary directory.
             tmp_dir = TestLocalDir.build_dir(path=tmp_dir_path)
             # Copy the directory's contents into this
             # tmp directory without including metadata.
@@ -5510,16 +5408,13 @@ class TestGCPStorageDir(unittest.TestCase):
         self.assertEqual(
             tmp_dir.get_metadata(file_path=filename),
             metadata)
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_on_include_metadata_without_set_metadata(self):
+    @create_tmp_dir
+    def test_transfer_to_on_include_metadata_without_set_metadata(self, tmp_dir_path):
         # Set metadata for a directory's file.
         filename = DIR_FILE_NAME
         with self.build_dir() as dir:
-            # Create a temporary dictionary.
-            tmp_dir_path = REL_DIR_PATH.replace(DIR_NAME, TMP_DIR_NAME)
-            os.mkdir(tmp_dir_path)
+            # Create a temporary directory.
             tmp_dir = TestLocalDir.build_dir(path=tmp_dir_path)
             # Copy the directory's contents into this
             # tmp directory without including metadata.
@@ -5528,14 +5423,12 @@ class TestGCPStorageDir(unittest.TestCase):
         self.assertEqual(
             tmp_dir.get_metadata(file_path=filename),
             METADATA)
-        # Remove temporary directory.
-        shutil.rmtree(tmp_dir_path)
 
-    def test_transfer_to_as_dst(self):
+    @create_tmp_gcs_dir
+    def test_transfer_to_as_dst(self, tmp_dir_path):
         # Get source file.
         src_file = TestLocalFile.build_file()
-        # Create a temporary "blob" dictionary.
-        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
+        # Create a temporary GCS directory.
         with self.build_dir(path=tmp_dir_path) as gcp_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=gcp_dir)
@@ -5554,11 +5447,11 @@ class TestGCPStorageDir(unittest.TestCase):
             # Delete object.
             obj.delete()
 
-    def test_transfer_to_as_dst_on_chunk_size(self):
+    @create_tmp_gcs_dir
+    def test_transfer_to_as_dst_on_chunk_size(self, tmp_dir_path):
         # Get source file.
         src_file = TestLocalFile.build_file()
-        # Get tmp dir path (already created in bucket).
-        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
+        # Create a temporary GCS directory.
         with self.build_dir(path=tmp_dir_path) as gcp_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=gcp_dir, chunk_size=256*1024)
@@ -5577,13 +5470,13 @@ class TestGCPStorageDir(unittest.TestCase):
             # Delete object.
             obj.delete()
 
-    def test_transfer_to_as_dst_on_include_metadata(self):
+    @create_tmp_gcs_dir
+    def test_transfer_to_as_dst_on_include_metadata(self, tmp_dir_path):
         # Get source file and metadata.
         src_file = TestLocalFile.build_file()
         metadata = {'2': '2'}
         src_file.set_metadata(metadata=metadata)
-        # Get tmp dir path (already created in bucket).
-        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
+        # Create a temporary GCS directory.
         with self.build_dir(path=tmp_dir_path) as gcp_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=gcp_dir, include_metadata=True)
@@ -5594,14 +5487,14 @@ class TestGCPStorageDir(unittest.TestCase):
             self.assertEqual(obj.metadata, metadata)
             # Delete object.
             obj.delete()
-        
-    def test_transfer_to_as_dst_on_chunk_size_and_include_metadata(self):
+    
+    @create_tmp_gcs_dir
+    def test_transfer_to_as_dst_on_chunk_size_and_include_metadata(self, tmp_dir_path):
         # Get source file and metadata.
         src_file = TestLocalFile.build_file()
         metadata = {'2': '2'}
         src_file.set_metadata(metadata=metadata)
-        # Get tmp dir path (already created in bucket).
-        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
+        # Create a temporary GCS directory.
         with self.build_dir(path=tmp_dir_path) as gcp_dir:
             # Copy file into dir.
             src_file.transfer_to(
@@ -5616,11 +5509,11 @@ class TestGCPStorageDir(unittest.TestCase):
             # Delete object.
             obj.delete()
 
-    def test_transfer_to_as_dst_on_invalid_chunk_size_error(self):
+    @create_tmp_gcs_dir
+    def test_transfer_to_as_dst_on_invalid_chunk_size_error(self, tmp_dir_path):
         # Get source file.
         src_file = TestLocalFile.build_file()
-        # Get tmp dir path (already created in bucket).
-        tmp_dir_path = REL_DIR_PATH.replace('dir', TMP_DIR_NAME)
+        # Create a temporary GCS directory.
         with self.build_dir(path=tmp_dir_path) as gcp_dir:
             self.assertRaises(
                 InvalidChunkSizeError,
@@ -5799,7 +5692,7 @@ class TestGCPStorageDir(unittest.TestCase):
     def test_get_size_recursively_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
             _ = dir.get_size(recursively=True)
-            self.assertEqual(dir.get_size(recursively=True), 16)
+            self.assertEqual(dir.get_size(recursively=True), 12)
 
     def test_load_metadata_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
