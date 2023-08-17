@@ -1301,7 +1301,11 @@ class _Directory(_ABC):
             show_abs_path=show_abs_path))
     
 
-    def ls(self, recursively: bool = False, show_abs_path: bool = False) -> None:
+    def ls(
+        self,
+        recursively: bool = False,
+        show_abs_path: bool = False
+    ) -> None:
         '''
         Lists the contents of the directory.
 
@@ -1319,11 +1323,50 @@ class _Directory(_ABC):
         :note: The resulting output may vary depending on the value \
             of parameter ``recursively``.
         '''
-        for entity in self.traverse(
+        iterator = self.traverse(
             recursively=recursively,
-            show_abs_path=show_abs_path
-        ):
-            print(entity)
+            show_abs_path=show_abs_path)
+        
+        if recursively:
+
+            fs = dict()
+            sep = self._get_separator()
+
+            for path in iterator:
+                parent = fs
+                for i in range(num_entities := len(
+                    entities := path.split(sep=sep)
+                )):
+                    # If final entity of path.
+                    if i == num_entities - 1:
+                        # Add it only if it is a file,
+                        # in which case it will be other than ''.
+                        if entities[i] != '':
+                            parent.update({entities[i]: None})
+                        break
+                    # Add sep back to dir entity name.
+                    entities[i] = entities[i] + sep
+                    # Add dir entity if it has not been added.
+                    if entities[i] not in parent:
+                        parent.update({entities[i]: dict()})
+                    # Reference current dir entity via parent.
+                    parent = parent[entities[i]]
+
+            def print_entities(d: dict, level: int) -> None:
+                for (key, val) in d.items():
+                    print(f"{3 * (level - 1) * ' '}{'|__' if level > 0 else ''}{key}")
+                    if val is not None:
+                        print_entities(d=val, level=level+1)
+            print()
+            print_entities(d={
+                ('' if (name := self.get_name()) is None
+                else name
+                ) + sep: fs
+            }, level=0)
+        else:
+            print()
+            for entity in iterator:
+                print(entity)
 
 
     def count(self, recursively: bool = False) -> int:
