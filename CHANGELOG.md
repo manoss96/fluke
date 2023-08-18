@@ -40,6 +40,11 @@ All notable changes to this project will be documented in this file.
   the ``RemoteAuth.PublicKey`` class' "generate" methods.
   (https://github.com/manoss96/fluke/issues/53)
 
+- Any contents of ``fluke.storage.RemoteDir`` will now be
+  displayed sorted by an ascending order no matter the
+  underlying remote system.
+  (https://github.com/manoss96/fluke/issues/53)
+
 
 ### Fixed
 

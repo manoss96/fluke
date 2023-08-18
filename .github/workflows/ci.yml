@@ -24,6 +24,8 @@ jobs:
         run: |
           docker run -d \
           -p 2222:2222 \
+          --env PUID=$(id -u $(whoami)) \
+          --env PGID=$(id -g $(whoami)) \
           --env PASSWORD_ACCESS=true \
           --env USER_NAME=test \
           --env USER_PASSWORD=test \

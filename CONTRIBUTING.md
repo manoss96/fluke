@@ -60,16 +60,18 @@ tests. In this section we'll see how to do this.
 
 First things first, Fluke mocks out certain resources by using Docker
 containers. More specifically, it mocks out an SSH server so as to test
-classes ``fluke.auth.{RemoteFile,RemoteDir}``, as well as a GCS server
-for classes ``fluke.auth.{GCPStorageFile,GCPStorageDir}``. Therefore,
-in order to run all tests successfully, you need to have these Docker
-containers running on your system. Assuming that you have Docker installed,
-you can achieve this by executing the following commands:
+classes ``fluke.storage.{RemoteFile,RemoteDir}``, as well as a GCS server
+for classes ``fluke.storage.{GCPStorageFile,GCPStorageDir}``. Therefore,
+in order to run all tests successfully, you need to have these services
+running as Docker containers on your system. Assuming that you have Docker
+installed, you can achieve this by executing the following commands:
 
 - **SSH Server**:
   ```
   docker run -d \
   -p 2222:2222 \
+  --env PUID=$(id -u $(whoami)) \
+  --env PGID=$(id -g $(whoami)) \
   --env PASSWORD_ACCESS=true \
   --env USER_NAME=test \
   --env USER_PASSWORD=test \
@@ -81,11 +83,15 @@ you can achieve this by executing the following commands:
   This command will pull the ``linuxserver/openssh-server`` image from Docker Hub
   and start it as a Docker container in the background, while at the same time
   mapping its port `2222` to your local port `2222` and passing all required
-  environmental variables. Furthermore, it mounts the repository's ``tests/test_files`` folder into the container. Before you execute the above command, make sure that you replace ``{PATH_TO_FLUKE_REPO}`` with the actual path of your local copy of the Fluke repository.
+  environmental variables. Furthermore, it mounts the Fluke repository's ``tests/test_files``
+  folder into the container. Before you execute the above command, make sure that you replace
+  ``{PATH_TO_FLUKE_REPO}`` with the actual path of your local copy of the Fluke repository.
 
 - **GCS Server**:
   ```
-  docker run -d -p 4443:4443 --mount type=bind,\
+  docker run -d \
+  -p 4443:4443 \
+  --mount type=bind,\
   src={PATH_TO_FLUKE_REPO}/tests/test_files,\
   dst=/data/bucket/tests/test_files \
   fsouza/fake-gcs-server:1.47.0
@@ -93,9 +99,9 @@ you can achieve this by executing the following commands:
   This command will pull the ``fsouza/fake-gcs-server`` image from Docker Hub
   and start it as a Docker container in the background, while at the same time
   mapping its port `4443` to your local port `4443`, as well as mounting the
-  repository's ``tests/test_files`` folder into the container, thereby creating
-  a dummy bucket called ``bucket`` which will be containing this folder. Before
-  you execute the above command, make sure that you replace ``{PATH_TO_FLUKE_REPO}``
+  Fluke repository's ``tests/test_files`` folder into the container, thereby
+  creating a dummy bucket called ``bucket`` which will be containing this folder.
+  Before you execute the above command, make sure that you replace ``{PATH_TO_FLUKE_REPO}``
   with the actual path of your local copy of the Fluke repository.
 
 

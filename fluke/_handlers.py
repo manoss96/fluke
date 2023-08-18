@@ -806,7 +806,10 @@ class SSHClientHandler(ClientHandler):
 
                 if _is_dir(attr.st_mode):
                     try:
-                        for sub_attr in sftp.listdir_attr(path=abs_path):
+                        for sub_attr in sorted(
+                            sftp.listdir_attr(path=abs_path),
+                            key=lambda at: at.filename
+                        ):
                             yield from filter_obj(
                                 sftp=sftp,
                                 attr=sub_attr,
@@ -816,7 +819,10 @@ class SSHClientHandler(ClientHandler):
                 else:
                     yield abs_path
 
-            for attr in self.__sftp.listdir_attr(path=dir_path):
+            for attr in sorted(
+                self.__sftp.listdir_attr(path=dir_path),
+                key=lambda at: at.filename
+            ):
                 for file_path in filter_obj(
                     sftp=self.__sftp,
                     attr=attr,
@@ -828,7 +834,10 @@ class SSHClientHandler(ClientHandler):
                             child=file_path,
                             sep=sep))
         else:
-            for attr in self.__sftp.listdir_attr(path=dir_path):
+            for attr in sorted(
+                self.__sftp.listdir_attr(path=dir_path),
+                key=lambda at: at.filename
+            ):
                 path = attr.filename
                 if _is_dir(attr.st_mode):
                     path += sep
