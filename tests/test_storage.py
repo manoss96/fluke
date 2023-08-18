@@ -2467,6 +2467,11 @@ class TestRemoteDir(unittest.TestCase):
         with self.build_dir() as dir:
             self.assertEqual(dir.get_path(), f"/{REL_DIR_PATH}")
 
+    def test_constructor_on_root_path(self):
+        root_path = '/'
+        with self.build_dir(path=root_path) as dir:
+            self.assertEqual(dir.get_path(), root_path)
+
     def test_constructor_on_create_if_missing(self):
         dir_path = f"{TEST_FILES_DIR}{SEPARATOR}NON_EXISTING_DIR/"
         with self.build_dir(path=f"/{dir_path}", create_if_missing=True) as _:

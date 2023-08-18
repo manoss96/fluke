@@ -48,6 +48,12 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Fixed issue where referencing the root directory ``/``
+  through either ``fluke.storage.LocalDir`` or
+  ``fluke.storage.RemoteDir`` resulted in an
+  ``InvalidPathError`` exception being raised.
+  (https://github.com/manoss96/fluke/issues/52)
+
 - Fixed issue where it was impossible to establish a connection
   to a remote host if their public key had been previously
   added to the system's "known_hosts" file, though their

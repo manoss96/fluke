@@ -1,17 +1,19 @@
 import os as _os
 from abc import ABC as _ABC
 from abc import abstractmethod as _absmethod
+from base64 import decodebytes as _decodebytes
 from typing import Iterator as _Iterator
 from typing import Optional as _Optional
 
 
 import boto3 as _boto3
 import paramiko as _prmk
-from base64 import decodebytes as _decodebytes
-from botocore.exceptions import ClientError as _CE
 from azure.identity import ClientSecretCredential as _CSC
 from azure.storage.blob import ContainerClient as _ContainerClient
+from botocore.exceptions import ClientError as _CE
 from google.cloud.storage import Client as _GCSClient
+from google.api_core.page_iterator import HTTPIterator as _GCSHTTPIter
+from stat import S_ISDIR as _is_dir
 
 
 from .auth import AWSAuth as _AWSAuth
@@ -423,8 +425,13 @@ class FileSystemHandler(ClientHandler):
 
         :param str path: An absolute path.
         '''
-        return _os.path.exists(
-            path=path.rstrip(_infer_sep(path)))
+        # NOTE: Strip seperator at the end of the
+        # path only if said path is not equal to
+        # the separator itself.
+        sep = _infer_sep(path)
+        if path != sep:
+            path = path.rstrip(sep)
+        return _os.path.exists(path=path)
     
 
     def is_file(self, file_path: str) -> bool:
@@ -435,7 +442,13 @@ class FileSystemHandler(ClientHandler):
         :param str file_path: The absolute path of the \
             file in question.
         '''
-        return _os.path.isfile(file_path.rstrip(_infer_sep(file_path)))
+        # NOTE: Strip seperator at the end of the
+        # path only if said path is not equal to
+        # the separator itself.
+        sep = _infer_sep(file_path)
+        if file_path != sep:
+            file_path = file_path.rstrip(sep)
+        return _os.path.isfile(file_path)
     
 
     def mkdir(self, path: str) -> None:
@@ -670,9 +683,15 @@ class SSHClientHandler(ClientHandler):
 
         :param str path: An absolute path.
         '''
+        # NOTE: Strip seperator at the end of the
+        # path only if said path is not equal to
+        # the separator itself.
+        sep = _infer_sep(path)
+        if path != sep:
+            path = path.rstrip(sep)
+        
         try:
-            self.__sftp.stat(
-                path=path.rstrip(_infer_sep(path)))
+            self.__sftp.stat(path=path)
         except FileNotFoundError:
             return False
         return True
@@ -686,9 +705,15 @@ class SSHClientHandler(ClientHandler):
         :param str file_path: The absolute path of the \
             file in question.
         '''
-        from stat import S_ISDIR as _is_dir
+        # NOTE: Strip seperator at the end of the
+        # path only if said path is not equal to
+        # the separator itself.
+        sep = _infer_sep(file_path)
+        if file_path != sep:
+            file_path = file_path.rstrip(sep)
+
         return not _is_dir(self.__sftp.stat(
-            path=file_path.rstrip(_infer_sep(file_path))).st_mode)
+            path=file_path).st_mode)
     
     
     def mkdir(self, path: str) -> None:
@@ -788,8 +813,6 @@ class SSHClientHandler(ClientHandler):
         :note: The resulting iterator may vary depending on the \
             value of parameter ``recursively``.
         '''
-        from stat import S_ISDIR as _is_dir
-
         sep = _infer_sep(dir_path)
 
         if recursively:
@@ -1645,10 +1668,7 @@ class GCPClientHandler(ClientHandler):
                     else:
                         yield _relativize(dir_path, blob.name, sep)
         else:
-
-            from google.api_core import page_iterator
-
-            dir_iter = page_iterator.HTTPIterator(
+            dir_iter = _GCSHTTPIter(
                 client=self.__bucket.client,
                 api_request=self.__bucket.client._connection.api_request,
                 path=f"/b/{self.get_bucket_name()}/o",
