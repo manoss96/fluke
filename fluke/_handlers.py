@@ -8,11 +8,12 @@ from typing import Optional as _Optional
 
 import boto3 as _boto3
 import paramiko as _prmk
-from base64 import decodebytes as _decodebytes
-from botocore.exceptions import ClientError as _CE
 from azure.identity import ClientSecretCredential as _CSC
 from azure.storage.blob import ContainerClient as _ContainerClient
+from botocore.exceptions import ClientError as _CE
 from google.cloud.storage import Client as _GCSClient
+from google.api_core.page_iterator import HTTPIterator as _GCSHTTPIter
+from stat import S_ISDIR as _is_dir
 
 
 from .auth import AWSAuth as _AWSAuth
@@ -20,6 +21,11 @@ from .auth import AzureAuth as _AzureAuth
 from .auth import GCPAuth as _GCPAuth
 from .auth import RemoteAuth as _RemoteAuth
 from ._cache import CacheManager as _CacheManager
+from ._exceptions import BucketNotFoundError as _BNFE
+from ._exceptions import ContainerNotFoundError as _CNFE 
+from ._helper import join_paths as _join_paths
+from ._helper import infer_separator as _infer_sep
+from ._helper import relativize_path as _relativize
 from ._iohandlers import _FileReader
 from ._iohandlers import _FileWriter
 from ._iohandlers import LocalFileReader as _LocalFileReader
@@ -633,10 +639,7 @@ class SSHClientHandler(ClientHandler):
             elif public_key.type == _RemoteAuth.PublicKey._KeyType.SSH_ED25519:
                 key_builder = _prmk.Ed25519Key    
             else:
-                raise _UKTE(key_type=key_type)
-            
-            from base64 import decodebytes as _decodebytes
-
+                key_builder = _prmk.ECDSAKey
             ssh.get_host_keys().add(
                 hostname=credentials['hostname'],
                 keytype=str(public_key.type),
