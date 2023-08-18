@@ -94,16 +94,18 @@ def clone_tmp_dir(func: Callable):
     return wrapper
 
 
-def get_remote_auth_instance(hostname: str) -> RemoteAuth:
+def get_remote_auth_instance() -> RemoteAuth:
     '''
-    Returns a dummy ``RemoteAuth`` instance.
-
-    :param str hostname: The instance's hostname.
+    Returns a ``RemoteAuth`` instance user \
+    in order to establish a connection to \
+    the fake SSH server.
     '''
     return RemoteAuth.from_password(
-        hostname=hostname,
-        username='',
-        password='')
+        hostname=HOST,
+        username='test',
+        password='test',
+        port=2222,
+        verify_host=False)
 
 
 def get_aws_auth_instance() -> AWSAuth:
@@ -303,7 +305,7 @@ def get_abs_contents(recursively: bool):
 '''
 REMOTE-RELATED CONSTANTS
 '''
-HOST = "host"
+HOST = "localhost"
 
 '''
 AWS/GPC-RELATED CONSTANTS
@@ -322,78 +324,6 @@ STORAGE_ACCOUNT_CONN_STRING = f"DefaultEndpointsProtocol=https;AccountName={STOR
 '''
 Helper Mock Classes
 '''
-class MockSFTPClient():
-
-    class MockSFTPFile():
-
-        def __init__(self, filename: str, mode: str) -> None:
-            self.__file = open(file=filename, mode=mode)
-
-        def seek(self, offset: int) -> None:
-            self.__file.seek(offset)
-
-        def tell(self) -> int:
-            return self.__file.tell()
-
-        def read(self, size: Optional[int] = None) -> None:
-            if size is None:
-                return self.__file.read()
-            return self.__file.read(size)
-        
-        def write(self, chunk: bytes) -> None:
-            self.__file.write(chunk)
-        
-        def flush(self) -> None:
-            self.__file.flush()
-
-        def close(self):
-            self.__file.close()
-            
-
-    @staticmethod
-    def get_mock_methods() -> dict[str, Mock]:
-        '''
-        Returns a dictionary containing all the \
-        methods that are to be mocked.
-        '''
-        return {
-            'paramiko.SSHClient.load_host_keys': Mock(),
-            'paramiko.SSHClient.get_host_keys': Mock(),
-            'paramiko.SSHClient.connect': Mock(),
-            'paramiko.SSHClient.close': Mock(),
-            'paramiko.SSHClient.open_sftp': Mock(return_value=(MockSFTPClient())),
-        }
-
-    @simulate_latency
-    def stat(self, path: str) -> paramiko.SFTPAttributes:
-
-        if not os.path.exists(path):
-            raise FileNotFoundError()
-        
-        os_stats = os.stat(path=path)
-        stats = paramiko.SFTPAttributes()
-        stats.filename = path.split(SEPARATOR)[-1]
-        stats.st_mode = os_stats.st_mode
-        stats.st_size = os_stats.st_size
-        return stats
-
-    @simulate_latency
-    def mkdir(self, path: str):
-        os.makedirs(name=path)
-
-    @simulate_latency
-    def listdir_attr(self, path: str) -> list[paramiko.SFTPAttributes]:
-        return [self.stat(join_paths(path, f)) for f in sorted(os.listdir(path=path))]
-    
-    @simulate_latency
-    def open(self, filename: str, mode: str) -> MockSFTPFile:
-        return MockSFTPClient.MockSFTPFile(filename, mode)
-
-    @simulate_latency
-    def close(self):
-        pass
-
-
 class MockContainerClient():
 
     class MockBlobProperties():
@@ -776,33 +706,25 @@ class TestLocalFile(unittest.TestCase):
 class TestRemoteFile(unittest.TestCase):
 
     @staticmethod
-    def build_file(path: str = ABS_FILE_PATH, cache: bool = False) -> RemoteFile:
+    def build_file(
+        path: str = f"/{REL_FILE_PATH}",
+        cache: bool = False
+    ) -> RemoteFile:
         return RemoteFile(**{
-            'auth': get_remote_auth_instance(hostname=HOST),
+            'auth': get_remote_auth_instance(),
             'path': path,
             'cache': cache
         })
 
-    @classmethod
-    def setUpClass(cls):
-        super(TestRemoteFile, cls).setUpClass()  
-        for k, v in MockSFTPClient.get_mock_methods().items():
-            patch(k, v).start()
-
-    @classmethod
-    def tearDownClass(cls):
-        super(TestRemoteFile, cls).tearDownClass()
-        patch.stopall()
-
     def test_constructor(self):
         with self.build_file() as file:
-            self.assertEqual(file.get_path(), ABS_FILE_PATH)
+            self.assertEqual(file.get_path(), f"/{REL_FILE_PATH}")
 
     def test_constructor_on_invalid_path_error(self):
         self.assertRaises(InvalidPathError, self.build_file, path="NON_EXISTING_PATH")
 
     def test_constructor_on_invalid_file_error(self):
-        self.assertRaises(InvalidFileError, self.build_file, path=to_abs(REL_DIR_PATH))
+        self.assertRaises(InvalidFileError, self.build_file, path=f"/{REL_DIR_PATH}")
 
     def test_get_name(self):
         with self.build_file() as file:
@@ -814,7 +736,7 @@ class TestRemoteFile(unittest.TestCase):
 
     def test_get_uri(self):
         with self.build_file() as file:
-            self.assertEqual(file.get_uri(), f"sftp://{HOST}/{ABS_FILE_PATH.removeprefix(os.sep)}")
+            self.assertEqual(file.get_uri(), f"sftp://{HOST}/{REL_FILE_PATH.removeprefix(os.sep)}")
 
     def test_get_metadata(self):
         with self.build_file() as file:
@@ -2520,25 +2442,22 @@ class TestLocalDir(unittest.TestCase):
 
 class TestRemoteDir(unittest.TestCase):
 
-    @classmethod
-    def setUpClass(cls):
-        super(TestRemoteDir, cls).setUpClass()  
-        for k, v in MockSFTPClient.get_mock_methods().items():
-            patch(k, v).start()
-
-    @classmethod
-    def tearDownClass(cls):
-        super(TestRemoteDir, cls).tearDownClass()  
-        patch.stopall()
+    @staticmethod
+    def get_abs_contents(recursively: bool):
+        return [
+            join_paths('/', REL_DIR_PATH, p) for p in (
+                RECURSIVE_CONTENTS if recursively else CONTENTS
+            )
+        ]
     
     @staticmethod
     def build_dir(
-        path: str = ABS_DIR_PATH,
+        path: str = f"/{REL_DIR_PATH}",
         cache: bool = False,
         create_if_missing: bool = False
     ) -> RemoteDir:
         return RemoteDir(**{
-            'auth': get_remote_auth_instance(hostname=HOST),
+            'auth': get_remote_auth_instance(),
             'path': path,
             'cache': cache,
             'create_if_missing': create_if_missing
@@ -2546,11 +2465,11 @@ class TestRemoteDir(unittest.TestCase):
     
     def test_constructor(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_path(), ABS_DIR_PATH)
+            self.assertEqual(dir.get_path(), f"/{REL_DIR_PATH}")
 
     def test_constructor_on_create_if_missing(self):
-        dir_path = to_abs(f"{TEST_FILES_DIR}{SEPARATOR}NON_EXISTING_DIR/")
-        with self.build_dir(path=dir_path, create_if_missing=True) as _:
+        dir_path = f"{TEST_FILES_DIR}{SEPARATOR}NON_EXISTING_DIR/"
+        with self.build_dir(path=f"/{dir_path}", create_if_missing=True) as _:
             self.assertTrue(os.path.isdir(dir_path))
         os.rmdir(dir_path)
 
@@ -2561,7 +2480,7 @@ class TestRemoteDir(unittest.TestCase):
         self.assertRaises(InvalidPathError, self.build_dir, path="NON_EXISTING_PATH")
 
     def test_constructor_on_invalid_directory_error(self):
-        self.assertRaises(InvalidDirectoryError, self.build_dir, path=ABS_DIR_FILE_PATH)
+        self.assertRaises(InvalidDirectoryError, self.build_dir, path=f"/{REL_DIR_FILE_PATH}")
 
     def test_get_hostname(self):
         with self.build_dir() as dir:
@@ -2573,18 +2492,18 @@ class TestRemoteDir(unittest.TestCase):
 
     def test_get_uri(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_uri(), f"sftp://{HOST}/{ABS_DIR_PATH.removeprefix(os.sep)}")
+            self.assertEqual(dir.get_uri(), f"sftp://{HOST}/{REL_DIR_PATH.removeprefix(os.sep)}")
             
     def test_set_and_get_metadata(self):
         with self.build_dir() as dir:
-            file_path = ABS_DIR_FILE_PATH
+            file_path = f'/{REL_DIR_FILE_PATH}'
             metadata = {'a': '1'}
             dir.set_metadata(file_path=file_path, metadata=metadata)
             self.assertEqual(dir.get_metadata(file_path=file_path), metadata)
 
     def test_get_metadata(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.get_metadata(file_path=ABS_DIR_FILE_PATH), {})
+            self.assertEqual(dir.get_metadata(file_path=f'/{REL_DIR_FILE_PATH}'), {})
 
     def test_get_metadata_on_invalid_file_error(self):
         with self.build_dir() as dir:
@@ -2616,7 +2535,7 @@ class TestRemoteDir(unittest.TestCase):
 
     def test_path_exists(self):
         with self.build_dir() as dir:
-            self.assertEqual(dir.path_exists(ABS_DIR_FILE_PATH), True)
+            self.assertEqual(dir.path_exists(f"/{REL_DIR_FILE_PATH}"), True)
 
     def test_path_not_exists(self):
         with self.build_dir() as dir:
@@ -2630,7 +2549,7 @@ class TestRemoteDir(unittest.TestCase):
         with self.build_dir() as dir:
             self.assertEqual(
                 dir.get_contents(show_abs_path=True),
-                get_abs_contents(recursively=False))
+                self.get_abs_contents(recursively=False))
         
     def test_get_contents_on_recursively(self):
         with self.build_dir() as dir:
@@ -2642,7 +2561,7 @@ class TestRemoteDir(unittest.TestCase):
         with self.build_dir() as dir:
             self.assertEqual(
                 dir.get_contents(show_abs_path=True, recursively=True),
-                get_abs_contents(recursively=True))
+                self.get_abs_contents(recursively=True))
             
     def test_traverse(self):
         with self.build_dir() as dir:
@@ -2652,7 +2571,7 @@ class TestRemoteDir(unittest.TestCase):
         with self.build_dir() as dir:
             self.assertEqual(
                 list(dir.traverse(show_abs_path=True)),
-                get_abs_contents(recursively=False))
+                self.get_abs_contents(recursively=False))
         
     def test_traverse_on_recursively(self):
         with self.build_dir() as dir:
@@ -2664,7 +2583,7 @@ class TestRemoteDir(unittest.TestCase):
         with self.build_dir() as dir:
             self.assertEqual(
                 list(dir.traverse(show_abs_path=True, recursively=True)),
-                get_abs_contents(recursively=True))
+                self.get_abs_contents(recursively=True))
             
     def test_ls(self):
         with (
@@ -2692,7 +2611,7 @@ class TestRemoteDir(unittest.TestCase):
 
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n' + '\n'.join(get_abs_contents(recursively=False)) + '\n'
+            ls_expected_output = '\n' + '\n'.join(self.get_abs_contents(recursively=False)) + '\n'
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_ls_on_recursively(self):
@@ -2720,7 +2639,7 @@ class TestRemoteDir(unittest.TestCase):
             
             sys.stdout = sys.__stdout__
 
-            ls_expected_output = '\n' + ABS_DIR_PATH + LS_RECURSIVE_OUTPUT
+            ls_expected_output = '\n/' + REL_DIR_PATH + LS_RECURSIVE_OUTPUT
             self.assertEqual(stdo.getvalue(), ls_expected_output)
 
     def test_count(self):
@@ -2861,7 +2780,7 @@ class TestRemoteDir(unittest.TestCase):
     @create_tmp_dir
     def test_transfer_to_on_include_metadata_set_to_false(self, tmp_dir_path):
         # Set metadata for a directory's file.
-        filename, metadata = ABS_DIR_FILE_PATH, {'1': '1'}
+        filename, metadata = f'/{REL_DIR_FILE_PATH}', {'1': '1'}
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
             # Create a temporary dictionary.
@@ -2871,12 +2790,12 @@ class TestRemoteDir(unittest.TestCase):
             dir.transfer_to(dst=tmp_dir, include_metadata=False)
         # Assert that no metadata have been transfered.
         self.assertEqual(tmp_dir.get_metadata(
-            file_path=filename.replace(ABS_DIR_PATH, '')), {})
+            file_path=filename.replace(f'/{REL_DIR_PATH}', '')), {})
 
     @create_tmp_dir
     def test_transfer_to_on_include_metadata_set_to_true(self, tmp_dir_path):
         # Set metadata for a directory's file.
-        filename, metadata = ABS_DIR_FILE_PATH, {'1': '1'}
+        filename, metadata = f'/{REL_DIR_FILE_PATH}', {'1': '1'}
         with self.build_dir() as dir:
             dir.set_metadata(file_path=filename, metadata=metadata)
             # Create a temporary dictionary.
@@ -2887,7 +2806,7 @@ class TestRemoteDir(unittest.TestCase):
         # Assert the file's metadata are the same.
         self.assertEqual(
             tmp_dir.get_metadata(
-                file_path=filename.replace(ABS_DIR_PATH, '')),
+                file_path=filename.replace(f'/{REL_DIR_PATH}', '')),
             metadata)
                 
     @create_tmp_dir
@@ -2895,7 +2814,9 @@ class TestRemoteDir(unittest.TestCase):
         # Get source file.
         src_file = TestLocalFile.build_file()
         # Create a temporary "remote" dictionary.
-        with self.build_dir(path=tmp_dir_path) as remote_dir:
+        with self.build_dir(
+            path=tmp_dir_path.replace(f"{ABS_DIR_PATH.rstrip('dir/')}/", f"/{REL_DIR_PATH.rstrip('dir/')}/")
+        ) as remote_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=remote_dir)
             # Confirm that file was indeed copied.
@@ -2911,7 +2832,9 @@ class TestRemoteDir(unittest.TestCase):
         # Get source file.
         src_file = TestLocalFile.build_file()
         # Create a temporary "remote" dictionary.
-        with self.build_dir(path=tmp_dir_path) as remote_dir:
+        with self.build_dir(
+            path=tmp_dir_path.replace(f"{ABS_DIR_PATH.rstrip('dir/')}/", f"/{REL_DIR_PATH.rstrip('dir/')}/")
+        ) as remote_dir:
             # Copy file into dir.
             src_file.transfer_to(dst=remote_dir, chunk_size=1)
             # Confirm that file was indeed copied.
@@ -2925,7 +2848,7 @@ class TestRemoteDir(unittest.TestCase):
     def test_get_file(self):
         with self.build_dir() as dir:
             file = dir.get_file(DIR_FILE_NAME)
-            self.assertEqual(file.get_path(), ABS_DIR_FILE_PATH)
+            self.assertEqual(file.get_path(), f'/{REL_DIR_FILE_PATH}')
 
     def test_get_file_on_invalid_path_error(self):
         with self.build_dir() as dir:
@@ -2938,7 +2861,7 @@ class TestRemoteDir(unittest.TestCase):
     def test_get_subdir(self):
         with self.build_dir() as dir:
             subdir = dir.get_subdir(DIR_SUBDIR_NAME)
-            self.assertEqual(subdir.get_path(), ABS_DIR_SUBDIR_PATH)
+            self.assertEqual(subdir.get_path(), f'/{REL_DIR_SUBDIR_PATH}')
 
     def test_get_subdir_on_invalid_path_error(self):
         with self.build_dir() as dir:
