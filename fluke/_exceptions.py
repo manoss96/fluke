@@ -140,25 +140,6 @@ class ContainerNotFoundError(Exception):
         super().__init__(msg)
 
 
-class UnknownKeyTypeError(Exception):
-    '''
-    This exception is thrown whenever the user provides \
-    an unknown public key type.
-
-    :param str key_type: The type of the key that was provided.
-    '''
-
-    def __init__(self, key_type: str):
-        '''
-        This exception is thrown whenever the user provides \
-        an unknown public key type.
-
-        :param str key_type: The type of the key that was provided.
-        '''
-        msg = f'Key type "{key_type}" is not supported.'
-        super().__init__(msg)
-
-
 class OverwriteError(Exception):
     '''
     This exception is thrown whenever the user tries \

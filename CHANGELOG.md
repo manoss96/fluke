@@ -32,6 +32,27 @@ All notable changes to this project will be documented in this file.
 - Method ``Dir.ls`` will now print a prettier output when
   parameter ``recursively`` has been set to ``True``.
   (https://github.com/manoss96/fluke/issues/50)
+
+- Class constructor ``fluke.auth.RemoteAuth`` no longer receives
+  string parameters ``public_key`` and ``key_type``. Instead, it
+  receives a single ``public_key`` parameter of type
+  ``RemoteAuth.PublicKey`` which can be generated via one of
+  the ``RemoteAuth.PublicKey`` class' "generate" methods.
+  (https://github.com/manoss96/fluke/issues/53)
+
+- Any contents of ``fluke.storage.RemoteDir`` will now be
+  displayed sorted by an ascending order no matter the
+  underlying remote system.
+  (https://github.com/manoss96/fluke/issues/53)
+
+
+### Fixed
+
+- Fixed issue where it was impossible to establish a connection
+  to a remote host if their public key had been previously
+  added to the system's "known_hosts" file, though their
+  public key had been changed since then.
+  (https://github.com/manoss96/fluke/issues/53)
   
 
 ## [0.4.1] - 2023/07/25

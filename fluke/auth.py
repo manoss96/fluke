@@ -19,17 +19,98 @@ class RemoteAuth():
     remote machine via the SSH protocol.
     '''
 
-    class KeyType(_Enum):
+
+    class PublicKey():
         '''
-        This enum-class represents various types \
-        of SSH keys.
+        This class is used in order to generate a \
+        keys in case you need to explicitly provide \
+        the public of the host to which you wish to \
+        establish a connection.
         '''
-        SSH_RSA = "ssh-rsa"
-        SSH_DSS = "ssh-dss"
-        SSH_ED25519 = "ssh-ed25519"
-        ECDSA_SHA2_NISTP256 = "ecdsa-sha2-nistp256"
-        ECDSA_SHA2_NISTP384 = "ecdsa-sha2-nistp384"
-        ECDA_SHA_NISTP521 = "ecdsa-sha2-nistp521"
+
+        class _KeyType(_Enum):
+            '''
+            This enum-class represents various types \
+            of SSH keys.
+            '''
+            SSH_RSA = "ssh-rsa"
+            SSH_DSS = "ssh-dss"
+            SSH_ED25519 = "ssh-ed25519"
+            ECDSA_SHA2_NISTP256 = "ecdsa-sha2-nistp256"
+            ECDSA_SHA2_NISTP384 = "ecdsa-sha2-nistp384"
+            ECDSA_SHA2_NISTP521 = "ecdsa-sha2-nistp521"
+
+        @classmethod
+        def generate_ssh_rsa_key(cls, key: str) -> 'RemoteAuth.PublicKey':
+            '''
+            Generates an SSH RSA key.
+
+            :param str key: The public key.
+            '''
+            pkey = cls()
+            pkey.key = key
+            pkey.type = cls._KeyType.SSH_RSA
+            return pkey
+        
+        @classmethod
+        def generate_ssh_dss_key(cls, key: str) -> 'RemoteAuth.PublicKey':
+            '''
+            Generates an SSH DSA key.
+
+            :param str key: The public key.
+            '''
+            pkey = cls()
+            pkey.key = key
+            pkey.type = cls._KeyType.SSH_DSS
+            return pkey
+        
+        @classmethod
+        def generate_ssh_ed25519_key(cls, key: str) -> 'RemoteAuth.PublicKey':
+            '''
+            Generates an SSH ED25519 key.
+
+            :param str key: The public key.
+            '''
+            pkey = cls()
+            pkey.key = key
+            pkey.type = cls._KeyType.SSH_ED25519
+            return pkey
+        
+        @classmethod
+        def generate_ecdsa_sha2_nistp256_key(cls, key: str) -> 'RemoteAuth.PublicKey':
+            '''
+            Generates an SHA2 NISTP256 key.
+
+            :param str key: The public key.
+            '''
+            pkey = cls()
+            pkey.key = key
+            pkey.type = cls._KeyType.ECDSA_SHA2_NISTP256
+            return pkey
+        
+        @classmethod
+        def generate_ecdsa_sha2_nistp384_key(cls, key: str) -> 'RemoteAuth.PublicKey':
+            '''
+            Generates an SHA2 NISTP384 key.
+
+            :param str key: The public key.
+            '''
+            pkey = cls()
+            pkey.key = key
+            pkey.type = cls._KeyType.ECDSA_SHA2_NISTP384
+            return pkey
+        
+        @classmethod
+        def generate_ecdsa_sha2_nistp521_key(cls, key: str) -> 'RemoteAuth.PublicKey':
+            '''
+            Generates an SHA2 NISTP521 key.
+
+            :param str key: The public key.
+            '''
+            pkey = cls()
+            pkey.key = key
+            pkey.type = cls._KeyType.ECDSA_SHA2_NISTP521
+            return pkey
 
 
     @classmethod
@@ -39,8 +120,7 @@ class RemoteAuth():
         username: str,
         password: str,
         port: int = 22,
-        public_key: _Optional[str] = None,
-        key_type: _Optional[KeyType] = None,
+        public_key: _Optional[PublicKey] = None,
         verify_host: bool = True
     )-> 'RemoteAuth':
         '''
@@ -53,10 +133,8 @@ class RemoteAuth():
         :param str password: The user's password.
         :param int port: The port to which you will be connecting. \
             Defaults to ``22``.
-        :param str | None public_key: The host's public SSH key. \
-            Defaults to ``None``.
-        :param KeyType | None key_type: The type of the host's \
-            public SSH key. Defaults to ``None``.
+        :param RemoteAuth.PublicKey | None public_key: The host's public \
+            SSH key. Defaults to ``None``.
         :param bool verify_host: Unless set to ``False``, a connection \
             can only be established if the host is known to the local \
             machine. Defaults to ``True``.
@@ -68,7 +146,6 @@ class RemoteAuth():
             'password': password,
             'port': port,
             'public_key': public_key,
-            'key_type': key_type if key_type is None else key_type.value,
             'verify_host': verify_host
         }  
         return auth
@@ -82,8 +159,7 @@ class RemoteAuth():
         pkey: str,
         passphrase: _Optional[str] = None,
         port: int = 22,
-        public_key: _Optional[str] = None,
-        key_type: _Optional[KeyType] = None,
+        public_key: _Optional[PublicKey] = None,
         verify_host: bool = True
     )-> 'RemoteAuth':
         '''
@@ -100,10 +176,8 @@ class RemoteAuth():
             encrypted. Defaults to ``None``.
         :param int port: The port to which you will be connecting. \
             Defaults to ``22``.
-        :param str | None public_key: The host's public SSH key. \
-            Defaults to ``None``.
-        :param KeyType | None key_type: The type of the host's \
-            public SSH key. Defaults to ``None``.
+        :param RemoteAuth.PublicKey | None public_key: The host's public \
+            SSH key. Defaults to ``None``.
         :param bool verify_host: Unless set to ``False``, a connection \
             can only be established if the host is known to the local \
             machine. Defaults to ``True``.
@@ -116,7 +190,6 @@ class RemoteAuth():
             'passphrase': passphrase,
             'port': port,
             'public_key': public_key,
-            'key_type': key_type if key_type is None else key_type.value,
             'verify_host': verify_host
         }  
         return auth

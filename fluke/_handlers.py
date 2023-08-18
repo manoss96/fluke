@@ -7,10 +7,11 @@ from typing import Optional as _Optional
 
 import boto3 as _boto3
 import paramiko as _prmk
-from google.cloud.storage import Client as _GCSClient
+from base64 import decodebytes as _decodebytes
+from botocore.exceptions import ClientError as _CE
 from azure.identity import ClientSecretCredential as _CSC
 from azure.storage.blob import ContainerClient as _ContainerClient
-from botocore.exceptions import ClientError as _CE
+from google.cloud.storage import Client as _GCSClient
 
 
 from .auth import AWSAuth as _AWSAuth
@@ -18,6 +19,11 @@ from .auth import AzureAuth as _AzureAuth
 from .auth import GCPAuth as _GCPAuth
 from .auth import RemoteAuth as _RemoteAuth
 from ._cache import CacheManager as _CacheManager
+from ._exceptions import BucketNotFoundError as _BNFE
+from ._exceptions import ContainerNotFoundError as _CNFE 
+from ._helper import join_paths as _join_paths
+from ._helper import infer_separator as _infer_sep
+from ._helper import relativize_path as _relativize
 from ._iohandlers import _FileReader
 from ._iohandlers import _FileWriter
 from ._iohandlers import LocalFileReader as _LocalFileReader
@@ -30,12 +36,6 @@ from ._iohandlers import AzureBlobReader as _AzureBlobReader
 from ._iohandlers import AzureBlobWriter as _AzureBlobWriter
 from ._iohandlers import GCPFileReader as _GCPFileReader
 from ._iohandlers import GCPFileWriter as _GCPFileWriter
-from ._exceptions import UnknownKeyTypeError as _UKTE
-from ._exceptions import BucketNotFoundError as _BNFE
-from ._exceptions import ContainerNotFoundError as _CNFE 
-from ._helper import join_paths as _join_paths
-from ._helper import infer_separator as _infer_sep
-from ._helper import relativize_path as _relativize
 
 
 class ClientHandler(_ABC):
@@ -606,41 +606,32 @@ class SSHClientHandler(ClientHandler):
         credentials = self.__auth.get_credentials()
 
         public_key = credentials.pop('public_key')
-        key_type = credentials.pop('key_type')
         verify_host = credentials.pop('verify_host')
 
         print(f"\nEstablishing connection to '{credentials['hostname']}'...")
 
-        # Load all known hosts.
-        ssh.load_system_host_keys()
-
-        # If 'verify_host' has been set to 'False',
-        # then automatically add any host to the list of
-        # known hosts.
-        if not verify_host:
-            ssh.set_missing_host_key_policy(_prmk.AutoAddPolicy)
-        # Else if 'public_key' and 'key_type' have been set,
-        # try verifying the host before adding them to the
-        # list of known hosts.
-        elif public_key is not None and key_type is not None:
-            if key_type == 'ssh-rsa':
-                key_builder = _prmk.RSAKey
-            elif key_type == 'ssh-dss':
-                key_builder = _prmk.DSSKey
-            elif key_type == 'ssh-ed25519':
-                key_builder = _prmk.Ed25519Key    
-            elif 'ecdsa-sha2' in key_type:
-                key_builder = _prmk.ECDSAKey
+        if public_key is None:
+            # If the host's public key has not been provided.
+            if verify_host:
+                # Either try to verify host from known hosts.
+                ssh.load_system_host_keys()
             else:
-                raise _UKTE(key_type=key_type)
-            
-            from base64 import decodebytes as _decodebytes
-
+                # Or ignore host verification all together.
+                ssh.set_missing_host_key_policy(_prmk.AutoAddPolicy)
+        else:
+            if public_key.type == _RemoteAuth.PublicKey._KeyType.SSH_RSA:
+                key_builder = _prmk.RSAKey
+            elif public_key.type == _RemoteAuth.PublicKey._KeyType.SSH_DSS:
+                key_builder = _prmk.DSSKey
+            elif public_key.type == _RemoteAuth.PublicKey._KeyType.SSH_ED25519:
+                key_builder = _prmk.Ed25519Key    
+            else:
+                key_builder = _prmk.ECDSAKey
             ssh.get_host_keys().add(
                 hostname=credentials['hostname'],
-                keytype=str(key_type),
+                keytype=str(public_key.type),
                 key=key_builder(data=_decodebytes(
-                    public_key.encode())))
+                    public_key.key.encode())))
             
         # If key-based authentication has been chosen,
         # then create a ``PKey`` instance.
@@ -815,7 +806,10 @@ class SSHClientHandler(ClientHandler):
 
                 if _is_dir(attr.st_mode):
                     try:
-                        for sub_attr in sftp.listdir_attr(path=abs_path):
+                        for sub_attr in sorted(
+                            sftp.listdir_attr(path=abs_path),
+                            key=lambda at: at.filename
+                        ):
                             yield from filter_obj(
                                 sftp=sftp,
                                 attr=sub_attr,
@@ -825,7 +819,10 @@ class SSHClientHandler(ClientHandler):
                 else:
                     yield abs_path
 
-            for attr in self.__sftp.listdir_attr(path=dir_path):
+            for attr in sorted(
+                self.__sftp.listdir_attr(path=dir_path),
+                key=lambda at: at.filename
+            ):
                 for file_path in filter_obj(
                     sftp=self.__sftp,
                     attr=attr,
@@ -837,7 +834,10 @@ class SSHClientHandler(ClientHandler):
                             child=file_path,
                             sep=sep))
         else:
-            for attr in self.__sftp.listdir_attr(path=dir_path):
+            for attr in sorted(
+                self.__sftp.listdir_attr(path=dir_path),
+                key=lambda at: at.filename
+            ):
                 path = attr.filename
                 if _is_dir(attr.st_mode):
                     path += sep
