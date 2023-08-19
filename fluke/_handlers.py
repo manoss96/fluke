@@ -21,6 +21,7 @@ from .auth import AzureAuth as _AzureAuth
 from .auth import GCPAuth as _GCPAuth
 from .auth import RemoteAuth as _RemoteAuth
 from ._cache import CacheManager as _CacheManager
+from ._cache import DirCache as _DirCache
 from ._exceptions import BucketNotFoundError as _BNFE
 from ._exceptions import ContainerNotFoundError as _CNFE 
 from ._helper import join_paths as _join_paths
@@ -60,7 +61,7 @@ class ClientHandler(_ABC):
             any fetched data to be cached for faster subsequent \
             access.
         '''
-        self.__cache_manager = _CacheManager() if cache else None
+        self.__cache_manager = _DirCache(sep='/') if cache else None
 
 
     def is_cacheable(self) -> bool:

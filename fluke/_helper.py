@@ -34,7 +34,6 @@ def relativize_path(parent: str, child: str, sep: str) -> str:
     :param str sep: The path separator used.
     '''
     return child.removeprefix(parent)
-    #return child.removeprefix(parent).removeprefix(sep)
 
 
 def infer_separator(path: str) -> str:
