@@ -20,7 +20,6 @@ from .auth import AWSAuth as _AWSAuth
 from .auth import AzureAuth as _AzureAuth
 from .auth import GCPAuth as _GCPAuth
 from .auth import RemoteAuth as _RemoteAuth
-from ._cache import CacheManager as _CacheManager
 from ._cache import DirCache as _DirCache
 from ._exceptions import BucketNotFoundError as _BNFE
 from ._exceptions import ContainerNotFoundError as _CNFE 
@@ -181,7 +180,7 @@ class ClientHandler(_ABC):
         if self.is_cacheable():
             # Grab content iterator from cache if it exists.
             if (iterator := self.__cache_manager.get_content_iterator(
-                path=dir_path,
+                dir_path=dir_path,
                 recursively=recursively,
                 include_dirs=include_dirs)
             ) is not None:
@@ -197,15 +196,16 @@ class ClientHandler(_ABC):
                     show_abs_path=True)
                 # Cache all contents.
                 self.__cache_manager.cache_contents(
-                    path=dir_path,
+                    dir_path=dir_path,
                     iterator=iterator,
                     recursively=recursively,
                     is_file=self.is_file)
                 # Reset iterator by grabbing it from cache.
                 iterator = self.__cache_manager.get_content_iterator(
-                    path=dir_path,
+                    dir_path=dir_path,
                     recursively=recursively,
                     include_dirs=include_dirs)
+                # Return (modified) iterator.
                 if show_abs_path:
                     return iterator
                 else:
