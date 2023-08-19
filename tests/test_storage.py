@@ -286,7 +286,6 @@ RECURSIVE_CONTENTS = [
     DIR_FILE_NAME,
     f'{DIR_SUBDIR_NAME}{DIR_SUBDIR_FILE_NAME}',
     f'{DIR_SUBDIR_NAME}file4.txt']
-
 LS_RECURSIVE_OUTPUT = """
 |__file2.txt
 |__subdir/

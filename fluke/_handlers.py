@@ -60,7 +60,6 @@ class ClientHandler(_ABC):
             any fetched data to be cached for faster subsequent \
             access.
         '''
-
         self.__cache_manager = _CacheManager() if cache else None
 
 
@@ -181,7 +180,7 @@ class ClientHandler(_ABC):
         if self.is_cacheable():
             # Grab content iterator from cache if it exists.
             if (iterator := self.__cache_manager.get_content_iterator(
-                dir_path=dir_path,
+                path=dir_path,
                 recursively=recursively,
                 include_dirs=include_dirs)
             ) is not None:
@@ -190,21 +189,20 @@ class ClientHandler(_ABC):
             # Else...
             else:
                 # Fetch content iterator.
-                # NOTE: Set "show_abs_path" to "True" so that all
-                #       contents are cached via their absolute paths.
+                # NOTE: Set "show_abs_path" to "True".
                 iterator = self._traverse_dir_impl(
                     dir_path=dir_path,
                     recursively=recursively,
                     show_abs_path=True)
                 # Cache all contents.
                 self.__cache_manager.cache_contents(
-                    dir_path=dir_path,
+                    path=dir_path,
                     iterator=iterator,
                     recursively=recursively,
                     is_file=self.is_file)
                 # Reset iterator by grabbing it from cache.
                 iterator = self.__cache_manager.get_content_iterator(
-                    dir_path=dir_path,
+                    path=dir_path,
                     recursively=recursively,
                     include_dirs=include_dirs)
                 if show_abs_path:
