@@ -1,5 +1,5 @@
-from enum import Enum
-from itertools import chain as _chain
+from enum import Enum as _Enum
+from typing import Any as _Any
 from typing import Optional as _Optional
 from typing import Iterator as _Iterator
 from typing import Callable as _Callable
@@ -63,7 +63,7 @@ class DirCache():
         is inferred.
     '''
 
-    class State(Enum):
+    class State(_Enum):
         NOT_TRAVERSED = 0
         TOP_LEVEL_TRAVERSED = 1
         RECURSIVELY_TRAVERSED = 2
@@ -87,7 +87,7 @@ class DirCache():
         self.purge()
 
 
-    def remove_sep_prefix(func: _Callable):
+    def remove_sep_prefix(func: _Callable) -> _Any:
         '''
         A decorator function used for removing \
         any seperator prefixes from paths provided \
@@ -167,7 +167,7 @@ class DirCache():
         Caches the provided metadata.
 
         :param str path: The file's absolute path.
-        :param dict[str, str]: The file's metadata.
+        :param dict[str, str] metadata: The file's metadata.
 
         :note: This method goes on to creates any \
             necessary ``FileCache/DirCache`` instances \
@@ -205,7 +205,10 @@ class DirCache():
         if (
             cache is None or
             cache.__state == __class__.State.NOT_TRAVERSED or
-            (recursively and cache.__state != __class__.State.RECURSIVELY_TRAVERSED)
+            (
+                recursively and
+                cache.__state != __class__.State.RECURSIVELY_TRAVERSED
+            )
         ):
             return None
     
@@ -213,10 +216,6 @@ class DirCache():
             dc: DirCache,
             recursively: bool
         ) -> _Iterator[str]:
-            '''
-            Iterates through the contents of the \
-            provided ``DirCache`` instance.
-            '''
             if recursively:
                 for entity in dc.__files:
                         yield entity
@@ -317,12 +316,14 @@ class DirCache():
         corresponds to the provided path, or ``None``
         if no such instance exists.
 
-        :param str path: The file's path relative \
-            to the path of this ``DirCache`` instance's \
-            underlying directory.
+        :param str path: The file's absolute path.
         :param int level: A helping variable that prevents \
             this method from recursing indefinitely. Defaults \
             to ``1``.
+
+        :note: The provided path must have had any leading \
+            separators removed prior to being passes to this \
+            method.
         '''
         entities = path.split(self.__sep)
 
@@ -349,12 +350,14 @@ class DirCache():
         corresponds to the provided path, or ``None``
         if no such instance exists.
 
-        :param str path: The directory's path relative \
-            to the path of this ``DirCache`` instance's \
-            underlying directory.
+        :param str path: The directory's absolute path.
         :param int level: A helping variable that prevents \
             this method from recursing indefinitely. Defaults \
             to ``1``.
+
+        :note: The provided path must have had any leading \
+            separators removed prior to being passes to this \
+            method.
         '''
         if path == '':
             return self
@@ -381,12 +384,14 @@ class DirCache():
         path, along with any necessary ``DirCache`` instances. \
         Returns the created ``FileCache`` instance.
 
-        :param str path: The file's path relative \
-            to the path of this ``DirCache`` instance's \
-            underlying directory.
+        :param str path: The file's absolute path.
         :param int level: A helping variable that prevents \
             this method from recursing indefinitely. Defaults \
             to ``1``.
+
+        :note: The provided path must have had any leading \
+            separators removed prior to being passes to this \
+            method.
         '''
         entities = path.split(self.__sep)
 
@@ -418,12 +423,14 @@ class DirCache():
         that are deemed as necessary. Returns the created \
         ``DirCache`` instance.
 
-        :param str path: The directory's path relative \
-            to the path of this ``DirCache`` instance's \
-            underlying directory.
+        :param str path: The directory's absolute path.
         :param int level: A helping variable that prevents \
             this method from recursing indefinitely. Defaults \
             to ``1``.
+
+        :note: The provided path must have had any leading \
+            separators removed prior to being passes to this \
+            method.
         '''        
         entities = path.split(self.__sep)
         current = self.__sep.join(entities[:level]) + self.__sep

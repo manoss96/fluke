@@ -21,6 +21,9 @@ All notable changes to this project will be documented in this file.
   an object's metadata during instantiation.
   (https://github.com/manoss96/fluke/issues/46)
 
+- Added method ``cat`` to *File* API that can be used
+  in order to print the contents of a file as text.
+  (https://github.com/manoss96/fluke/issues/58)
 
 ### Changed
 
