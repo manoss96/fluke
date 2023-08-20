@@ -1,11 +1,7 @@
-import os
-import io
-import sys
 import time
-import shutil
 import unittest
-from typing import Optional, Iterator, Callable
 from unittest.mock import Mock, patch
+from typing import Iterator, Callable
 
 
 import boto3
@@ -216,16 +212,18 @@ class TestAmazonSQSQueue(unittest.TestCase):
     def purge(self) -> None:
         self.QUEUE.purge()
 
-    def setUp(self):
-        self.MOCK_SQS.start()
-        self.QUEUE = boto3.resource(
+    @classmethod
+    def setUpClass(cls):
+        cls.MOCK_SQS.start()
+        cls.QUEUE = boto3.resource(
             'sqs',
             endpoint_url="https://sqs.eu-west-1.amazonaws.com",
             region_name="eu-west-1"
         ).create_queue(QueueName=QUEUE)
 
-    def tearDown(self):
-        self.MOCK_SQS.stop()
+    @classmethod
+    def tearDownClass(cls):
+        cls.MOCK_SQS.stop()
 
     def test_is_open_on_True(self):
         with self.build_queue() as queue:
@@ -349,7 +347,7 @@ class TestAzureStorageQueue(unittest.TestCase):
                 try:
                     self.queue.delete_message(msg.id, msg.pop_recipt)
                     messages.append(msg.content)
-                except:
+                except Exception:
                     continue
             
         return messages
@@ -364,11 +362,13 @@ class TestAzureStorageQueue(unittest.TestCase):
     def purge(self) -> None:
         self.queue.clear_messages()
 
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
         for k, v in MockQueueClient.get_mock_methods().items():
             patch(k, v).start()
 
-    def tearDown(self):
+    @classmethod
+    def tearDownClass(cls):
         patch.stopall()
 
     @staticmethod

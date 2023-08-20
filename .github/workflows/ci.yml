@@ -20,6 +20,30 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Set up fake SSH server
+        run: |
+          docker run -d \
+          -p 2222:2222 \
+          --env PUID=$(id -u $(whoami)) \
+          --env PGID=$(id -g $(whoami)) \
+          --env PASSWORD_ACCESS=true \
+          --env USER_NAME=test \
+          --env USER_PASSWORD=test \
+          --mount type=bind,\
+          src=${{ github.workspace }}/tests/test_files,\
+          dst=/tests/test_files \
+          linuxserver/openssh-server:amd64-version-9.3_p2-r0
+
+      - name: Set up fake GCS server
+        run: |
+          docker run -d \
+          -p 4443:4443 \
+          --mount type=bind,\
+          src=${{ github.workspace }}/tests/test_files,\
+          dst=/data/bucket/tests/test_files \
+          fsouza/fake-gcs-server:1.47.0 \
+          -external-url https://127.0.0.1:4443
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:

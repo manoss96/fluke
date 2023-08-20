@@ -2,6 +2,81 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2023/08/20
+
+### Added
+
+- There now exist classes ``fluke.storage.GCPStorageFile``
+  and ``fluke.storage.GCPStorageDir`` in order to interact
+  with Google Cloud Storage buckets. Furthermore, a class
+  ``fluke.auth.GCPAuth`` has been added in order to be able
+  to authenticate with GCP.
+  (https://github.com/manoss96/fluke/issues/10)
+
+- Added a new dependency: ``google-cloud-storage==2.10.0``
+  (https://github.com/manoss96/fluke/issues/10)
+
+- Class constructors ``fluke.storage.{AmazonS3File,AzureBlobFile,GCPStorageFile}``
+  now receive a ``load_metadata`` parameter that can be used in order to load
+  an object's metadata during instantiation.
+  (https://github.com/manoss96/fluke/issues/46)
+
+- Added method ``cat`` to *File* API that can be used
+  in order to print the contents of a file as text.
+  (https://github.com/manoss96/fluke/issues/58)
+
+### Changed
+
+- Methods ``Dir/File.transfer_to`` will now throw an ``InvalidChunkSizeError``
+  exceptions if a chunk size that is not supported by the "destination"
+  directory has been specified.
+  (https://github.com/manoss96/fluke/issues/48)
+
+- Method ``Dir.ls`` will now print a prettier output when
+  parameter ``recursively`` has been set to ``True``.
+  (https://github.com/manoss96/fluke/issues/50)
+
+- Class constructor ``fluke.auth.RemoteAuth`` no longer receives
+  string parameters ``public_key`` and ``key_type``. Instead, it
+  receives a single ``public_key`` parameter of type
+  ``RemoteAuth.PublicKey`` which can be generated via one of
+  the ``RemoteAuth.PublicKey`` class' "generate" methods.
+  (https://github.com/manoss96/fluke/issues/53)
+
+- Any contents of ``fluke.storage.RemoteDir`` will now be
+  displayed sorted by an ascending order no matter the
+  underlying remote system.
+  (https://github.com/manoss96/fluke/issues/53)
+
+- ``fluke.storage.RemoteDir`` will not follow any symbolic
+  links from now on.
+  (https://github.com/manoss96/fluke/issues/60)
+
+
+### Fixed
+
+- Fixed issue where referencing the root directory ``/``
+  through either ``fluke.storage.LocalDir`` or
+  ``fluke.storage.RemoteDir`` resulted in an
+  ``InvalidPathError`` exception being raised.
+  (https://github.com/manoss96/fluke/issues/52)
+
+- Fixed issue where it was impossible to establish a connection
+  to a remote host if their public key had been previously
+  added to the system's "known_hosts" file, though their
+  public key had been changed since then.
+  (https://github.com/manoss96/fluke/issues/53)
+
+- Fixed bug that occurred when caching the root directory
+  of any storage system.
+  (https://github.com/manoss96/fluke/issues/56)
+
+- Fixed bug where activating the cache on ``fluke.storage.RemoteDir``
+  would sometimes result in getting different contents due to
+  symbolic linked being followed.
+  (https://github.com/manoss96/fluke/issues/60)
+  
+
 ## [0.4.1] - 2023/07/25
 
 ### Changed

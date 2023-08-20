@@ -99,7 +99,8 @@ class NonStringMetadataValueError(Exception):
 class BucketNotFoundError(Exception):
     '''
     This exception is thrown whenever the user provides \
-    an Amazon S3 bucket that does not exist.
+    an Amazon S3 / Google Cloud Storage bucket that does \
+    not exist.
 
     :param str bucket: The name of the bucket that \
         was provided by the user.
@@ -108,7 +109,8 @@ class BucketNotFoundError(Exception):
     def __init__(self, bucket: str):
         '''
         This exception is thrown whenever the user provides \
-        an Amazon S3 bucket that does not exist.
+        an Amazon S3 / Google Cloud Storage bucket that does \
+        not exist.
 
         :param str bucket: The name of the bucket that \
             was provided by the user.
@@ -138,25 +140,6 @@ class ContainerNotFoundError(Exception):
         super().__init__(msg)
 
 
-class UnknownKeyTypeError(Exception):
-    '''
-    This exception is thrown whenever the user provides \
-    an unknown public key type.
-
-    :param str key_type: The type of the key that was provided.
-    '''
-
-    def __init__(self, key_type: str):
-        '''
-        This exception is thrown whenever the user provides \
-        an unknown public key type.
-
-        :param str key_type: The type of the key that was provided.
-        '''
-        msg = f'Key type "{key_type}" is not supported.'
-        super().__init__(msg)
-
-
 class OverwriteError(Exception):
     '''
     This exception is thrown whenever the user tries \
@@ -178,4 +161,24 @@ class OverwriteError(Exception):
         '''
         msg = f'There already exists file "{file_path}". '
         msg += 'Try setting "overwrite" to "True".'
+        super().__init__(msg)
+
+
+class InvalidChunkSizeError(Exception):
+    '''
+    This exception is thrown whenever the user tries \
+    to upload a file to the cloud in chunks, whose size \
+    is not supported by the cloud provider.
+
+    :param str msg: The message to be displayed.
+    '''
+
+    def __init__(self, msg: str):
+        '''
+        This exception is thrown whenever the user tries \
+        to upload a file to the cloud in chunks, whose size \
+        is not supported by the cloud provider.
+
+        :param str msg: The message to be displayed.
+        '''
         super().__init__(msg)

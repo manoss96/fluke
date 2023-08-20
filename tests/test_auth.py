@@ -1,6 +1,6 @@
 import unittest
 
-from fluke.auth import RemoteAuth, AWSAuth, AzureAuth
+from fluke.auth import RemoteAuth, AWSAuth, AzureAuth, GCPAuth
 
 
 class TestRemoteAuth(unittest.TestCase):
@@ -12,7 +12,6 @@ class TestRemoteAuth(unittest.TestCase):
     PASSPHRASE = "PASSPHRASE"
     PORT = 22
     PUBLIC_KEY = "PUBLIC_KEY"
-    KEY_TYPE = RemoteAuth.KeyType.SSH_RSA
     VERIFY_HOST = False
 
     def test_get_credentials_from_key(self):
@@ -22,12 +21,10 @@ class TestRemoteAuth(unittest.TestCase):
             'pkey': self.PKEY,
             'passphrase': self.PASSPHRASE,
             'port': self.PORT,
-            'public_key': self.PUBLIC_KEY,
-            'key_type': self.KEY_TYPE,
+            'public_key': None,
             'verify_host': self.VERIFY_HOST 
         }
         auth = RemoteAuth.from_key(**credentials)
-        credentials.update({'key_type': credentials['key_type'].value})
         self.assertEqual(
             auth.get_credentials(),
             credentials)
@@ -38,29 +35,128 @@ class TestRemoteAuth(unittest.TestCase):
             'username': self.USERNAME,
             'password': self.PASSWORD,
             'port': self.PORT,
-            'public_key': self.PUBLIC_KEY,
-            'key_type': self.KEY_TYPE,
+            'public_key': None,
             'verify_host': self.VERIFY_HOST 
         }
         auth = RemoteAuth.from_password(**credentials)
-        credentials.update({'key_type': credentials['key_type'].value})
         self.assertEqual(
             auth.get_credentials(),
             credentials)
+        
+    def test_get_credentials_on_public_key_value(self):
+        credentials = {
+            'hostname': self.HOST,
+            'username': self.USERNAME,
+            'pkey': self.PKEY,
+            'passphrase': self.PASSPHRASE,
+            'port': self.PORT,
+            'public_key': RemoteAuth.PublicKey.generate_ssh_rsa_key(self.PUBLIC_KEY),
+            'verify_host': self.VERIFY_HOST 
+        }
+        auth = RemoteAuth.from_key(**credentials)
+        self.assertEqual(auth.get_credentials()['public_key'].key, self.PUBLIC_KEY)
+
+    def test_get_credentials_on_public_key_ssh_rsa_type(self):
+        credentials = {
+            'hostname': self.HOST,
+            'username': self.USERNAME,
+            'pkey': self.PKEY,
+            'passphrase': self.PASSPHRASE,
+            'port': self.PORT,
+            'public_key': RemoteAuth.PublicKey.generate_ssh_rsa_key(self.PUBLIC_KEY),
+            'verify_host': self.VERIFY_HOST 
+        }
+        auth = RemoteAuth.from_key(**credentials)
+        self.assertEqual(
+            auth.get_credentials()['public_key'].type,
+            RemoteAuth.PublicKey._KeyType.SSH_RSA)
+        
+    def test_get_credentials_on_public_key_ssh_dss_type(self):
+        credentials = {
+            'hostname': self.HOST,
+            'username': self.USERNAME,
+            'pkey': self.PKEY,
+            'passphrase': self.PASSPHRASE,
+            'port': self.PORT,
+            'public_key': RemoteAuth.PublicKey.generate_ssh_dss_key(self.PUBLIC_KEY),
+            'verify_host': self.VERIFY_HOST 
+        }
+        auth = RemoteAuth.from_key(**credentials)
+        self.assertEqual(
+            auth.get_credentials()['public_key'].type,
+            RemoteAuth.PublicKey._KeyType.SSH_DSS)
+        
+    def test_get_credentials_on_public_key_ssh_ed25519_type(self):
+        credentials = {
+            'hostname': self.HOST,
+            'username': self.USERNAME,
+            'pkey': self.PKEY,
+            'passphrase': self.PASSPHRASE,
+            'port': self.PORT,
+            'public_key': RemoteAuth.PublicKey.generate_ssh_ed25519_key(self.PUBLIC_KEY),
+            'verify_host': self.VERIFY_HOST 
+        }
+        auth = RemoteAuth.from_key(**credentials)
+        self.assertEqual(
+            auth.get_credentials()['public_key'].type,
+            RemoteAuth.PublicKey._KeyType.SSH_ED25519)
+        
+    def test_get_credentials_on_public_key_ecdsa_sha2_nistp256_type(self):
+        credentials = {
+            'hostname': self.HOST,
+            'username': self.USERNAME,
+            'pkey': self.PKEY,
+            'passphrase': self.PASSPHRASE,
+            'port': self.PORT,
+            'public_key': RemoteAuth.PublicKey.generate_ecdsa_sha2_nistp256_key(self.PUBLIC_KEY),
+            'verify_host': self.VERIFY_HOST 
+        }
+        auth = RemoteAuth.from_key(**credentials)
+        self.assertEqual(
+            auth.get_credentials()['public_key'].type,
+            RemoteAuth.PublicKey._KeyType.ECDSA_SHA2_NISTP256)
+        
+    def test_get_credentials_on_public_key_ecdsa_sha2_nistp384_type(self):
+        credentials = {
+            'hostname': self.HOST,
+            'username': self.USERNAME,
+            'pkey': self.PKEY,
+            'passphrase': self.PASSPHRASE,
+            'port': self.PORT,
+            'public_key': RemoteAuth.PublicKey.generate_ecdsa_sha2_nistp384_key(self.PUBLIC_KEY),
+            'verify_host': self.VERIFY_HOST 
+        }
+        auth = RemoteAuth.from_key(**credentials)
+        self.assertEqual(
+            auth.get_credentials()['public_key'].type,
+            RemoteAuth.PublicKey._KeyType.ECDSA_SHA2_NISTP384)
+        
+    def test_get_credentials_on_public_key_ecdsa_sha2_nistp521_type(self):
+        credentials = {
+            'hostname': self.HOST,
+            'username': self.USERNAME,
+            'pkey': self.PKEY,
+            'passphrase': self.PASSPHRASE,
+            'port': self.PORT,
+            'public_key': RemoteAuth.PublicKey.generate_ecdsa_sha2_nistp521_key(self.PUBLIC_KEY),
+            'verify_host': self.VERIFY_HOST 
+        }
+        auth = RemoteAuth.from_key(**credentials)
+        self.assertEqual(
+            auth.get_credentials()['public_key'].type,
+            RemoteAuth.PublicKey._KeyType.ECDSA_SHA2_NISTP521)
         
     def test_get_credentials_on_default_port(self):
         credentials = {
             'hostname': self.HOST,
             'username': self.USERNAME,
             'password': self.PASSWORD,
-            'public_key': self.PUBLIC_KEY,
-            'key_type': self.KEY_TYPE,
+            'public_key': None,
             'verify_host': self.VERIFY_HOST
         }
         auth = RemoteAuth.from_password(**credentials)
         credentials.update({
-            'port': 22,
-            'key_type': credentials['key_type'].value
+            'port': 22
         })
         self.assertEqual(
             auth.get_credentials(),
@@ -112,6 +208,32 @@ class TestAzureAuth(unittest.TestCase):
         self.assertEqual(
             AzureAuth.from_conn_string(**credentials).get_credentials(),
             credentials)
+        
+
+class TestGCPAuth(unittest.TestCase):
+
+    PROJECT_ID = "PROJECT_ID"
+    CREDENTIALS = "PATH/TO/CREDENTIALS/FILE"
+        
+    def test_get_credentials_from_application_default_credentials(self):
+        self.assertEqual(
+            GCPAuth.from_application_default_credentials(**{
+                'project_id': self.PROJECT_ID,
+                'credentials': self.CREDENTIALS,
+            }).get_credentials(),
+            {
+                GCPAuth._PROJECT_ID: self.PROJECT_ID,
+                GCPAuth._APPLICATION_DEFAULT_CREDENTIALS: self.CREDENTIALS
+            })
+        
+    def test_get_credentials_from_service_account_key(self):
+        self.assertEqual(
+            GCPAuth.from_service_account_key(**{
+                'credentials': self.CREDENTIALS,
+            }).get_credentials(),
+            {
+                GCPAuth._SERVICE_ACCOUNT_KEY: self.CREDENTIALS
+            })
         
 
 if __name__=="__main__": 

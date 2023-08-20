@@ -7,8 +7,8 @@ Authentication
 Authentication is the process by which a user verifies their identity. All remote
 resources require some form of authentication during which a user must identify
 themselves so that they are granted access to said resources. Fluke itself
-manages authentication through the `fluke.auth <../documentation/auth.html>`_ module.
-The general idea is that you must first initialize some *Auth* instance,
+manages authentication through the `fluke.auth <../documentation/auth.html>`_
+module. The general idea is that you must first initialize some *Auth* instance,
 which is then provided to the resource with which you wish to interact.
 For instance, in the code snippet below we use the
 `RemoteAuth <../documentation/auth.html#fluke.auth.RemoteAuth>`_
@@ -149,7 +149,55 @@ request access to:
 
 
 ==========================================
-Authenticating with a remote machine
+Authenticating with GCP
+==========================================
+
+When it comes to authenticating with GCP, there
+exist two different approaches. These are via Application
+Default Credentials (ADC), as well as, via a service
+account key.
+
+---------------------------------------------------
+Authenicating via application default credentials
+---------------------------------------------------
+
+After having
+`set up your application default credentials <https://cloud.google.com/docs/authentication/provide-credentials-adc>`_,
+which results in a JSON file that contains all required credentials being generated,
+you just need to invoke method `GCPAuth.from_application_default_credentials <../documentation/auth.html#fluke.auth.GCPAuth.from_application_default_credentials>`_ 
+and provide it with the path pointing to said file along with the ID of the
+project to which the resource you wish to access belongs:
+
+.. code-block:: python
+
+  from fluke.auth import GCPAuth
+
+  auth = GCPAuth.from_application_default_credentials(
+    project_id='your_project_id',
+    credentials='path/to/adc/file.json'
+  )
+
+
+---------------------------------------------------
+Authenicating via a service account key
+---------------------------------------------------
+
+Similarily, `creating a service account key <https://cloud.google.com/iam/docs/keys-create-delete>`_
+also results in a JSON file containing the service account key credentials.
+In this case, you just need the path pointing to this file as a service account
+key will already be tied to one and only GCP project:
+
+.. code-block:: python
+
+  from fluke.auth import GCPAuth
+
+  auth = GCPAuth.from_service_account_key(
+    credentials='path/to/sak/file.json'
+  )
+
+
+==========================================
+Authenticating with a remote SSH server
 ==========================================
 
 There are two ways for a user to authenticate themselves while
@@ -222,9 +270,9 @@ that is, hosts which are currently listed under your machine's
 to an unknown host, an exception will be thrown, in which case
 you have two options:
 
-#. If you are aware of the host's public key and its type, then you may
-   include this information into the ``RemoteAuth`` instance via
-   parameters ``public_key`` and ``key_type``:
+#. If you are aware of the host's public key, then you may
+   include this information into the ``RemoteAuth`` instance
+   by generating a key via ``RemoteAuth.PublicKey``:
 
    .. code-block:: python
 
@@ -234,8 +282,7 @@ you have two options:
        hostname='host',
        username='user',
        password='pwd',
-       public_key='PUBLIC_RSA_KEY',
-       key_type=RemoteAuth.KeyType.SSH_RSA
+       public_key=RemoteAuth.PublicKey.generate_ssh_rsa_key('PUBLIC_RSA_KEY')
      )
 
 #. Alternatively, you may simply set parameter ``verify_host`` to ``False``:
