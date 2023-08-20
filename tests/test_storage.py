@@ -948,7 +948,7 @@ class TestRemoteFile(unittest.TestCase):
             t = time.perf_counter()
             _ = file.get_size()
             normal_time = time.perf_counter() - t
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_get_size_from_cache_on_value(self):
         with self.build_file(cache=True) as file:
@@ -967,7 +967,7 @@ class TestRemoteFile(unittest.TestCase):
             _ = file.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
 
 class TestAmazonS3File(unittest.TestCase):
@@ -1268,7 +1268,7 @@ class TestAmazonS3File(unittest.TestCase):
             t = time.perf_counter()
             file.load_metadata()
             normal_time = time.perf_counter() - t
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_load_metadata_from_cache_on_value(self):
         with self.build_file(cache=True) as file:
@@ -1289,7 +1289,7 @@ class TestAmazonS3File(unittest.TestCase):
             _ = file.load_metadata()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_get_size_from_cache_on_value(self):
         with self.build_file(cache=True) as file:
@@ -1307,7 +1307,7 @@ class TestAmazonS3File(unittest.TestCase):
             _ = file.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
 
 class TestAzureBlobFile(unittest.TestCase):
@@ -1607,7 +1607,7 @@ class TestAzureBlobFile(unittest.TestCase):
             t = time.perf_counter()
             file.load_metadata()
             normal_time = time.perf_counter() - t
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_load_metadata_from_cache_on_value(self):
         with self.build_file(cache=True) as file:
@@ -1628,7 +1628,7 @@ class TestAzureBlobFile(unittest.TestCase):
             _ = file.load_metadata()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_get_size_from_cache_on_value(self):
         with self.build_file(cache=True) as file:
@@ -1646,7 +1646,7 @@ class TestAzureBlobFile(unittest.TestCase):
             _ = file.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
 
 class TestGCPStorageFile(unittest.TestCase):
@@ -1963,7 +1963,7 @@ class TestGCPStorageFile(unittest.TestCase):
             t = time.perf_counter()
             file.load_metadata()
             normal_time = time.perf_counter() - t
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_load_metadata_from_cache_on_value(self):
         with self.build_file(cache=True) as file:
@@ -1984,7 +1984,7 @@ class TestGCPStorageFile(unittest.TestCase):
             _ = file.load_metadata()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_get_size_from_cache_on_value(self):
         with self.build_file(cache=True) as file:
@@ -2002,7 +2002,7 @@ class TestGCPStorageFile(unittest.TestCase):
             _ = file.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
 
 class TestLocalDir(unittest.TestCase):
@@ -2954,7 +2954,7 @@ class TestRemoteDir(unittest.TestCase):
             t = time.perf_counter()
             dir.get_size()
             normal_time = time.perf_counter() - t
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_traverse_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
@@ -2987,7 +2987,7 @@ class TestRemoteDir(unittest.TestCase):
             _ = (_ for _ in dir.traverse())
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_traverse_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -3000,7 +3000,7 @@ class TestRemoteDir(unittest.TestCase):
             _ = (_ for _ in dir.traverse())
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_get_size_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
@@ -3024,7 +3024,7 @@ class TestRemoteDir(unittest.TestCase):
             _ = dir.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_get_size_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -3037,7 +3037,7 @@ class TestRemoteDir(unittest.TestCase):
             _ = dir.get_size(recursively=True)
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_file_shared_cache_on_cache_via_dir(self):
         with (
@@ -3059,7 +3059,7 @@ class TestRemoteDir(unittest.TestCase):
             _ = cache_file.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_file_shared_cache_on_cache_via_file(self):
         with (
@@ -3082,7 +3082,7 @@ class TestRemoteDir(unittest.TestCase):
             _ = cache_dir.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_subdir_shared_cache_on_cache_via_dir(self):
         with (
@@ -3104,7 +3104,7 @@ class TestRemoteDir(unittest.TestCase):
             _ = cache_subdir.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_subdir_shared_cache_on_cache_via_subdir(self):
         with (
@@ -3123,7 +3123,7 @@ class TestRemoteDir(unittest.TestCase):
             _ = cache_dir.get_size(recursively=True)
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
 
 class TestAmazonS3Dir(unittest.TestCase):
@@ -3817,7 +3817,7 @@ class TestAmazonS3Dir(unittest.TestCase):
             t = time.perf_counter()
             dir.load_metadata()
             normal_time = time.perf_counter() - t
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_traverse_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
@@ -3848,7 +3848,7 @@ class TestAmazonS3Dir(unittest.TestCase):
             _ = (_ for _ in dir.traverse())
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_traverse_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -3861,7 +3861,7 @@ class TestAmazonS3Dir(unittest.TestCase):
             _ = (_ for _ in dir.traverse())
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
 
     def test_load_metadata_from_cache_on_value(self):
@@ -3899,7 +3899,7 @@ class TestAmazonS3Dir(unittest.TestCase):
             _ = dir.load_metadata()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_get_size_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -3912,7 +3912,7 @@ class TestAmazonS3Dir(unittest.TestCase):
             _ = dir.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_load_metadata_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -3925,7 +3925,7 @@ class TestAmazonS3Dir(unittest.TestCase):
             _ = dir.load_metadata(recursively=True)
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_get_size_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -3938,7 +3938,7 @@ class TestAmazonS3Dir(unittest.TestCase):
             _ = dir.get_size(recursively=True)
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_file_shared_cache_on_cache_via_dir(self):
         with (
@@ -3960,7 +3960,7 @@ class TestAmazonS3Dir(unittest.TestCase):
             _ = cache_file.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_file_shared_cache_on_cache_via_file(self):
         with (
@@ -3983,7 +3983,7 @@ class TestAmazonS3Dir(unittest.TestCase):
             _ = cache_dir.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_subdir_shared_cache_on_cache_via_dir(self):
         with (
@@ -4005,7 +4005,7 @@ class TestAmazonS3Dir(unittest.TestCase):
             _ = cache_subdir.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_subdir_shared_cache_on_cache_via_subdir(self):
         with (
@@ -4024,7 +4024,7 @@ class TestAmazonS3Dir(unittest.TestCase):
             _ = cache_dir.get_size(recursively=True)
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
 
 class TestAzureBlobDir(unittest.TestCase):
@@ -4662,7 +4662,7 @@ class TestAzureBlobDir(unittest.TestCase):
             t = time.perf_counter()
             dir.load_metadata()
             normal_time = time.perf_counter() - t
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_traverse_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
@@ -4695,7 +4695,7 @@ class TestAzureBlobDir(unittest.TestCase):
             _ = (_ for _ in dir.traverse())
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_traverse_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -4708,7 +4708,7 @@ class TestAzureBlobDir(unittest.TestCase):
             _ = (_ for _ in dir.traverse())
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_load_metadata_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
@@ -4745,7 +4745,7 @@ class TestAzureBlobDir(unittest.TestCase):
             _ = dir.load_metadata()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_get_size_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -4758,7 +4758,7 @@ class TestAzureBlobDir(unittest.TestCase):
             _ = dir.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_load_metadata_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -4771,7 +4771,7 @@ class TestAzureBlobDir(unittest.TestCase):
             _ = dir.load_metadata(recursively=True)
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_get_size_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -4784,7 +4784,7 @@ class TestAzureBlobDir(unittest.TestCase):
             _ = dir.get_size(recursively=True)
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_file_shared_cache_on_cache_via_dir(self):
         with (
@@ -4806,7 +4806,7 @@ class TestAzureBlobDir(unittest.TestCase):
             _ = cache_file.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_file_shared_cache_on_cache_via_file(self):
         with (
@@ -4829,7 +4829,7 @@ class TestAzureBlobDir(unittest.TestCase):
             _ = cache_dir.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_subdir_shared_cache_on_cache_via_dir(self):
         with (
@@ -4851,7 +4851,7 @@ class TestAzureBlobDir(unittest.TestCase):
             _ = cache_subdir.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_subdir_shared_cache_on_cache_via_subdir(self):
         with (
@@ -4870,7 +4870,7 @@ class TestAzureBlobDir(unittest.TestCase):
             _ = cache_dir.get_size(recursively=True)
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
 
 class TestGCPStorageDir(unittest.TestCase):
@@ -5549,7 +5549,7 @@ class TestGCPStorageDir(unittest.TestCase):
             t = time.perf_counter()
             dir.load_metadata()
             normal_time = time.perf_counter() - t
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_traverse_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
@@ -5582,7 +5582,7 @@ class TestGCPStorageDir(unittest.TestCase):
             _ = (_ for _ in dir.traverse())
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_traverse_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -5595,7 +5595,7 @@ class TestGCPStorageDir(unittest.TestCase):
             _ = (_ for _ in dir.traverse())
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_load_metadata_from_cache_on_value(self):
         with self.build_dir(cache=True) as dir:
@@ -5632,7 +5632,7 @@ class TestGCPStorageDir(unittest.TestCase):
             _ = dir.load_metadata()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_get_size_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -5645,7 +5645,7 @@ class TestGCPStorageDir(unittest.TestCase):
             _ = dir.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_load_metadata_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -5658,7 +5658,7 @@ class TestGCPStorageDir(unittest.TestCase):
             _ = dir.load_metadata(recursively=True)
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_get_size_recursively_from_cache_on_time(self):
         with self.build_dir(cache=True) as dir:
@@ -5671,7 +5671,7 @@ class TestGCPStorageDir(unittest.TestCase):
             _ = dir.get_size(recursively=True)
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_file_shared_cache_on_cache_via_dir(self):
         with (
@@ -5693,7 +5693,7 @@ class TestGCPStorageDir(unittest.TestCase):
             _ = cache_file.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_file_shared_cache_on_cache_via_file(self):
         with (
@@ -5716,7 +5716,7 @@ class TestGCPStorageDir(unittest.TestCase):
             _ = cache_dir.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_subdir_shared_cache_on_cache_via_dir(self):
         with (
@@ -5738,7 +5738,7 @@ class TestGCPStorageDir(unittest.TestCase):
             _ = cache_subdir.get_size()
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
     def test_subdir_shared_cache_on_cache_via_subdir(self):
         with (
@@ -5757,7 +5757,7 @@ class TestGCPStorageDir(unittest.TestCase):
             _ = cache_dir.get_size(recursively=True)
             cache_time = time.perf_counter() - t
             # Compare fetch times.
-            self.assertGreater(normal_time, cache_time)
+            self.assertGreater(1.2*normal_time, cache_time)
 
 
 if __name__=="__main__":

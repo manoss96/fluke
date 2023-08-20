@@ -59,6 +59,10 @@ All notable changes to this project will be documented in this file.
   added to the system's "known_hosts" file, though their
   public key had been changed since then.
   (https://github.com/manoss96/fluke/issues/53)
+
+- Fixed bug that occurred when caching the root directory
+  of any storage system.
+  (https://github.com/manoss96/fluke/issues/56)
   
 
 ## [0.4.1] - 2023/07/25

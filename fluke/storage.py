@@ -1327,11 +1327,6 @@ class _Directory(_ABC):
         iterator = self.traverse(
             recursively=recursively,
             show_abs_path=show_abs_path)
-
-        print("LLSSSSING")
-        print(iterator)
-
-        print("!!!!!!!!")
         
         if recursively:
 

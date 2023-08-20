@@ -58,8 +58,9 @@ class DirCache():
     A class whose instances represent cached \
     information about a directory.
 
-    :param str path: The path of the directory \
-        being cached.
+    :param str | None path: The path of the directory \
+        being cached. If ``None``, then the empty path \
+        is inferred.
     '''
 
     class State(Enum):
@@ -68,16 +69,21 @@ class DirCache():
         RECURSIVELY_TRAVERSED = 2
 
 
-    def __init__(self, path: str):
+    def __init__(self, path: _Optional[str]):
         '''
         A class whose instances represent cached \
         information about a directory.
 
-        :param str path: The path of the directory \
-            being cached.
+        :param str | None path: The path of the directory \
+            being cached. If ``None``, then the empty path \
+            is inferred.
         '''
-        self.__sep = infer_separator(path)
-        self.__has_sep_root = path.startswith(self.__sep)
+        if path is None:
+            self.__sep = '/'
+            self.__has_sep_root = False
+        else:
+            self.__sep = infer_separator(path)
+            self.__has_sep_root = path.startswith(self.__sep)
         self.purge()
 
 
@@ -91,7 +97,12 @@ class DirCache():
             if (path := kwargs.get('path', None)) is not None:
                 kwargs['path'] = path.lstrip(args[0].__sep)
             else:
-                args[1] = args[1].lstrip(args[0].__sep)
+                args_new = []
+                for i, arg in enumerate(args):
+                    if i == 1:
+                        arg = arg.lstrip(args[0].__sep)
+                    args_new.append(arg)
+                args = tuple(args_new)
             return func(*args, **kwargs)
         return wrapper
 
@@ -186,21 +197,16 @@ class DirCache():
             any directories when ``recursively`` has been set \
             to ``False``.
         '''
-        print(f"\nWHAT IS CACHE for {path}: ")
-
         if path == '':
             cache = self
         else:
             cache = self.__get_dir_cache(path=path)
-
-        print("CACHE FOUND: ", cache)
 
         if (
             cache is None or
             cache.__state == __class__.State.NOT_TRAVERSED or
             (recursively and cache.__state != __class__.State.RECURSIVELY_TRAVERSED)
         ):
-            print("RETURNING NONEEE")
             return None
     
         def iterate_contents(
@@ -212,36 +218,19 @@ class DirCache():
             provided ``DirCache`` instance.
             '''
             if recursively:
-                if len(dc.__subdirs) == 0:
-                    yield from dc.__files
-                else:
-                    for subdir in dc.__subdirs.values():
-                        for entity in iterate_contents(subdir, recursively):
-                            yield entity
-                    for entity in list(dc.__files) + list(dc.__subdirs):
+                for entity in dc.__files:
                         yield entity
-                '''
-                for entity in _chain(
-                    dc.__files,
-                    (
-                        iterate_contents(subdir, recursively)
-                        for subdir in self.__subdirs.values()
-                    )
-                ):
-                    yield entity
-                '''
+                for subdir in dc.__subdirs.values():
+                    for entity in iterate_contents(subdir, recursively):
+                        yield entity
             else:
                 for entity in (
-                    list(dc.__files) + (
-                        list(dc.__subdirs)
+                    dc.__files | (
+                        dc.__subdirs
                         if include_dirs
-                        else list()
+                        else dict()
                 )):
                     yield entity
-            
-        print("PASSSEEEEEED")
-        print(cache.__files)
-        print(cache.__subdirs)
 
         iterator = iterate_contents(cache, recursively)
 
@@ -274,8 +263,6 @@ class DirCache():
             receives a string path and returns a value indicating \
             whether said path corresponds to a file or a directory.
         '''
-        print("\nCREATING APPROPRIATE DIR FOR CACHING CONTENTS...")
-
         if path != '':
             cache = self.__create_dir_cache(path=path)
         else:
@@ -289,15 +276,12 @@ class DirCache():
         elif cache.__state == __class__.State.TOP_LEVEL_TRAVERSED and recursively:
             cache.__state = __class__.State.RECURSIVELY_TRAVERSED
 
-        print("\nCACHING CONTENTS...")
         # NOTE: Cache contents using top-level
         #       ``DirCache`` instance.
         for ep in sorted(iterator):
             if is_file(ep):
-                print(f"FILE: {ep}")
                 self.__create_file_cache(ep.lstrip(self.__sep))
             else:
-                print(f"DIR: {ep}")
                 self.__create_dir_cache(ep.lstrip(self.__sep))
 
 
@@ -376,11 +360,6 @@ class DirCache():
             return self
         
         entities = path.split(self.__sep)
-
-        print(f"\nFETCHING DIR CACHE for {path}")
-        print(entities)
-        print(self.__sep.join(entities[:level]))
-
         current = self.__sep.join(entities[:level]) + self.__sep
 
         if len(entities) - 1 == level:
@@ -409,19 +388,16 @@ class DirCache():
             this method from recursing indefinitely. Defaults \
             to ``1``.
         '''
-        print(f"\nCREATING FILE CACHE FOR {path}... (level={level})")
         entities = path.split(self.__sep)
 
         if len(entities) == level:
             if path not in self.__files:
                 self.__files.update({path: FileCache()})
-                print(f"CREATED FILE CACHE '{path}' in {self.__files} AS IT DIDNT EXIST...")
             return self.__files[path]
         
         current = self.__sep.join(entities[:level]) + self.__sep
 
         if current not in self.__subdirs:
-            print(f"CREATED DIR CACHE '{current}' in {self.__subdirs} AS IT DIDNT EXIST...")
             self.__subdirs.update({
                 current: DirCache._create_dir_cache(
                     sep=self.__sep,
@@ -452,11 +428,7 @@ class DirCache():
         entities = path.split(self.__sep)
         current = self.__sep.join(entities[:level]) + self.__sep
 
-        print(f"\nCREATING DIR CACHE for {path} (level={level}), (current={current})...")
-        print(entities)
-
         if current not in self.__subdirs:
-            print(f"CREATED '{current}' in {self.__subdirs} AS IT DIDNT EXIST...")
             self.__subdirs.update({
                 current: DirCache._create_dir_cache(
                     sep=self.__sep,
