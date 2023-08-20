@@ -4,6 +4,8 @@ from typing import Optional as _Optional
 from typing import Iterator as _Iterator
 from typing import Callable as _Callable
 
+from ._helper import infer_separator
+
 
 class FileCache():
     '''
@@ -56,7 +58,8 @@ class DirCache():
     A class whose instances represent cached \
     information about a directory.
 
-    :param str sep: The path seperator used.
+    :param str path: The path of the directory \
+        being cached.
     '''
 
     class State(Enum):
@@ -65,33 +68,30 @@ class DirCache():
         RECURSIVELY_TRAVERSED = 2
 
 
-    def __init__(self, sep: str):
+    def __init__(self, path: str):
         '''
         A class whose instances represent cached \
         information about a directory.
 
-        :param str sep: The path seperator used.
+        :param str path: The path of the directory \
+            being cached.
         '''
-        self.__sep = sep
+        self.__sep = infer_separator(path)
+        self.__has_sep_root = path.startswith(self.__sep)
         self.purge()
 
 
-    @staticmethod
-    def __add_sep_prefix(path: str, sep: str) -> str:
-        return f"{sep}{path.lstrip(sep)}"
-
-
-    def add_sep_prefix(func: _Callable):
+    def remove_sep_prefix(func: _Callable):
         '''
-        A decorator function used for relatizing \
-        the path provided to the wrapped function.
+        A decorator function used for removing \
+        any seperator prefixes from paths provided \
+        to the functions being decorated.
         '''
         def wrapper(*args, **kwargs):
             if (path := kwargs.get('path', None)) is not None:
-                kwargs['path'] = __class__.__add_sep_prefix(path, args[0].__sep)
+                kwargs['path'] = path.lstrip(args[0].__sep)
             else:
-                args[1] = __class__.__add_sep_prefix(args[1], args[0].__sep)
-            print(args, kwargs)
+                args[1] = args[1].lstrip(args[0].__sep)
             return func(*args, **kwargs)
         return wrapper
 
@@ -105,7 +105,7 @@ class DirCache():
         self.__files: dict[str, FileCache] = dict()
 
 
-    @add_sep_prefix
+    @remove_sep_prefix
     def get_size(self, path: str) -> _Optional[int]:
         '''
         Returns the file's cached size if it exists, \
@@ -118,7 +118,7 @@ class DirCache():
         else None)
     
 
-    @add_sep_prefix
+    @remove_sep_prefix
     def cache_size(self, path: str, size: int) -> None:
         '''
         Caches the provided size.
@@ -133,7 +133,7 @@ class DirCache():
         self.__create_file_cache(path).set_size(size)
     
 
-    @add_sep_prefix
+    @remove_sep_prefix
     def get_metadata(self, path: str) -> _Optional[int]:
         '''
         Returns the file's cached metadata if they exist, \
@@ -146,7 +146,7 @@ class DirCache():
         else None)
     
 
-    @add_sep_prefix
+    @remove_sep_prefix
     def cache_metadata(
         self,
         path: str,
@@ -165,7 +165,7 @@ class DirCache():
         self.__create_file_cache(path).set_metadata(metadata)
 
 
-    @add_sep_prefix
+    @remove_sep_prefix
     def get_content_iterator(
         self,
         path: str,
@@ -188,7 +188,10 @@ class DirCache():
         '''
         print(f"\nWHAT IS CACHE for {path}: ")
 
-        cache = self.__get_dir_cache(path=path)
+        if path == '':
+            cache = self
+        else:
+            cache = self.__get_dir_cache(path=path)
 
         print("CACHE FOUND: ", cache)
 
@@ -210,12 +213,13 @@ class DirCache():
             '''
             if recursively:
                 if len(dc.__subdirs) == 0:
-                    return dc.__files
-                for subdir in dc.__subdirs.values():
-                    for entity in iterate_contents(subdir, recursively):
+                    yield from dc.__files
+                else:
+                    for subdir in dc.__subdirs.values():
+                        for entity in iterate_contents(subdir, recursively):
+                            yield entity
+                    for entity in list(dc.__files) + list(dc.__subdirs):
                         yield entity
-                for entity in list(dc.__files) + list(dc.__subdirs):
-                    yield entity
                 '''
                 for entity in _chain(
                     dc.__files,
@@ -239,15 +243,17 @@ class DirCache():
         print(cache.__files)
         print(cache.__subdirs)
 
-        for x in sorted(iterate_contents(cache, recursively)):
-            print(x)
+        iterator = iterate_contents(cache, recursively)
 
-        print(iterate_contents(cache, recursively))
-        print("RETURNINGGGGGGGGG")
-        return sorted(iterate_contents(cache, recursively))
+        if self.__has_sep_root:
+            iterator = map(
+                lambda path: self.__sep + path,
+                iterator)
+
+        return sorted(iterator)
 
 
-    @add_sep_prefix
+    @remove_sep_prefix
     def cache_contents(
         self,
         path: str,
@@ -269,7 +275,11 @@ class DirCache():
             whether said path corresponds to a file or a directory.
         '''
         print("\nCREATING APPROPRIATE DIR FOR CACHING CONTENTS...")
-        cache = self.__create_dir_cache(path=path)
+
+        if path != '':
+            cache = self.__create_dir_cache(path=path)
+        else:
+            cache = self
 
         if cache.__state == __class__.State.NOT_TRAVERSED:
             if recursively:
@@ -285,11 +295,33 @@ class DirCache():
         for ep in sorted(iterator):
             if is_file(ep):
                 print(f"FILE: {ep}")
-                self.__create_file_cache(self.__add_sep_prefix(ep, self.__sep))
+                self.__create_file_cache(ep.lstrip(self.__sep))
             else:
                 print(f"DIR: {ep}")
-                self.__create_dir_cache(self.__add_sep_prefix(ep, self.__sep))
+                self.__create_dir_cache(ep.lstrip(self.__sep))
 
+
+    @classmethod
+    def _create_dir_cache(
+        cls,
+        sep: str,
+        has_sep_root: bool
+    ) -> 'DirCache':
+        '''
+        Creates and returns a ``DirCache`` instance.
+
+        :param str sep: The path separator used.
+        :param has_sep_root: Indicates whether the \
+            underlying storage system being cached \
+            assumes a root directory whose name is \
+            the separator.
+        '''
+        instance = cls.__new__(cls)
+        instance.__sep = sep
+        instance.__has_sep_root = has_sep_root
+        instance.purge()
+        return instance
+    
 
     def __get_file_cache(
         self,
@@ -340,6 +372,9 @@ class DirCache():
             this method from recursing indefinitely. Defaults \
             to ``1``.
         '''
+        if path == '':
+            return self
+        
         entities = path.split(self.__sep)
 
         print(f"\nFETCHING DIR CACHE for {path}")
@@ -388,7 +423,9 @@ class DirCache():
         if current not in self.__subdirs:
             print(f"CREATED DIR CACHE '{current}' in {self.__subdirs} AS IT DIDNT EXIST...")
             self.__subdirs.update({
-                current: DirCache(sep=self.__sep)
+                current: DirCache._create_dir_cache(
+                    sep=self.__sep,
+                    has_sep_root=self.__has_sep_root)
             })
         
         return self.__subdirs[current].__create_file_cache(path, level+1)
@@ -411,7 +448,7 @@ class DirCache():
         :param int level: A helping variable that prevents \
             this method from recursing indefinitely. Defaults \
             to ``1``.
-        '''
+        '''        
         entities = path.split(self.__sep)
         current = self.__sep.join(entities[:level]) + self.__sep
 
@@ -421,7 +458,9 @@ class DirCache():
         if current not in self.__subdirs:
             print(f"CREATED '{current}' in {self.__subdirs} AS IT DIDNT EXIST...")
             self.__subdirs.update({
-                current: DirCache(sep=self.__sep)
+                current: DirCache._create_dir_cache(
+                    sep=self.__sep,
+                    has_sep_root=self.__has_sep_root)
             })
 
         if len(entities) - 1 == level:
