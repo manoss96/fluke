@@ -198,7 +198,7 @@ class _File(_ABC):
         :param str encoding: The encoding with which to decode \
             the bytes. Defaults to ``utf-8``.
 
-        :note: See
+        :note: See \
             `Standard Encodings <https://docs.python.org/3/library/codecs.html#standard-encodings>`_ \
             for all available encodings.
         '''
@@ -238,6 +238,20 @@ class _File(_ABC):
                     text_temp = ''
                 text_temp += text_chunks[-1]
             yield text_temp
+
+
+    def cat(self, encoding: str = 'utf-8') -> None:
+        '''
+        Prints the contents of a file as text.
+
+        :param str encoding: The encoding with which to decode \
+            the bytes. Defaults to ``utf-8``.
+
+        :note: See \
+            `Standard Encodings <https://docs.python.org/3/library/codecs.html#standard-encodings>`_ \
+            for all available encodings.
+        '''
+        print(self.read_text(encoding=encoding))
 
 
     def transfer_to(

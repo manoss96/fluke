@@ -10,7 +10,6 @@ from typing import Optional, Iterator, Callable
 
 
 import boto3
-import paramiko
 from moto import mock_s3
 from requests import Session
 from google.cloud.storage import Client
@@ -649,6 +648,18 @@ class TestLocalFile(unittest.TestCase):
         for line in file.read_lines(chunk_size=1):
             self.assertEqual(data, line)
 
+    def test_cat(self):
+        file = self.build_file()
+        data = "TEXT"
+        with io.StringIO() as stdo:
+            sys.stdout = stdo
+
+            file.cat()
+
+            sys.stdout = sys.__stdout__
+
+            self.assertEqual(stdo.getvalue().strip('\n'), data)
+
     def test_transfer_to(self):
         file = self.build_file()
         dir = TestLocalDir.build_dir(path=ABS_DIR_PATH)
@@ -810,6 +821,20 @@ class TestRemoteFile(unittest.TestCase):
             data = "TEXT"
             for line in file.read_lines(chunk_size=1):
                 self.assertEqual(data, line)
+
+    def test_cat(self):
+        data = "TEXT"
+        with (
+            io.StringIO() as stdo,
+            self.build_file() as file
+        ):
+            sys.stdout = stdo
+
+            file.cat()
+
+            sys.stdout = sys.__stdout__
+
+            self.assertEqual(stdo.getvalue().strip('\n'), data)
 
     def test_transfer_to(self):
         with self.build_file() as file:
@@ -1148,6 +1173,20 @@ class TestAmazonS3File(unittest.TestCase):
             for line in file.read_lines(chunk_size=1):
                 self.assertEqual(data, line)
 
+    def test_cat(self):
+        data = "TEXT"
+        with (
+            io.StringIO() as stdo,
+            self.build_file() as file
+        ):
+            sys.stdout = stdo
+
+            file.cat()
+
+            sys.stdout = sys.__stdout__
+
+            self.assertEqual(stdo.getvalue().strip('\n'), data)
+
     def test_transfer_to(self):
         with self.build_file() as file:
             # Copy file into dir.
@@ -1469,6 +1508,20 @@ class TestAzureBlobFile(unittest.TestCase):
             data = "TEXT"
             for line in file.read_lines(chunk_size=1):
                 self.assertEqual(data, line)
+
+    def test_cat(self):
+        data = "TEXT"
+        with (
+            io.StringIO() as stdo,
+            self.build_file() as file
+        ):
+            sys.stdout = stdo
+
+            file.cat()
+
+            sys.stdout = sys.__stdout__
+
+            self.assertEqual(stdo.getvalue().strip('\n'), data)
 
     def test_transfer_to(self):
         with self.build_file() as file:
@@ -1825,6 +1878,20 @@ class TestGCPStorageFile(unittest.TestCase):
             data = "TEXT"
             for line in file.read_lines(chunk_size=1):
                 self.assertEqual(data, line)
+
+    def test_cat(self):
+        data = "TEXT"
+        with (
+            io.StringIO() as stdo,
+            self.build_file() as file
+        ):
+            sys.stdout = stdo
+
+            file.cat()
+
+            sys.stdout = sys.__stdout__
+
+            self.assertEqual(stdo.getvalue().strip('\n'), data)
 
     def test_transfer_to(self):
         with self.build_file() as file:
