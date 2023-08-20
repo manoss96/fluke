@@ -2637,8 +2637,6 @@ class AzureBlobDir(_CloudDir):
             specified container does not exist.
         :raises InvalidPathError: The provided path \
             does not exist.
-        :raises InvalidDirectoryError: The provided path \
-            does not point to a directory.
 
         :note: The provided path must not begin with \
             a separator.
