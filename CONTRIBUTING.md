@@ -112,8 +112,8 @@ you may run the tests by executing the following command:
 ```
 python3 -m unittest discover tests
 ```
-You are also able to specify the testing module/class/method
-that you wish to be executed:
+You are also able to specify the test module/class/method
+you wish to be executed:
 ```
 python3 -m unittest tests.test_storage
 python3 -m unittest tests.test_storage.TestRemoteDir

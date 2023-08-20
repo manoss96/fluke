@@ -20,7 +20,7 @@ from .auth import AWSAuth as _AWSAuth
 from .auth import AzureAuth as _AzureAuth
 from .auth import GCPAuth as _GCPAuth
 from .auth import RemoteAuth as _RemoteAuth
-from ._cache import CacheManager as _CacheManager
+from ._cache import DirCache as _DirCache
 from ._exceptions import BucketNotFoundError as _BNFE
 from ._exceptions import ContainerNotFoundError as _CNFE 
 from ._helper import join_paths as _join_paths
@@ -45,23 +45,21 @@ class ClientHandler(_ABC):
     An abstract class which serves as the \
     base class for all client-handler-like classes.
 
-    :param bool cache: Indicates whether it is allowed for \
-        any fetched data to be cached for faster subsequent \
-        access.
+    :param DirCache | None cache: Either a ``DirCache`` \
+        instance used for managing the cache, or ``None`` \
+        if caching is not activated.
     '''
 
-
-    def __init__(self, cache: bool):
+    def __init__(self, cache: _Optional[_DirCache]):
         '''
         An abstract class which serves as the \
         base class for all client-handler-like classes.
 
-        :param bool cache: Indicates whether it is allowed for \
-            any fetched data to be cached for faster subsequent \
-            access.
+        :param DirCache | None cache: Either a ``DirCache`` \
+            instance used for managing the cache, or ``None`` \
+            if caching is not activated.
         '''
-
-        self.__cache_manager = _CacheManager() if cache else None
+        self.__cache = cache
 
 
     def is_cacheable(self) -> bool:
@@ -70,7 +68,7 @@ class ClientHandler(_ABC):
         handler instance has been defined so that \
         it is able to cache data.
         '''
-        return self.__cache_manager is not None
+        return self.__cache is not None
     
 
     def purge(self) -> None:
@@ -79,7 +77,7 @@ class ClientHandler(_ABC):
         else does nothing.
         '''
         if self.is_cacheable():
-            self.__cache_manager.purge()
+            self.__cache.purge()
 
 
     def get_file_size(self, file_path: str) -> int:
@@ -100,11 +98,11 @@ class ClientHandler(_ABC):
             after it has been retrieved.
         '''
         if self.is_cacheable():
-            if (size := self.__cache_manager.get_size(file_path=file_path)) is not None:
+            if (size := self.__cache.get_size(path=file_path)) is not None:
                 return size
             else:
                 size = self._get_file_size_impl(file_path)
-                self.__cache_manager.cache_size(file_path, size)
+                self.__cache.cache_size(file_path, size)
                 return size
         else:
             return self._get_file_size_impl(file_path)
@@ -128,13 +126,13 @@ class ClientHandler(_ABC):
             after it has been retrieved.
         '''
         if self.is_cacheable():
-            if (metadata := self.__cache_manager.get_metadata(
-                file_path=file_path)
+            if (metadata := self.__cache.get_metadata(
+                path=file_path)
             ) is not None:
                 return metadata
             else:
                 metadata = self._get_file_metadata_impl(file_path)
-                self.__cache_manager.cache_metadata(file_path, metadata)
+                self.__cache.cache_metadata(file_path, metadata)
                 return metadata
         else:
             return self._get_file_metadata_impl(file_path)
@@ -180,8 +178,8 @@ class ClientHandler(_ABC):
 
         if self.is_cacheable():
             # Grab content iterator from cache if it exists.
-            if (iterator := self.__cache_manager.get_content_iterator(
-                dir_path=dir_path,
+            if (iterator := self.__cache.get_content_iterator(
+                path=dir_path,
                 recursively=recursively,
                 include_dirs=include_dirs)
             ) is not None:
@@ -190,23 +188,23 @@ class ClientHandler(_ABC):
             # Else...
             else:
                 # Fetch content iterator.
-                # NOTE: Set "show_abs_path" to "True" so that all
-                #       contents are cached via their absolute paths.
+                # NOTE: Set "show_abs_path" to "True".
                 iterator = self._traverse_dir_impl(
                     dir_path=dir_path,
                     recursively=recursively,
                     show_abs_path=True)
                 # Cache all contents.
-                self.__cache_manager.cache_contents(
-                    dir_path=dir_path,
+                self.__cache.cache_contents(
+                    path=dir_path,
                     iterator=iterator,
                     recursively=recursively,
                     is_file=self.is_file)
                 # Reset iterator by grabbing it from cache.
-                iterator = self.__cache_manager.get_content_iterator(
-                    dir_path=dir_path,
+                iterator = self.__cache.get_content_iterator(
+                    path=dir_path,
                     recursively=recursively,
                     include_dirs=include_dirs)
+                # Return (modified) iterator.
                 if show_abs_path:
                     return iterator
                 else:
@@ -392,7 +390,7 @@ class FileSystemHandler(ClientHandler):
         A class used in handling all local file \
         system operations.
         '''
-        super().__init__(cache=False)
+        super().__init__(cache=None)
 
 
     def is_open(self) -> bool:
@@ -574,21 +572,25 @@ class SSHClientHandler(ClientHandler):
 
     :param RemoteAuth auth: A ``RemoteAuth`` instance used \
         for authenticating with a remote machine.
-    :param bool cache: Indicates whether it is allowed for \
-        any fetched data to be cached for faster subsequent \
-        access.
+    :param DirCache | None cache: Either a ``DirCache`` \
+        instance used for managing the cache, or ``None`` \
+        if caching is not activated.
     '''        
 
-    def __init__(self, auth: _RemoteAuth, cache: bool):
+    def __init__(
+        self,
+        auth: _RemoteAuth,
+        cache: _Optional[_DirCache]
+    ):
         '''
         A class used in handling the SSH and SFTP \
         connections to a remote server.
 
         :param RemoteAuth auth: A ``RemoteAuth`` instance used \
             for authenticating with a remote machine.
-        :param bool cache: Indicates whether it is allowed for \
-            any fetched data to be cached for faster subsequent \
-            access.
+        :param DirCache | None cache: Either a ``DirCache`` \
+            instance used for managing the cache, or ``None`` \
+            if caching is not activated.
         '''
         super().__init__(cache=cache)
         self.__auth: _RemoteAuth = auth
@@ -877,16 +879,16 @@ class AWSClientHandler(ClientHandler):
         used in authenticating with AWS.
     :param str bucket: The name of the Amazon S3 bucket \
         to which a connection is to be established.
-    :param bool cache: Indicates whether it is allowed for \
-        any fetched data to be cached for faster subsequent \
-        access.
+    :param DirCache | None cache: Either a ``DirCache`` \
+        instance used for managing the cache, or ``None`` \
+        if caching is not activated.
     '''
 
     def __init__(
         self,
         auth: _AWSAuth,
         bucket: str,
-        cache: bool
+        cache: _Optional[_DirCache]
     ):
         '''
         A class used in handling the HTTP \
@@ -896,9 +898,9 @@ class AWSClientHandler(ClientHandler):
             used in authenticating with AWS.
         :param str bucket: The name of the Amazon S3 bucket \
             to which a connection is to be established.
-        :param bool cache: Indicates whether it is allowed for \
-            any fetched data to be cached for faster subsequent \
-            access.
+        :param DirCache | None cache: Either a ``DirCache`` \
+            instance used for managing the cache, or ``None`` \
+            if caching is not activated.
         '''
         super().__init__(cache=cache)
         self.__auth = auth
@@ -1166,16 +1168,16 @@ class AzureClientHandler(ClientHandler):
         used in authenticating with Microsoft Azure.
     :param str container: The name of the Azure blob \
         container to which a connection is to be established.
-    :param bool cache: Indicates whether it is allowed for \
-        any fetched data to be cached for faster subsequent \
-        access.
+    :param DirCache | None cache: Either a ``DirCache`` \
+        instance used for managing the cache, or ``None`` \
+        if caching is not activated.
     '''
 
     def __init__(
         self,
         auth: _AzureAuth,
         container: str,
-        cache: bool
+        cache: _Optional[_DirCache]
     ):
         '''
         A class used in handling the HTTP \
@@ -1185,9 +1187,9 @@ class AzureClientHandler(ClientHandler):
             used in authenticating with Microsoft Azure.
         :param str container: The name of the Azure blob \
             container to which a connection is to be established.
-        :param bool cache: Indicates whether it is allowed for \
-            any fetched data to be cached for faster subsequent \
-            access.
+        :param DirCache | None cache: Either a ``DirCache`` \
+            instance used for managing the cache, or ``None`` \
+            if caching is not activated.
         '''
         super().__init__(cache=cache)
         self.__auth = auth
@@ -1411,7 +1413,6 @@ class AzureClientHandler(ClientHandler):
                 yield _relativize(dir_path, properties['name'], sep)
 
 
-
 class GCPClientHandler(ClientHandler):
     '''
     A class used in handling the HTTP \
@@ -1421,9 +1422,9 @@ class GCPClientHandler(ClientHandler):
         used in authenticating with Google Cloud Platform.
     :param str bucket: The name of the Google Cloud Storage \
         bucket to which a connection is to be established.
-    :param bool cache: Indicates whether it is allowed for \
-        any fetched data to be cached for faster subsequent \
-        access.
+    :param DirCache | None cache: Either a ``DirCache`` \
+        instance used for managing the cache, or ``None`` \
+        if caching is not activated.
     '''
 
     # NOTE: This is used instead of directly instantiating a client
@@ -1435,7 +1436,7 @@ class GCPClientHandler(ClientHandler):
         self,
         auth: _GCPAuth,
         bucket: str,
-        cache: bool
+        cache: _Optional[_DirCache]
     ):
         '''
         A class used in handling the HTTP \
@@ -1445,9 +1446,9 @@ class GCPClientHandler(ClientHandler):
             used in authenticating with Google Cloud Platform.
         :param str bucket: The name of the Google Cloud Storage \
             bucket to which a connection is to be established.
-        :param bool cache: Indicates whether it is allowed for \
-            any fetched data to be cached for faster subsequent \
-            access.
+        :param DirCache | None cache: Either a ``DirCache`` \
+            instance used for managing the cache, or ``None`` \
+            if caching is not activated.
         '''
         super().__init__(cache=cache)
         self.__auth = auth
@@ -1544,9 +1545,7 @@ class GCPClientHandler(ClientHandler):
         :param str file_path: The absolute path of the \
             file in question.
         '''
-        return (self.__bucket
-            .blob(blob_name=file_path.rstrip(_infer_sep(file_path)))
-            .exists())
+        return not file_path.endswith(_infer_sep(file_path))
     
 
     def mkdir(self, path: str) -> None:
@@ -1662,7 +1661,7 @@ class GCPClientHandler(ClientHandler):
             for blob in self.__bucket.list_blobs(
                 prefix=dir_path
             ):
-                if blob.name != dir_path:  
+                if blob.name != dir_path and self.is_file(blob.name):
                     if show_abs_path:
                         yield blob.name
                     else:

@@ -24,18 +24,19 @@ from abc import abstractmethod as _absmethod
 from tqdm import tqdm as _tqdm
 
 
-from ._helper import join_paths as _join_paths
-from ._helper import infer_separator as _infer_sep
 from .auth import AWSAuth as _AWSAuth
 from .auth import AzureAuth as _AzureAuth
 from .auth import GCPAuth as _GCPAuth
 from .auth import RemoteAuth as _RemoteAuth
+from ._cache import DirCache as _DirCache
 from ._handlers import ClientHandler as _ClientHandler
 from ._handlers import FileSystemHandler as _FileSystemHandler
 from ._handlers import SSHClientHandler as _SSHClientHandler
 from ._handlers import AWSClientHandler as _AWSClientHandler
 from ._handlers import AzureClientHandler as _AzureClientHandler
 from ._handlers import GCPClientHandler as _GCPClientHandler
+from ._helper import join_paths as _join_paths
+from ._helper import infer_separator as _infer_sep
 from ._exceptions import InvalidPathError as _IPE
 from ._exceptions import InvalidFileError as _IFE
 from ._exceptions import InvalidDirectoryError as _IDE
@@ -616,7 +617,7 @@ class RemoteFile(_NonLocalFile):
             path=path,
             handler=_SSHClientHandler(
                 auth=auth,
-                cache=cache))
+                cache=_DirCache(path) if cache else None))
 
 
     def get_hostname(self) -> str:
@@ -799,7 +800,7 @@ class AmazonS3File(_CloudFile):
             handler=_AWSClientHandler(
                 auth=auth,
                 bucket=bucket,
-                cache=cache))
+                cache=_DirCache(path) if cache else None))
         
 
     def get_bucket_name(self) -> str:
@@ -926,7 +927,7 @@ class AzureBlobFile(_CloudFile):
             handler=_AzureClientHandler(
                 auth=auth,
                 container=container,
-                cache=cache))
+                cache=_DirCache(path) if cache else None))
   
 
     def get_container_name(self) -> str:
@@ -1056,7 +1057,7 @@ class GCPStorageFile(_CloudFile):
             handler=_GCPClientHandler(
                 auth=auth,
                 bucket=bucket,
-                cache=cache))
+                cache=_DirCache(path) if cache else None))
         
 
     def get_bucket_name(self) -> str:
@@ -1320,8 +1321,8 @@ class _Directory(_ABC):
             contents' absolute path or their path relative to this directory. \
             Defaults to ``False``.
 
-        :note: The resulting output may vary depending on the value \
-            of parameter ``recursively``.
+        :note: Empty directories will not be considered if parameter \
+            ``recursively`` is set to ``True``.
         '''
         iterator = self.traverse(
             recursively=recursively,
@@ -2112,7 +2113,7 @@ class RemoteDir(_NonLocalDir):
             create_if_missing=create_if_missing,
             handler=_SSHClientHandler(
                 auth=auth,
-                cache=cache))
+                cache=_DirCache(path) if cache else None))
 
 
     def get_hostname(self) -> str:
@@ -2408,7 +2409,7 @@ class AmazonS3Dir(_CloudDir):
             handler=_AWSClientHandler(
                 auth=auth,
                 bucket=bucket,
-                cache=cache))
+                cache=_DirCache(path) if cache else None))
 
 
     def get_bucket_name(self) -> str:
@@ -2638,8 +2639,8 @@ class AzureBlobDir(_CloudDir):
             create_if_missing=create_if_missing,
             handler=_AzureClientHandler(
                 auth=auth,
-                cache=cache,
-                container=container))
+                container=container,
+                cache=_DirCache(path) if cache else None))
 
 
     def get_container_name(self) -> str:
@@ -2874,7 +2875,7 @@ class GCPStorageDir(_CloudDir):
             handler=_GCPClientHandler(
                 auth=auth,
                 bucket=bucket,
-                cache=cache))
+                cache=_DirCache(path) if cache else None))
 
 
     def get_bucket_name(self) -> str:
