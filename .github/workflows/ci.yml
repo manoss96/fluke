@@ -41,7 +41,8 @@ jobs:
           --mount type=bind,\
           src=${{ github.workspace }}/tests/test_files,\
           dst=/data/bucket/tests/test_files \
-          fsouza/fake-gcs-server:1.47.0
+          fsouza/fake-gcs-server:1.47.0 \
+          -external-url https://127.0.0.1:4443
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4

@@ -94,7 +94,8 @@ installed, you can achieve this by executing the following commands:
   --mount type=bind,\
   src={PATH_TO_FLUKE_REPO}/tests/test_files,\
   dst=/data/bucket/tests/test_files \
-  fsouza/fake-gcs-server:1.47.0
+  fsouza/fake-gcs-server:1.47.0 \
+  -external-url https://127.0.0.1:4443
   ``````
   This command will pull the ``fsouza/fake-gcs-server`` image from Docker Hub
   and start it as a Docker container in the background, while at the same time
