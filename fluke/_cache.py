@@ -76,6 +76,26 @@ class DirCache():
         self.purge()
 
 
+    @staticmethod
+    def __add_sep_prefix(path: str, sep: str) -> str:
+        return f"{sep}{path.lstrip(sep)}"
+
+
+    def add_sep_prefix(func: _Callable):
+        '''
+        A decorator function used for relatizing \
+        the path provided to the wrapped function.
+        '''
+        def wrapper(*args, **kwargs):
+            if (path := kwargs.get('path', None)) is not None:
+                kwargs['path'] = __class__.__add_sep_prefix(path, args[0].__sep)
+            else:
+                args[1] = __class__.__add_sep_prefix(args[1], args[0].__sep)
+            print(args, kwargs)
+            return func(*args, **kwargs)
+        return wrapper
+
+
     def purge(self) -> None:
         '''
         Purges the cache.
@@ -85,65 +105,70 @@ class DirCache():
         self.__files: dict[str, FileCache] = dict()
 
 
-    def get_size(self, file_path: str) -> _Optional[int]:
+    @add_sep_prefix
+    def get_size(self, path: str) -> _Optional[int]:
         '''
         Returns the file's cached size if it exists, \
         else returns ``None``.
 
-        :param str file_path: The file's absolute path.
+        :param str path: The file's absolute path.
         '''
         return (cache.get_size()
-        if (cache := self.__get_file_cache(file_path)) is not None
+        if (cache := self.__get_file_cache(path)) is not None
         else None)
     
 
-    def cache_size(self, file_path: str, size: int) -> None:
+    @add_sep_prefix
+    def cache_size(self, path: str, size: int) -> None:
         '''
         Caches the provided size.
 
-        :param str file_path: The file's absolute path.
+        :param str path: The file's absolute path.
         :param int size: The file's size.
 
         :note: This method goes on to creates any \
             necessary ``FileCache/DirCache`` instances \
             if they do not already exist.
         '''
-        self.__create_file_cache(file_path).set_size(size)
+        self.__create_file_cache(path).set_size(size)
     
 
-    def get_metadata(self, file_path: str) -> _Optional[int]:
+    @add_sep_prefix
+    def get_metadata(self, path: str) -> _Optional[int]:
         '''
         Returns the file's cached metadata if they exist, \
         else returns ``None``.
 
-        :param str file_path: The file's absolute path.
+        :param str path: The file's absolute path.
         '''
         return (cache.get_metadata()
-        if (cache := self.__get_file_cache(file_path)) is not None
+        if (cache := self.__get_file_cache(path)) is not None
         else None)
     
 
+    @add_sep_prefix
     def cache_metadata(
         self,
-        file_path: str,
+        path: str,
         metadata: dict[str, str]
     ) -> None:
         '''
         Caches the provided metadata.
 
-        :param str file_path: The file's absolute path.
+        :param str path: The file's absolute path.
         :param dict[str, str]: The file's metadata.
 
         :note: This method goes on to creates any \
             necessary ``FileCache/DirCache`` instances \
             if they do not already exist.
         '''
-        self.__create_file_cache(file_path).set_metadata(metadata)
+        self.__create_file_cache(path).set_metadata(metadata)
 
 
+    @add_sep_prefix
     def get_content_iterator(
         self,
-        dir_path: str,
+        path: str,
         recursively: bool,
         include_dirs: bool
     ) -> _Optional[_Iterator[str]]:
@@ -153,7 +178,7 @@ class DirCache():
         cache depending on the value of ``recursively``. Returns ``None`` \
         if no ``FileCache`` instances exist for the requested cache type.
 
-        :param dir_path: The directory's absolute path.
+        :param path: The directory's absolute path.
         :param bool recursively: Indicates whether to iterate \
             instances recursively by looking in the ordinary \
             cache, or not by looking in the top-level cache.
@@ -161,9 +186,9 @@ class DirCache():
             any directories when ``recursively`` has been set \
             to ``False``.
         '''
-        print(f"\nWHAT IS CACHE for {dir_path}: ")
+        print(f"\nWHAT IS CACHE for {path}: ")
 
-        cache = self.__get_dir_cache(path=dir_path)
+        cache = self.__get_dir_cache(path=path)
 
         print("CACHE FOUND: ", cache)
 
@@ -172,6 +197,7 @@ class DirCache():
             cache.__state == __class__.State.NOT_TRAVERSED or
             (recursively and cache.__state != __class__.State.RECURSIVELY_TRAVERSED)
         ):
+            print("RETURNING NONEEE")
             return None
     
         def iterate_contents(
@@ -213,15 +239,18 @@ class DirCache():
         print(cache.__files)
         print(cache.__subdirs)
 
-        for x in iterate_contents(cache, recursively):
+        for x in sorted(iterate_contents(cache, recursively)):
             print(x)
-            
+
+        print(iterate_contents(cache, recursively))
+        print("RETURNINGGGGGGGGG")
         return sorted(iterate_contents(cache, recursively))
 
 
+    @add_sep_prefix
     def cache_contents(
         self,
-        dir_path: str,
+        path: str,
         iterator: _Iterator[str],
         recursively: bool,
         is_file: _Callable[[str], bool]
@@ -230,7 +259,7 @@ class DirCache():
         Goes through the provided iterator \
         in order to cache its contents.
 
-        :param str dir_path: The directory's absolute path.
+        :param str path: The directory's absolute path.
         :param Iterator[str] iterator: An iterator through \
             which a directory's contents can be traversed.
         :param bool recursively: Indicates whether the provided \
@@ -240,7 +269,7 @@ class DirCache():
             whether said path corresponds to a file or a directory.
         '''
         print("\nCREATING APPROPRIATE DIR FOR CACHING CONTENTS...")
-        cache = self.__create_dir_cache(path=dir_path)
+        cache = self.__create_dir_cache(path=path)
 
         if cache.__state == __class__.State.NOT_TRAVERSED:
             if recursively:
@@ -255,9 +284,11 @@ class DirCache():
         #       ``DirCache`` instance.
         for ep in sorted(iterator):
             if is_file(ep):
-                self.__create_file_cache(ep)
+                print(f"FILE: {ep}")
+                self.__create_file_cache(self.__add_sep_prefix(ep, self.__sep))
             else:
-                self.__create_dir_cache(ep)
+                print(f"DIR: {ep}")
+                self.__create_dir_cache(self.__add_sep_prefix(ep, self.__sep))
 
 
     def __get_file_cache(
@@ -273,6 +304,9 @@ class DirCache():
         :param str path: The file's path relative \
             to the path of this ``DirCache`` instance's \
             underlying directory.
+        :param int level: A helping variable that prevents \
+            this method from recursing indefinitely. Defaults \
+            to ``1``.
         '''
         entities = path.split(self.__sep)
 
@@ -302,6 +336,9 @@ class DirCache():
         :param str path: The directory's path relative \
             to the path of this ``DirCache`` instance's \
             underlying directory.
+        :param int level: A helping variable that prevents \
+            this method from recursing indefinitely. Defaults \
+            to ``1``.
         '''
         entities = path.split(self.__sep)
 
@@ -333,6 +370,9 @@ class DirCache():
         :param str path: The file's path relative \
             to the path of this ``DirCache`` instance's \
             underlying directory.
+        :param int level: A helping variable that prevents \
+            this method from recursing indefinitely. Defaults \
+            to ``1``.
         '''
         print(f"\nCREATING FILE CACHE FOR {path}... (level={level})")
         entities = path.split(self.__sep)
@@ -368,6 +408,9 @@ class DirCache():
         :param str path: The directory's path relative \
             to the path of this ``DirCache`` instance's \
             underlying directory.
+        :param int level: A helping variable that prevents \
+            this method from recursing indefinitely. Defaults \
+            to ``1``.
         '''
         entities = path.split(self.__sep)
         current = self.__sep.join(entities[:level]) + self.__sep

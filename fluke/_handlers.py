@@ -99,7 +99,7 @@ class ClientHandler(_ABC):
             after it has been retrieved.
         '''
         if self.is_cacheable():
-            if (size := self.__cache_manager.get_size(file_path=file_path)) is not None:
+            if (size := self.__cache_manager.get_size(path=file_path)) is not None:
                 return size
             else:
                 size = self._get_file_size_impl(file_path)
@@ -128,7 +128,7 @@ class ClientHandler(_ABC):
         '''
         if self.is_cacheable():
             if (metadata := self.__cache_manager.get_metadata(
-                file_path=file_path)
+                path=file_path)
             ) is not None:
                 return metadata
             else:
@@ -180,7 +180,7 @@ class ClientHandler(_ABC):
         if self.is_cacheable():
             # Grab content iterator from cache if it exists.
             if (iterator := self.__cache_manager.get_content_iterator(
-                dir_path=dir_path,
+                path=dir_path,
                 recursively=recursively,
                 include_dirs=include_dirs)
             ) is not None:
@@ -196,15 +196,16 @@ class ClientHandler(_ABC):
                     show_abs_path=True)
                 # Cache all contents.
                 self.__cache_manager.cache_contents(
-                    dir_path=dir_path,
+                    path=dir_path,
                     iterator=iterator,
                     recursively=recursively,
                     is_file=self.is_file)
                 # Reset iterator by grabbing it from cache.
                 iterator = self.__cache_manager.get_content_iterator(
-                    dir_path=dir_path,
+                    path=dir_path,
                     recursively=recursively,
                     include_dirs=include_dirs)
+                print(iterator)
                 # Return (modified) iterator.
                 if show_abs_path:
                     return iterator
@@ -1543,9 +1544,8 @@ class GCPClientHandler(ClientHandler):
         :param str file_path: The absolute path of the \
             file in question.
         '''
-        return (self.__bucket
-            .blob(blob_name=file_path.rstrip(_infer_sep(file_path)))
-            .exists())
+        return not file_path.endswith(_infer_sep(file_path)) and (
+            self.__bucket.blob(blob_name=file_path).exists())
     
 
     def mkdir(self, path: str) -> None:
