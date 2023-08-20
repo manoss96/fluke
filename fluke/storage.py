@@ -1321,8 +1321,8 @@ class _Directory(_ABC):
             contents' absolute path or their path relative to this directory. \
             Defaults to ``False``.
 
-        :note: The resulting output may vary depending on the value \
-            of parameter ``recursively``.
+        :note: Empty directories will not be considered if parameter \
+            ``recursively`` is set to ``True``.
         '''
         iterator = self.traverse(
             recursively=recursively,

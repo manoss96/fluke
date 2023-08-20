@@ -1545,8 +1545,7 @@ class GCPClientHandler(ClientHandler):
         :param str file_path: The absolute path of the \
             file in question.
         '''
-        return not file_path.endswith(_infer_sep(file_path)) and (
-            self.__bucket.blob(blob_name=file_path).exists())
+        return not file_path.endswith(_infer_sep(file_path))
     
 
     def mkdir(self, path: str) -> None:
@@ -1662,7 +1661,7 @@ class GCPClientHandler(ClientHandler):
             for blob in self.__bucket.list_blobs(
                 prefix=dir_path
             ):
-                if blob.name != dir_path:  
+                if blob.name != dir_path and self.is_file(blob.name):
                     if show_abs_path:
                         yield blob.name
                     else:
