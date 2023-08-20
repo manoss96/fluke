@@ -693,7 +693,7 @@ class SSHClientHandler(ClientHandler):
             path = path.rstrip(sep)
         
         try:
-            self.__sftp.stat(path=path)
+            self.__sftp.lstat(path=path)
         except FileNotFoundError:
             return False
         return True
@@ -714,7 +714,7 @@ class SSHClientHandler(ClientHandler):
         if file_path != sep:
             file_path = file_path.rstrip(sep)
 
-        return not _is_dir(self.__sftp.stat(
+        return not _is_dir(self.__sftp.lstat(
             path=file_path).st_mode)
     
     
@@ -775,7 +775,7 @@ class SSHClientHandler(ClientHandler):
 
         :param str file_path: The path of the file in question.
         '''
-        return self.__sftp.stat(path=file_path).st_size
+        return self.__sftp.lstat(path=file_path).st_size
     
 
     def _get_file_metadata_impl(self, file_path: str) -> dict[str, str]:
@@ -832,7 +832,7 @@ class SSHClientHandler(ClientHandler):
                 if _is_dir(attr.st_mode):
                     try:
                         for sub_attr in sorted(
-                            sftp.listdir_attr(path=abs_path),
+                            sftp.listdir_iter(path=abs_path),
                             key=lambda at: at.filename
                         ):
                             yield from filter_obj(
@@ -845,7 +845,7 @@ class SSHClientHandler(ClientHandler):
                     yield abs_path
 
             for attr in sorted(
-                self.__sftp.listdir_attr(path=dir_path),
+                self.__sftp.listdir_iter(path=dir_path),
                 key=lambda at: at.filename
             ):
                 for file_path in filter_obj(
@@ -860,7 +860,7 @@ class SSHClientHandler(ClientHandler):
                             sep=sep))
         else:
             for attr in sorted(
-                self.__sftp.listdir_attr(path=dir_path),
+                self.__sftp.listdir_iter(path=dir_path),
                 key=lambda at: at.filename
             ):
                 path = attr.filename

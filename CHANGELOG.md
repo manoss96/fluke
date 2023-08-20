@@ -48,6 +48,10 @@ All notable changes to this project will be documented in this file.
   underlying remote system.
   (https://github.com/manoss96/fluke/issues/53)
 
+- ``fluke.storage.RemoteDir`` will not follow any symbolic
+  links from now on.
+  (https://github.com/manoss96/fluke/issues/60)
+
 
 ### Fixed
 
@@ -66,6 +70,11 @@ All notable changes to this project will be documented in this file.
 - Fixed bug that occurred when caching the root directory
   of any storage system.
   (https://github.com/manoss96/fluke/issues/56)
+
+- Fixed bug where activating the cache on ``fluke.storage.RemoteDir``
+  would sometimes result in getting different contents due to
+  symbolic linked being followed.
+  (https://github.com/manoss96/fluke/issues/60)
   
 
 ## [0.4.1] - 2023/07/25
