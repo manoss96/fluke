@@ -197,7 +197,7 @@ key will already be tied to one and only GCP project:
 
 
 ==========================================
-Authenticating with a remote machine
+Authenticating with a remote SSH server
 ==========================================
 
 There are two ways for a user to authenticate themselves while

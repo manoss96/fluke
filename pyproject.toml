@@ -1,12 +1,12 @@
 [project]
 name = "fluke-api"
-version = "0.4.1"
+version = "0.5.0"
 authors = [
   {email = "manosstoumpos@gmail.com"},
   {name = "Manos Stoumpos"}
 ]
-description = "Move your data around"
-keywords = ["data", "transfer", "file", "filesystem", "cloud"]
+description = "Cloud-agnostic Python API"
+keywords = ["cloud", "storage", "message-queues", "aws", "azure", "gcp"]
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"

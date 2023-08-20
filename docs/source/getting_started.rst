@@ -5,19 +5,20 @@ What is Fluke?
 *******************
 
 Fluke is a Python package that acts as a higher-level API to
-cloud services that primarily relate to object storage and messaging.
-Fluke manages to hide away much of the complexity that derives from working
-with said services, aiding you in completing your tasks fast and hassle-free!
-Fluke achieves this by:
+cloud services that primarily relate to object storage and
+messaging. Fluke manages to hide away much of the complexity
+that derives from working with said services, aiding you in
+completing your tasks fast and hassle-free! Fluke achieves this by:
 
-* Treating object storage services as traditional file systems,
-  unifying the two under a single *File/Dir* API, through which
-  you are able to manage your data no matter where they reside,
-  be it the local file system or a bucket in the cloud.
-
-* Greatly reducing the intricacies of interacting with message queues
-  by viewing them as mere data structures that support three elementary
-  operations, that is, push/peek/poll.
+* Wrapping object storage services within a *File/Dir* API
+  inspired by the more familiar file storage, through which
+  you are able to interact with your data no matter where
+  they reside, be it the local file system, a remote server,
+  or a bucket in the cloud.
+  
+* Greatly reducing the intricacies of working with message
+  queues by viewing them as mere data structures that support
+  three elementary operations, that is, *push*, *peek*, and *poll*.
 
 *******************
 Installation
@@ -85,6 +86,6 @@ necessary resources in order to perform the data transfer:
 And that's basically it!
 
 You can learn more about Fluke by going through its detailed
-`User Guide <user_guide/handling_auth.html>`_, or by visiting
+`User Guide <user_guide/authentication.html>`_, or by visiting
 Fluke on `Github <https://github.com/manoss96/fluke>`_
 in order to check out the source code itself.

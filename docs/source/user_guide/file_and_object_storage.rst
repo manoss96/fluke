@@ -21,19 +21,19 @@ in order to interact with data:
 #. **File API**: Used for handling either individual files in a file system,
    be it local or remote, or objects in the cloud. This API includes:
    
-     * `LocalFile <../documentation/storage.html#fluke.storage.LocalFile>`_
-     * `RemoteFile <../documentation/storage.html#fluke.storage.RemoteFile>`_
      * `AmazonS3File <../documentation/storage.html#fluke.storage.AmazonS3File>`_
      * `AzureBlobFile <../documentation/storage.html#fluke.storage.AzureBlobFile>`_
      * `GCPStorageFile <../documentation/storage.html#fluke.storage.GCPStorageFile>`_
+     * `LocalFile <../documentation/storage.html#fluke.storage.LocalFile>`_
+     * `RemoteFile <../documentation/storage.html#fluke.storage.RemoteFile>`_
 
 #. **Dir API**: Used for handling entire directories of files/objects. This API includes:
 
-     * `LocalDir <../documentation/storage.html#fluke.storage.LocalDir>`_
-     * `RemoteDir <../documentation/storage.html#fluke.storage.RemoteDir>`_
      * `AmazonS3Dir <../documentation/storage.html#fluke.storage.AmazonS3Dir>`_
      * `AzureBlobDir <../documentation/storage.html#fluke.storage.AzureBlobDir>`_
      * `GCPStorageDir <../documentation/storage.html#fluke.storage.GCPStorageDir>`_
+     * `LocalDir <../documentation/storage.html#fluke.storage.LocalDir>`_
+     * `RemoteDir <../documentation/storage.html#fluke.storage.RemoteDir>`_
 
 ----------------------------------------
 Accessing local entities
